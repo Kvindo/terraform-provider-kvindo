@@ -1,0 +1,29 @@
+# Built provider binary
+terraform-provider-kvindo
+terraform-provider-kvindo_v*
+
+# GoReleaser output
+dist/
+
+# Go build/test artifacts
+*.exe
+*.test
+*.out
+vendor/
+
+# Terraform working files
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+
+# Editor / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+*~
+.*.swp

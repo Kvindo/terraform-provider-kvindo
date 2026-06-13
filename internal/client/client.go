@@ -1,0 +1,331 @@
+package client
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+)
+
+// ModificationResponse is returned from PUT and DELETE operations.
+type ModificationResponse struct {
+	RequestId    string `json:"requestId"`
+	ResourceId   string `json:"resourceId"`
+	ErrorCode    string `json:"errorCode"`
+	ErrorMessage string `json:"errorMessage"`
+}
+
+// RequestStatusResponse is returned from polling the async status endpoint.
+type RequestStatusResponse struct {
+	Succeded            bool   `json:"succeded"`
+	ScheduledResourceId string `json:"scheduledResourceId"`
+	ErrorCode           string `json:"errorCode"`
+	ErrorMessage        string `json:"errorMessage"`
+}
+
+// Client is an HTTP client for the Kvindo Cloud API.
+type Client struct {
+	BaseURL    string
+	Token      string
+	HTTPClient *http.Client
+}
+
+// New creates a new Kvindo API client.
+func New(baseURL, token string) *Client {
+	return &Client{
+		BaseURL: baseURL,
+		Token:   token,
+		HTTPClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+	}
+}
+
+func (c *Client) newRequest(ctx context.Context, method, path string, body interface{}) (*http.Request, error) {
+	url := c.BaseURL + path
+
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling request body: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "[KVINDO DEBUG] %s %s body: %s\n", method, url, string(data))
+		if f, err2 := os.OpenFile("/tmp/kvindo_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err2 == nil { fmt.Fprintf(f, "[REQ] %s %s body: %s\n", method, url, string(data)); f.Close() }
+		bodyReader = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
+func (c *Client) do(req *http.Request) ([]byte, int, error) {
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("reading response body: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "[KVINDO DEBUG] response %d: %s\n", resp.StatusCode, string(data))
+	if f, err2 := os.OpenFile("/tmp/kvindo_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err2 == nil { fmt.Fprintf(f, "[RESP %d] %s\n", resp.StatusCode, string(data)); f.Close() }
+	return data, resp.StatusCode, nil
+}
+
+func (c *Client) put(ctx context.Context, path string, body interface{}) (*ModificationResponse, error) {
+	req, err := c.newRequest(ctx, http.MethodPut, path, body)
+	if err != nil {
+		return nil, err
+	}
+
+	data, statusCode, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if statusCode >= 400 {
+		return nil, fmt.Errorf("PUT %s returned status %d: %s", path, statusCode, string(data))
+	}
+
+	var result ModificationResponse
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("unmarshaling PUT response: %w (body: %s)", err, string(data))
+	}
+
+	if result.ErrorCode != "" {
+		return nil, fmt.Errorf("API error %s: %s", result.ErrorCode, result.ErrorMessage)
+	}
+
+	return &result, nil
+}
+
+// WaitUntilNotReconciling polls Get until the resource exits the Reconciling state.
+func (c *Client) WaitUntilNotReconciling(ctx context.Context, path, id string) error {
+	deadline := time.Now().Add(30 * time.Minute)
+	backoff := 2 * time.Second
+
+	for time.Now().Before(deadline) {
+		data, err := c.Get(ctx, path, id)
+		if err != nil {
+			return err
+		}
+		if data != nil {
+			state := ""
+			if s, ok := data["state"].(string); ok {
+				state = s
+			} else if info, ok := data["info"].(map[string]interface{}); ok {
+				if s, ok := info["state"].(string); ok {
+					state = s
+				}
+			}
+			if !strings.HasPrefix(state, "Reconcil") {
+				return nil
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+
+		if backoff < 30*time.Second {
+			backoff += 2 * time.Second
+		}
+	}
+
+	return fmt.Errorf("timed out waiting for %s/%s to exit Reconciling state", path, id)
+}
+
+// Put sends a PUT request to create or update a resource.
+// If the resource is currently reconciling (ResourceIsScheduling), it waits for it to
+// settle and retries automatically — handles Ctrl+C interrupted applies cleanly.
+func (c *Client) Put(ctx context.Context, path string, body interface{}) (*ModificationResponse, error) {
+	for {
+		result, err := c.put(ctx, path, body)
+		if err == nil {
+			return result, nil
+		}
+		if !strings.Contains(err.Error(), "ResourceIsScheduling") {
+			return nil, err
+		}
+
+		id := ""
+		if m, ok := body.(map[string]interface{}); ok {
+			if s, ok := m["id"].(string); ok {
+				id = s
+			}
+		}
+		if id == "" {
+			return nil, err
+		}
+
+		if waitErr := c.WaitUntilNotReconciling(ctx, path, id); waitErr != nil {
+			return nil, fmt.Errorf("waiting for resource to settle before retry: %w", waitErr)
+		}
+	}
+}
+
+// Get fetches a resource by ID.
+func (c *Client) Get(ctx context.Context, path string, id string) (map[string]interface{}, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, path+"/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	data, statusCode, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if statusCode == 404 {
+		return nil, nil
+	}
+
+	if statusCode >= 400 {
+		return nil, fmt.Errorf("GET %s/%s returned status %d: %s", path, id, statusCode, string(data))
+	}
+
+	var envelope map[string]interface{}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil, fmt.Errorf("unmarshaling GET response: %w (body: %s)", err, string(data))
+	}
+
+	// All GET responses wrap the resource in a "resource" key.
+	if resource, ok := envelope["resource"].(map[string]interface{}); ok {
+		return resource, nil
+	}
+
+	return envelope, nil
+}
+
+// Delete sends a DELETE request for a resource.
+func (c *Client) Delete(ctx context.Context, path string, id string) (*ModificationResponse, error) {
+	req, err := c.newRequest(ctx, http.MethodDelete, path+"/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	data, statusCode, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if statusCode == 404 {
+		return &ModificationResponse{}, nil
+	}
+
+	if statusCode >= 400 {
+		return nil, fmt.Errorf("DELETE %s/%s returned status %d: %s", path, id, statusCode, string(data))
+	}
+
+	var result ModificationResponse
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("unmarshaling DELETE response: %w (body: %s)", err, string(data))
+	}
+
+	if result.ErrorCode != "" {
+		return nil, fmt.Errorf("API error %s: %s", result.ErrorCode, result.ErrorMessage)
+	}
+
+	return &result, nil
+}
+
+// PollUntilDone polls the async request status endpoint until the operation succeeds or times out.
+func (c *Client) PollUntilDone(ctx context.Context, path string, requestId string) error {
+	if requestId == "" {
+		return nil
+	}
+
+	deadline := time.Now().Add(30 * time.Minute)
+	backoff := 2 * time.Second
+
+	for time.Now().Before(deadline) {
+		pollPath := path + "/request/" + requestId
+		req, err := c.newRequest(ctx, http.MethodGet, pollPath, nil)
+		if err != nil {
+			return err
+		}
+
+		data, statusCode, err := c.do(req)
+		if err != nil {
+			return err
+		}
+
+		if statusCode >= 400 {
+			return fmt.Errorf("polling %s returned status %d: %s", pollPath, statusCode, string(data))
+		}
+
+		var status RequestStatusResponse
+		if err := json.Unmarshal(data, &status); err != nil {
+			return fmt.Errorf("unmarshaling poll response: %w (body: %s)", err, string(data))
+		}
+
+		if status.ErrorCode != "" {
+			return fmt.Errorf("async operation error %s: %s", status.ErrorCode, status.ErrorMessage)
+		}
+
+		if status.Succeded {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+
+		if backoff < 30*time.Second {
+			backoff += 2 * time.Second
+		}
+	}
+
+	return fmt.Errorf("timed out waiting for operation on %s (requestId: %s)", path, requestId)
+}
+
+// GetByLabels fetches resources filtered by labels.
+func (c *Client) GetByLabels(ctx context.Context, path string, labels map[string]string) ([]map[string]interface{}, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, path+"/get-by-labels", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(labels) > 0 {
+		q := req.URL.Query()
+		for k, v := range labels {
+			q.Set("label."+k, v)
+		}
+		req.URL.RawQuery = q.Encode()
+	}
+
+	data, statusCode, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if statusCode >= 400 {
+		return nil, fmt.Errorf("GET %s/get-by-labels returned status %d: %s", path, statusCode, string(data))
+	}
+
+	var result []map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("unmarshaling list response: %w (body: %s)", err, string(data))
+	}
+
+	return result, nil
+}
