@@ -13,49 +13,42 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// UserResourceModel describes the resource data model.
+type UserSpecModel struct {
+	AccessPolicyIds types.List   `tfsdk:"access_policy_ids"`
+	Email           types.String `tfsdk:"email"`
+}
+
 type UserResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Email types.String `tfsdk:"email"`
-	AccessPolicyIds types.List `tfsdk:"access_policy_ids"`
-	Info types.Object `tfsdk:"info"`
+	ID       types.String  `tfsdk:"id"`
+	Metadata metadataModel `tfsdk:"metadata"`
+	Spec     UserSpecModel `tfsdk:"spec"`
+	Status   types.Object  `tfsdk:"status"`
 }
 
-// UserResource defines the resource implementation.
-type UserResource struct {
-	client *client.Client
-}
+type UserResource struct{ client *client.Client }
 
-func NewUserResource() resource.Resource {
-	return &UserResource{}
-}
+func NewUserResource() resource.Resource { return &UserResource{} }
 
 func (r *UserResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_user"
 }
 
+func UserResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"access_policy_ids": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"email":             schema.StringAttribute{Required: true},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Required: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *UserResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["email"] = schema.StringAttribute{
-			Required: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["access_policy_ids"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: UserResourceSchemaAttrs()}
 }
 
 func (r *UserResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -71,34 +64,35 @@ func (r *UserResource) Configure(_ context.Context, req resource.ConfigureReques
 }
 
 func buildUserRequestMap(ctx context.Context, plan UserResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.Email.IsNull() && !plan.Email.IsUnknown() {
-		m["email"] = plan.Email.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.AccessPolicyIds.IsNull() && !plan.Spec.AccessPolicyIds.IsUnknown() {
+		spec["accessPolicyIds"] = stringListToInterface(ctx, plan.Spec.AccessPolicyIds)
 	}
-	if !plan.AccessPolicyIds.IsNull() && !plan.AccessPolicyIds.IsUnknown() {
-		m["accessPolicyIds"] = stringListToInterface(ctx, plan.AccessPolicyIds)
+	if !plan.Spec.Email.IsNull() && !plan.Spec.Email.IsUnknown() {
+		spec["email"] = plan.Spec.Email.ValueString()
 	}
 	return m
 }
 
 func populateUserState(ctx context.Context, data map[string]interface{}, state *UserResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.Email = getString(data, "email")
-	state.AccessPolicyIds = getStringList(ctx, data, "accessPolicyIds")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.AccessPolicyIds = getStringList(ctx, spec, "accessPolicyIds")
+	state.Spec.Email = getString(spec, "email")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan UserResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildUserRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/user", body)
@@ -110,7 +104,6 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -125,21 +118,18 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 	if err := populateUserState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state UserResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/user", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -150,28 +140,20 @@ func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 	if err := populateUserState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan UserResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state UserResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state UserResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildUserRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/user", body)
 	if err != nil {
@@ -182,32 +164,28 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/user", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateUserState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *UserResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state UserResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/user", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -220,7 +198,6 @@ func (r *UserResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 }
 
 func (r *UserResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state UserResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/user", req.ID)
@@ -229,13 +206,12 @@ func (r *UserResource) ImportState(ctx context.Context, req resource.ImportState
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateUserState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

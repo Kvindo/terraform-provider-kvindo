@@ -73,11 +73,15 @@ resource "kvindo_vpc_subnet" "example" {
 
 # Create a VM
 resource "kvindo_vm" "example" {
-  name           = "my-vm"
-  offer_id       = "vm-offer-id"
-  image_id       = "image-id"
-  vpc_subnet_id  = kvindo_vpc_subnet.example.id
-  folder_id      = "folder-id"
+  name              = "my-vm"
+  offer_id          = "vm-offer-id"
+  image_id          = "image-id"
+  vpc_subnet_id     = kvindo_vpc_subnet.example.id
+  folder_id         = "folder-id"
+  # Optional: attach security groups
+  # security_group_ids = [kvindo_security_group.example.id]
+  # Optional: "linux" (default) or "windows"
+  # os_type = "linux"
 }
 
 # Read data from an existing VPC
@@ -90,7 +94,7 @@ output "vpc_id" {
 }
 
 output "vm_private_ip" {
-  value = kvindo_vm.example.info_private_ipv4
+  value = kvindo_vm.example.info.private_ipv4
 }
 ```
 
@@ -174,15 +178,12 @@ The provider implements the following resources and data sources:
 - `kvindo_ssh_key` / `data.kvindo_ssh_key`
 - `kvindo_ssh_private_key` / `data.kvindo_ssh_private_key`
 - `kvindo_certificate` / `data.kvindo_certificate`
-- `kvindo_vm_on_off_maintenance_action` / `data.kvindo_vm_on_off_maintenance_action`
-- `kvindo_vm_recurrent_command_maintenance_action` / `data.kvindo_vm_recurrent_command_maintenance_action`
 
 ### Networking
 - `kvindo_vpc` / `data.kvindo_vpc`
 - `kvindo_vpc_subnet` / `data.kvindo_vpc_subnet`
 - `kvindo_floating_ip` / `data.kvindo_floating_ip`
 - `kvindo_security_group` / `data.kvindo_security_group`
-- `kvindo_nat_gateway` / `data.kvindo_nat_gateway`
 - `kvindo_route_table` / `data.kvindo_route_table`
 - `kvindo_route_table_route` / `data.kvindo_route_table_route`
 - `kvindo_route_table_attachment` / `data.kvindo_route_table_attachment`
@@ -223,12 +224,8 @@ The provider implements the following resources and data sources:
 - `kvindo_loadbalancer_udp_listener_rule` / `data.kvindo_loadbalancer_udp_listener_rule`
 
 ### Databases
-- `kvindo_postgresql` / `data.kvindo_postgresql`
-- `kvindo_postgresql_node_group` / `data.kvindo_postgresql_node_group`
 - `kvindo_postgresql_parameters_set` / `data.kvindo_postgresql_parameters_set`
 - `kvindo_postgresql_standalone` / `data.kvindo_postgresql_standalone`
-- `kvindo_etcd` / `data.kvindo_etcd`
-- `kvindo_etcd_node_group` / `data.kvindo_etcd_node_group`
 
 ### Object Storage
 - `kvindo_s3_bucket` / `data.kvindo_s3_bucket`
@@ -237,8 +234,6 @@ The provider implements the following resources and data sources:
 
 ### Monitoring
 - `kvindo_victoria_metrics` / `data.kvindo_victoria_metrics`
-- `kvindo_grafana` / `data.kvindo_grafana`
-- `kvindo_ollama` / `data.kvindo_ollama`
 
 ### VPN
 - `kvindo_open_vpn` / `data.kvindo_open_vpn`
@@ -259,12 +254,36 @@ The provider implements the following resources and data sources:
 
 All create, update, and delete operations are asynchronous. The provider automatically polls the request status endpoint until the operation completes (with a 10-minute timeout and exponential backoff starting at 2 seconds).
 
+## The `info` Block
+
+Every resource exposes a computed `info` block with base fields from the server-side `ResourceInfo`:
+
+```
+info.state                        # e.g. "stable", "reconcilling"
+info.create_time                  # RFC3339 string
+info.created_by_user.id
+info.created_by_user.name
+info.last_change_request.state
+info.last_change_request.create_time
+info.last_change_request.error_message
+info.last_change_request.created_by_user.id
+info.last_change_request.created_by_user.name
+info.pricing.month
+info.pricing.day
+info.pricing.hour
+```
+
+Some resources add extra fields inside `info` (e.g. `info.private_ipv4` / `info.public_ipv4` for VMs, `info.token` for user tokens).
+
+Data sources use a flat notation instead: `info_state`, `info_private_ipv4`, etc.
+
 ## Sensitive Fields
 
 The following fields are marked as sensitive and will not be shown in plan output:
 - Passwords (`root_password`, etc.)
-- Tokens (`info_token`, `info_kubeconfig`)
-- Private keys (`private_key`, `private_key_pem`, `info_client_key_pem`)
-- Secrets (`info_secret_key`, `info_access_key`)
-- Certificates (`certificate_pem`, `info_ca_certificate_pem`, etc.)
-- VPN config (`info_config`)
+- Tokens (`info.token`, `info.kubeconfig` — flat `info_token`, `info_kubeconfig` in datasources)
+- Private keys (`private_key`, `private_key_pem`, `info.client_key_pem`)
+- Secrets (`info.secret_key`, `info.access_key`)
+- Certificates (`certificate_pem`, `info.ca_certificate_pem`, etc.)
+- VPN config (`info.config`)
+- Windows admin password (`info.windows_administrator_password` on VMs)

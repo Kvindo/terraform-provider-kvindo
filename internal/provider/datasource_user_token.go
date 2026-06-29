@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -11,43 +12,33 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// UserTokenDataSourceModel describes the data source data model.
 type UserTokenDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	UserId types.String `tfsdk:"user_id"`
-	SendToEmail types.Bool `tfsdk:"send_to_email"`
-	InfoState types.String `tfsdk:"info_state"`
-	InfoToken types.String `tfsdk:"info_token"`
+	ID       types.String       `tfsdk:"id"`
+	Metadata metadataModel      `tfsdk:"metadata"`
+	Spec     UserTokenSpecModel `tfsdk:"spec"`
+	Status   types.Object       `tfsdk:"status"`
 }
 
-type UserTokenDataSource struct {
-	client *client.Client
-}
+type UserTokenDataSource struct{ client *client.Client }
 
-func NewUserTokenDataSource() datasource.DataSource {
-	return &UserTokenDataSource{}
-}
+func NewUserTokenDataSource() datasource.DataSource { return &UserTokenDataSource{} }
 
 func (d *UserTokenDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_user_token"
 }
 
 func (d *UserTokenDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["user_id"] = schema.StringAttribute{Computed: true}
-	attrs["send_to_email"] = schema.BoolAttribute{Computed: true}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-	attrs["info_token"] = schema.StringAttribute{Computed: true, Sensitive: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"send_to_email": schema.BoolAttribute{Computed: true},
+		"user_id":       schema.StringAttribute{Computed: true},
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"token": schema.StringAttribute{Computed: true, Sensitive: true}}),
+	}}
 }
 
 func (d *UserTokenDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -64,12 +55,10 @@ func (d *UserTokenDataSource) Configure(_ context.Context, req datasource.Config
 
 func (d *UserTokenDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state UserTokenDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/user-token", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -79,14 +68,19 @@ func (d *UserTokenDataSource) Read(ctx context.Context, req datasource.ReadReque
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.UserId = getString(apiData, "userId")
-	state.SendToEmail = getBool(apiData, "sendToEmail")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	state.InfoToken = getStringFromInfo(apiData, "token")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.SendToEmail = getBool(spec, "sendToEmail")
+	state.Spec.UserId = getString(spec, "userId")
+	state.Status = buildInfoObj(apiData,
+		map[string]attr.Type{
+			"token": types.StringType,
+		},
+		map[string]attr.Value{
+			"token": getStringFromInfo(apiData, "token"),
+		})
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

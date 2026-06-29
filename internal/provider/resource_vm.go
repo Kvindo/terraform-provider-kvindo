@@ -10,134 +10,71 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/kvindo/terraform-provider-kvindo/internal/client"
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
-var _ = listplanmodifier.UseStateForUnknown
 
-// VmResourceModel describes the resource data model.
+var vmBootstrapCommandObjFields = []objField{{TF: "command", API: "command", Kind: "string"}, {TF: "success_return_code", API: "successReturnCode", Kind: "int64"}, {TF: "timeout_seconds", API: "timeoutSeconds", Kind: "int64"}}
+
+type VmSpecModel struct {
+	BootstrapCommand                     types.Object `tfsdk:"bootstrap_command"`
+	FloatingIpId                         types.String `tfsdk:"floating_ip_id"`
+	ImageBootVolumeDeviceIndex           types.Int64  `tfsdk:"image_boot_volume_device_index"`
+	ImageId                              types.String `tfsdk:"image_id"`
+	ImageScheduleIds                     types.List   `tfsdk:"image_schedule_ids"`
+	OfferId                              types.String `tfsdk:"offer_id"`
+	OnOffMaintenanceActionIds            types.List   `tfsdk:"on_off_maintenance_action_ids"`
+	OsType                               types.String `tfsdk:"os_type"`
+	RecurrentCommandMaintenanceActionIds types.List   `tfsdk:"recurrent_command_maintenance_action_ids"`
+	SecurityGroupIds                     types.List   `tfsdk:"security_group_ids"`
+	SshKeyIds                            types.List   `tfsdk:"ssh_key_ids"`
+	VmState                              types.String `tfsdk:"vm_state"`
+	VpcSubnetId                          types.String `tfsdk:"vpc_subnet_id"`
+}
+
 type VmResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	VmState types.String `tfsdk:"vm_state"`
-	VpcSubnetId types.String `tfsdk:"vpc_subnet_id"`
-	FloatingIpId types.String `tfsdk:"floating_ip_id"`
-	ImageId types.String `tfsdk:"image_id"`
-	OfferId types.String `tfsdk:"offer_id"`
-	ImageBootVolumeDeviceIndex types.Int64 `tfsdk:"image_boot_volume_device_index"`
-	SshKeyIds types.List `tfsdk:"ssh_key_ids"`
-	ImageScheduleIds types.List `tfsdk:"image_schedule_ids"`
-	RecurrentCommandMaintenanceActionIds types.List `tfsdk:"recurrent_command_maintenance_action_ids"`
-	OnOffMaintenanceActionIds types.List `tfsdk:"on_off_maintenance_action_ids"`
-	BootstrapCommand types.List `tfsdk:"bootstrap_command"`
-	Info types.Object `tfsdk:"info"`
+	ID       types.String  `tfsdk:"id"`
+	Metadata metadataModel `tfsdk:"metadata"`
+	Spec     VmSpecModel   `tfsdk:"spec"`
+	Status   types.Object  `tfsdk:"status"`
 }
 
-// VmBootstrapCommandModel is the nested object model for bootstrap_command.
-type VmBootstrapCommandModel struct {
-	Command types.String `tfsdk:"command"`
-	SuccessReturnCode types.Int64 `tfsdk:"success_return_code"`
-	TimeoutSeconds types.Int64 `tfsdk:"timeout_seconds"`
-}
+type VmResource struct{ client *client.Client }
 
-// VmResource defines the resource implementation.
-type VmResource struct {
-	client *client.Client
-}
-
-func NewVmResource() resource.Resource {
-	return &VmResource{}
-}
+func NewVmResource() resource.Resource { return &VmResource{} }
 
 func (r *VmResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_vm"
 }
 
+func VmResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"bootstrap_command":              objResourceSchema(vmBootstrapCommandObjFields),
+		"floating_ip_id":                 schema.StringAttribute{Optional: true},
+		"image_boot_volume_device_index": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"image_id":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"image_schedule_ids":             schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"offer_id":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"on_off_maintenance_action_ids":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"os_type":                        schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"recurrent_command_maintenance_action_ids": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"security_group_ids":                       schema.ListAttribute{Optional: true, ElementType: types.StringType},
+		"ssh_key_ids":                              schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"vm_state":                                 schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"vpc_subnet_id":                            schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(map[string]schema.Attribute{"private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}, "windows_administrator_password": schema.StringAttribute{Computed: true, Sensitive: true}}),
+	}
+}
+
 func (r *VmResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["vm_state"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["vpc_subnet_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["floating_ip_id"] = schema.StringAttribute{
-			Optional: true,
-		}
-	attrs["image_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["offer_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["image_boot_volume_device_index"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["ssh_key_ids"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["image_schedule_ids"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["recurrent_command_maintenance_action_ids"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["on_off_maintenance_action_ids"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["bootstrap_command"] = schema.ListNestedAttribute{
-			Optional: true,
-			Computed: true,
-			NestedObject: schema.NestedAttributeObject{
-				Attributes: map[string]schema.Attribute{
-					"command": schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		},
-					"success_return_code": schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		},
-					"timeout_seconds": schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		},
-				},
-			},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}, "private_ipv4": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: VmResourceSchemaAttrs()}
 }
 
 func (r *VmResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -153,112 +90,93 @@ func (r *VmResource) Configure(_ context.Context, req resource.ConfigureRequest,
 }
 
 func buildVmRequestMap(ctx context.Context, plan VmResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.VmState.IsNull() && !plan.VmState.IsUnknown() {
-		m["vmState"] = plan.VmState.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.BootstrapCommand.IsNull() && !plan.Spec.BootstrapCommand.IsUnknown() {
+		spec["bootstrapCommand"] = objToAPI(plan.Spec.BootstrapCommand, vmBootstrapCommandObjFields)
 	}
-	if !plan.VpcSubnetId.IsNull() && !plan.VpcSubnetId.IsUnknown() {
-		m["vpcSubnetId"] = plan.VpcSubnetId.ValueString()
+	if !plan.Spec.FloatingIpId.IsNull() && !plan.Spec.FloatingIpId.IsUnknown() {
+		spec["floatingIpId"] = plan.Spec.FloatingIpId.ValueString()
 	}
-	if !plan.FloatingIpId.IsNull() && !plan.FloatingIpId.IsUnknown() {
-		m["floatingIpId"] = plan.FloatingIpId.ValueString()
+	if !plan.Spec.ImageBootVolumeDeviceIndex.IsNull() && !plan.Spec.ImageBootVolumeDeviceIndex.IsUnknown() {
+		spec["imageBootVolumeDeviceIndex"] = plan.Spec.ImageBootVolumeDeviceIndex.ValueInt64()
 	}
-	if !plan.ImageId.IsNull() && !plan.ImageId.IsUnknown() {
-		m["imageId"] = plan.ImageId.ValueString()
+	if !plan.Spec.ImageId.IsNull() && !plan.Spec.ImageId.IsUnknown() {
+		spec["imageId"] = plan.Spec.ImageId.ValueString()
 	}
-	if !plan.OfferId.IsNull() && !plan.OfferId.IsUnknown() {
-		m["offerId"] = plan.OfferId.ValueString()
+	if !plan.Spec.ImageScheduleIds.IsNull() && !plan.Spec.ImageScheduleIds.IsUnknown() {
+		spec["imageScheduleIds"] = stringListToInterface(ctx, plan.Spec.ImageScheduleIds)
 	}
-	if !plan.ImageBootVolumeDeviceIndex.IsNull() && !plan.ImageBootVolumeDeviceIndex.IsUnknown() {
-		m["imageBootVolumeDeviceIndex"] = plan.ImageBootVolumeDeviceIndex.ValueInt64()
+	if !plan.Spec.OfferId.IsNull() && !plan.Spec.OfferId.IsUnknown() {
+		spec["offerId"] = plan.Spec.OfferId.ValueString()
 	}
-	if !plan.SshKeyIds.IsNull() && !plan.SshKeyIds.IsUnknown() {
-		m["sshKeyIds"] = stringListToInterface(ctx, plan.SshKeyIds)
+	if !plan.Spec.OnOffMaintenanceActionIds.IsNull() && !plan.Spec.OnOffMaintenanceActionIds.IsUnknown() {
+		spec["onOffMaintenanceActionIds"] = stringListToInterface(ctx, plan.Spec.OnOffMaintenanceActionIds)
 	}
-	if !plan.ImageScheduleIds.IsNull() && !plan.ImageScheduleIds.IsUnknown() {
-		m["imageScheduleIds"] = stringListToInterface(ctx, plan.ImageScheduleIds)
+	if !plan.Spec.OsType.IsNull() && !plan.Spec.OsType.IsUnknown() {
+		spec["osType"] = plan.Spec.OsType.ValueString()
 	}
-	if !plan.RecurrentCommandMaintenanceActionIds.IsNull() && !plan.RecurrentCommandMaintenanceActionIds.IsUnknown() {
-		m["recurrentCommandMaintenanceActionIds"] = stringListToInterface(ctx, plan.RecurrentCommandMaintenanceActionIds)
+	if !plan.Spec.RecurrentCommandMaintenanceActionIds.IsNull() && !plan.Spec.RecurrentCommandMaintenanceActionIds.IsUnknown() {
+		spec["recurrentCommandMaintenanceActionIds"] = stringListToInterface(ctx, plan.Spec.RecurrentCommandMaintenanceActionIds)
 	}
-	if !plan.OnOffMaintenanceActionIds.IsNull() && !plan.OnOffMaintenanceActionIds.IsUnknown() {
-		m["onOffMaintenanceActionIds"] = stringListToInterface(ctx, plan.OnOffMaintenanceActionIds)
+	if !plan.Spec.SecurityGroupIds.IsNull() && !plan.Spec.SecurityGroupIds.IsUnknown() {
+		spec["securityGroupIds"] = stringListToInterface(ctx, plan.Spec.SecurityGroupIds)
 	}
-	if !plan.BootstrapCommand.IsNull() && !plan.BootstrapCommand.IsUnknown() {
-		var items []map[string]interface{}
-		for _, elem := range plan.BootstrapCommand.Elements() {
-			if ov, ok := elem.(types.Object); ok {
-				item := map[string]interface{}{}
-				if v, ok := ov.Attributes()["command"]; ok {
-					if sv, ok := v.(types.String); ok && !sv.IsNull() {
-						item["command"] = sv.ValueString()
-					}
-				}
-				if v, ok := ov.Attributes()["success_return_code"]; ok {
-					if iv, ok := v.(types.Int64); ok && !iv.IsNull() {
-						item["successReturnCode"] = iv.ValueInt64()
-					}
-				}
-				if v, ok := ov.Attributes()["timeout_seconds"]; ok {
-					if iv, ok := v.(types.Int64); ok && !iv.IsNull() {
-						item["timeoutSeconds"] = iv.ValueInt64()
-					}
-				}
-				items = append(items, item)
-			}
-		}
-		m["bootstrapCommand"] = items
+	if !plan.Spec.SshKeyIds.IsNull() && !plan.Spec.SshKeyIds.IsUnknown() {
+		spec["sshKeyIds"] = stringListToInterface(ctx, plan.Spec.SshKeyIds)
+	}
+	if !plan.Spec.VmState.IsNull() && !plan.Spec.VmState.IsUnknown() {
+		spec["vmState"] = plan.Spec.VmState.ValueString()
+	}
+	if !plan.Spec.VpcSubnetId.IsNull() && !plan.Spec.VpcSubnetId.IsUnknown() {
+		spec["vpcSubnetId"] = plan.Spec.VpcSubnetId.ValueString()
 	}
 	return m
 }
 
 func populateVmState(ctx context.Context, data map[string]interface{}, state *VmResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.VmState = getString(data, "vmState")
-	state.VpcSubnetId = getString(data, "vpcSubnetId")
-	state.FloatingIpId = getString(data, "floatingIpId")
-	state.ImageId = getString(data, "imageId")
-	state.OfferId = getString(data, "offerId")
-	state.ImageBootVolumeDeviceIndex = getInt64(data, "imageBootVolumeDeviceIndex")
-	state.SshKeyIds = getStringList(ctx, data, "sshKeyIds")
-	state.ImageScheduleIds = getStringList(ctx, data, "imageScheduleIds")
-	state.RecurrentCommandMaintenanceActionIds = getStringList(ctx, data, "recurrentCommandMaintenanceActionIds")
-	state.OnOffMaintenanceActionIds = getStringList(ctx, data, "onOffMaintenanceActionIds")
-	{
-		rawBootstrapCommand, _ := data["bootstrapCommand"].([]interface{})
-		attrTypes := map[string]attr.Type{
-			"command": types.StringType,
-			"success_return_code": types.Int64Type,
-			"timeout_seconds": types.Int64Type,
-		}
-		objs := make([]attr.Value, 0, len(rawBootstrapCommand))
-		for _, item := range rawBootstrapCommand {
-			if m, ok := item.(map[string]interface{}); ok {
-				attrs := map[string]attr.Value{
-					"command": getString(m, "command"),
-					"success_return_code": getInt64(m, "successReturnCode"),
-					"timeout_seconds": getInt64(m, "timeoutSeconds"),
-				}
-				obj, _ := types.ObjectValue(attrTypes, attrs)
-				objs = append(objs, obj)
-			}
-		}
-		state.BootstrapCommand, _ = types.ListValue(types.ObjectType{AttrTypes: attrTypes}, objs)
-	}
-	state.Info, _ = types.ObjectValue(map[string]attr.Type{"state": types.StringType, "private_ipv4": types.StringType, "public_ipv4": types.StringType, "private_ipv6": types.StringType, "public_ipv6": types.StringType}, map[string]attr.Value{"state": getStringFromInfo(data, "state"), "private_ipv4": getStringFromInfo(data, "privateipv4"), "public_ipv4": getStringFromInfo(data, "publicipv4"), "private_ipv6": getStringFromInfo(data, "privateipv6"), "public_ipv6": getStringFromInfo(data, "publicipv6")})
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.BootstrapCommand = objFromAPI(objMap(spec, "bootstrapCommand"), vmBootstrapCommandObjFields)
+	state.Spec.FloatingIpId = getString(spec, "floatingIpId")
+	state.Spec.ImageBootVolumeDeviceIndex = getInt64(spec, "imageBootVolumeDeviceIndex")
+	state.Spec.ImageId = getString(spec, "imageId")
+	state.Spec.ImageScheduleIds = getStringList(ctx, spec, "imageScheduleIds")
+	state.Spec.OfferId = getString(spec, "offerId")
+	state.Spec.OnOffMaintenanceActionIds = getStringList(ctx, spec, "onOffMaintenanceActionIds")
+	state.Spec.OsType = getString(spec, "osType")
+	state.Spec.RecurrentCommandMaintenanceActionIds = getStringList(ctx, spec, "recurrentCommandMaintenanceActionIds")
+	state.Spec.SecurityGroupIds = getStringList(ctx, spec, "securityGroupIds")
+	state.Spec.SshKeyIds = getStringList(ctx, spec, "sshKeyIds")
+	state.Spec.VmState = getString(spec, "vmState")
+	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
+	state.Status = buildInfoObj(data,
+		map[string]attr.Type{
+			"private_ipv4":                   types.StringType,
+			"private_ipv6":                   types.StringType,
+			"public_ipv4":                    types.StringType,
+			"public_ipv6":                    types.StringType,
+			"windows_administrator_password": types.StringType,
+		},
+		map[string]attr.Value{
+			"private_ipv4":                   getStringFromInfo(data, "privateIpv4"),
+			"private_ipv6":                   getStringFromInfo(data, "privateIpv6"),
+			"public_ipv4":                    getStringFromInfo(data, "publicIpv4"),
+			"public_ipv6":                    getStringFromInfo(data, "publicIpv6"),
+			"windows_administrator_password": getStringFromInfo(data, "windowsAdministratorPassword"),
+		})
 	return nil
 }
 
 func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan VmResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildVmRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/vm", body)
@@ -270,7 +188,6 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -285,21 +202,18 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		return
 	}
 	if err := populateVmState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *VmResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state VmResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/vm", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -310,28 +224,20 @@ func (r *VmResource) Read(ctx context.Context, req resource.ReadRequest, resp *r
 		return
 	}
 	if err := populateVmState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *VmResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan VmResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state VmResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state VmResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildVmRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/vm", body)
 	if err != nil {
@@ -342,32 +248,28 @@ func (r *VmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/vm", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateVmState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *VmResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state VmResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/vm", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -380,7 +282,6 @@ func (r *VmResource) Delete(ctx context.Context, req resource.DeleteRequest, res
 }
 
 func (r *VmResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state VmResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/vm", req.ID)
@@ -389,13 +290,12 @@ func (r *VmResource) ImportState(ctx context.Context, req resource.ImportStateRe
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateVmState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

@@ -11,28 +11,15 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// OpenVpnUserSettingsDataSourceModel describes the data source data model.
 type OpenVpnUserSettingsDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	AllowedIpV4Cidrs types.List `tfsdk:"allowed_ip_v4_cidrs"`
-	AllowedIpV6Cidrs types.List `tfsdk:"allowed_ip_v6_cidrs"`
-	DeniedIpV4Cidrs types.List `tfsdk:"denied_ip_v4_cidrs"`
-	DeniedIpV6Cidrs types.List `tfsdk:"denied_ip_v6_cidrs"`
-	AllowedDomains types.List `tfsdk:"allowed_domains"`
-	DeniedDomains types.List `tfsdk:"denied_domains"`
-	InfoState types.String `tfsdk:"info_state"`
+	ID       types.String                 `tfsdk:"id"`
+	Metadata metadataModel                `tfsdk:"metadata"`
+	Spec     OpenVpnUserSettingsSpecModel `tfsdk:"spec"`
+	Status   types.Object                 `tfsdk:"status"`
 }
 
-type OpenVpnUserSettingsDataSource struct {
-	client *client.Client
-}
+type OpenVpnUserSettingsDataSource struct{ client *client.Client }
 
 func NewOpenVpnUserSettingsDataSource() datasource.DataSource {
 	return &OpenVpnUserSettingsDataSource{}
@@ -43,17 +30,20 @@ func (d *OpenVpnUserSettingsDataSource) Metadata(_ context.Context, req datasour
 }
 
 func (d *OpenVpnUserSettingsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["allowed_ip_v4_cidrs"] = schema.ListAttribute{Computed: true, ElementType: types.StringType}
-	attrs["allowed_ip_v6_cidrs"] = schema.ListAttribute{Computed: true, ElementType: types.StringType}
-	attrs["denied_ip_v4_cidrs"] = schema.ListAttribute{Computed: true, ElementType: types.StringType}
-	attrs["denied_ip_v6_cidrs"] = schema.ListAttribute{Computed: true, ElementType: types.StringType}
-	attrs["allowed_domains"] = schema.ListAttribute{Computed: true, ElementType: types.StringType}
-	attrs["denied_domains"] = schema.ListAttribute{Computed: true, ElementType: types.StringType}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"allowed_domains":     schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"allowed_ip_v4_cidrs": schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"allowed_ip_v6_cidrs": schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"denied_domains":      schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"denied_ip_v4_cidrs":  schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"denied_ip_v6_cidrs":  schema.ListAttribute{Computed: true, ElementType: types.StringType},
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(nil),
+	}}
 }
 
 func (d *OpenVpnUserSettingsDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -70,12 +60,10 @@ func (d *OpenVpnUserSettingsDataSource) Configure(_ context.Context, req datasou
 
 func (d *OpenVpnUserSettingsDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state OpenVpnUserSettingsDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/open-vpn-user-settings", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -85,17 +73,17 @@ func (d *OpenVpnUserSettingsDataSource) Read(ctx context.Context, req datasource
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.AllowedIpV4Cidrs = getStringList(ctx, apiData, "allowedIpV4Cidrs")
-	state.AllowedIpV6Cidrs = getStringList(ctx, apiData, "allowedIpV6Cidrs")
-	state.DeniedIpV4Cidrs = getStringList(ctx, apiData, "deniedIpV4Cidrs")
-	state.DeniedIpV6Cidrs = getStringList(ctx, apiData, "deniedIpV6Cidrs")
-	state.AllowedDomains = getStringList(ctx, apiData, "allowedDomains")
-	state.DeniedDomains = getStringList(ctx, apiData, "deniedDomains")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.AllowedDomains = getStringList(ctx, spec, "allowedDomains")
+	state.Spec.AllowedIpV4Cidrs = getStringList(ctx, spec, "allowedIpV4Cidrs")
+	state.Spec.AllowedIpV6Cidrs = getStringList(ctx, spec, "allowedIpV6Cidrs")
+	state.Spec.DeniedDomains = getStringList(ctx, spec, "deniedDomains")
+	state.Spec.DeniedIpV4Cidrs = getStringList(ctx, spec, "deniedIpV4Cidrs")
+	state.Spec.DeniedIpV6Cidrs = getStringList(ctx, spec, "deniedIpV6Cidrs")
+	state.Status = simpleStateInfoObj(apiData)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

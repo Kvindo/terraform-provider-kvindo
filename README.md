@@ -35,15 +35,41 @@ provider "kvindo" {
 
 The token is a long-lived JWT from the Kvindo Cloud portal (`/iam/user-tokens`).
 
+## The Three Blocks: `metadata`, `spec`, `status`
+
+Every resource and data source exposes exactly three top-level blocks, mirroring the
+Kvindo Cloud API envelope:
+
+- **`metadata`** — identity you set: `name`, `description`, `folder_id`, `delete_protection`, `labels`, and an optional `id` (a client-generated ULID; usually left for the provider to fill).
+- **`spec`** — the type-specific configuration (a bucket's `tier`/`region`, a VM's `offer_id`/`image_id`, …). Omitted for resources that have no configurable fields (e.g. `kvindo_folder`).
+- **`status`** — everything the server computes and returns: `state`, IP addresses, endpoints, generated credentials, pricing. Read-only.
+
+```hcl
+resource "kvindo_s3_bucket" "main" {
+  metadata = {
+    name = "my-app-bucket"
+  }
+  spec = {
+    tier      = "standard"
+    region    = "ru-msk-1"
+    quota_gib = 100
+  }
+}
+
+output "endpoint" { value = kvindo_s3_bucket.main.status.endpoint_url }
+```
+
+HCL uses **attribute** syntax (`metadata = { ... }`), not block syntax (`metadata { ... }`).
+A root `id` attribute is also kept on every resource — Terraform needs it for `import` — and
+is mirrored at `metadata.id`.
+
 ### Field Naming
 
-Resource types and attribute names mirror the Kvindo Cloud REST API. Every field
-corresponds to the request/response schema published in the OpenAPI (Swagger) spec at
-<https://cloud-api.kvindo.com/swagger> — that spec is the source of truth for field
-names, types, and accepted values. The provider only rewrites casing: the API's
-`camelCase` becomes Terraform `snake_case` (e.g. API `volumeSizeGiB` → `volume_size_gib`,
-`floatingIpId` → `floating_ip_id`). Read-only fields the API returns are grouped under a
-single computed [`info` block](#the-info-block) rather than scattered across the schema.
+Field names mirror the Kvindo Cloud REST API. Every field corresponds to the request/response
+schema published in the OpenAPI (Swagger) spec at <https://cloud-api.kvindo.com/swagger> — that
+spec is the source of truth for field names, types, and accepted values. The provider only
+rewrites casing (`camelCase` → `snake_case`, e.g. API `volumeSizeGiB` → `volume_size_gib`) and
+groups fields into the `metadata` / `spec` / `status` blocks.
 
 ## Resource Categories
 
@@ -98,25 +124,20 @@ single computed [`info` block](#the-info-block) rather than scattered across the
 - `kvindo_support_plan` / `kvindo_support_ticket` / `kvindo_support_ticket_comment` / `kvindo_support_ticket_comment_attachment`
 
 ### Transaction (atomic multi-resource)
-- `kvindo_transaction` — Creates multiple sub-resources in a single API call. Sub-resource types: `folders`, `ssh_keys`, `s3_buckets`, `s3_user_access_policies`, `s3_users` (all map attributes, keyed by user-chosen name).
+- `kvindo_transaction` — Creates many sub-resources in a single atomic API call. Sub-resource types are map attributes under `spec`, keyed by a name you choose.
 
-## The `info` Block
+## The `status` Block
 
-Every resource exposes a computed `info` nested attribute with read-only fields returned by the API:
+Every resource exposes a computed `status` nested attribute with the read-only fields the API
+returns. The most useful field per type:
 
-```hcl
-output "state"    { value = kvindo_folder.main.info.state }
-output "endpoint" { value = kvindo_s3_bucket.main.info.endpoint_url }
-output "key"      { value = kvindo_s3_user.app.info.access_key  sensitive = true }
-```
-
-| Resource | `info` fields |
+| Resource | `status` fields |
 |---|---|
 | Most resources | `state` |
 | `kvindo_s3_bucket` | `state`, `endpoint_url` |
 | `kvindo_s3_user` | `state`, `access_key`, `secret_key` |
 | `kvindo_postgresql_standalone` | `state`, `root_user_name`, `public_ip_v4`, `private_ip_v4`, `port` |
-| `kvindo_vm` | `state`, `private_ipv4`, `public_ipv4`, `private_ipv6`, `public_ipv6` |
+| `kvindo_vm` | `state`, `private_ipv4`, `public_ipv4`, `private_ipv6`, `public_ipv6`, `windows_administrator_password` |
 | `kvindo_floating_ip` | `state`, `public_ip_v4` |
 | `kvindo_loadbalancer`, `kvindo_vpc_peering_peer` | `state`, `public_ip_v4`, `public_ip_v6`, `private_ip_v4`, `private_ip_v6` |
 | `kvindo_victoria_metrics`, `kvindo_gitlab` | `state`, `public_ip_v4`, `public_ip_v6`, `private_ip_v4`, `private_ip_v6`, `fqdn` |
@@ -130,7 +151,9 @@ output "key"      { value = kvindo_s3_user.app.info.access_key  sensitive = true
 | `kvindo_quota` | `state`, `current_value` |
 | `kvindo_quota_change_request` | `state`, `ticket_id` |
 
-Transaction sub-resources expose the same `info` fields as their standalone counterparts. Access via `kvindo_transaction.main.s3_users["app"].info.access_key`.
+Every `status` also carries `create_time`, `created_by_user`, `last_change_request`, and
+`pricing` (`month`/`day`/`hour`). Data sources flatten these to `status_state`,
+`status_access_key`, etc.
 
 ## Example: Folder + S3 Bucket + Users
 
@@ -138,79 +161,96 @@ Transaction sub-resources expose the same `info` fields as their standalone coun
 resource "random_id" "suffix" { byte_length = 4 }
 
 resource "kvindo_folder" "main" {
-  name = "my-app"
+  metadata = { name = "my-app" }
 }
 
 resource "kvindo_s3_bucket" "main" {
-  name      = "my-app-${random_id.suffix.hex}"
-  folder_id = kvindo_folder.main.id
-  tier      = "standard"
-  region    = "ru-msk-1"
-  quota_gib = 10
+  metadata = {
+    name      = "my-app-${random_id.suffix.hex}"
+    folder_id = kvindo_folder.main.id
+  }
+  spec = {
+    tier      = "standard"
+    region    = "ru-msk-1"
+    quota_gib = 10
+  }
 }
 
 resource "kvindo_s3_user_access_policy" "rw" {
-  name        = "my-app-rw-${random_id.suffix.hex}"
-  folder_id   = kvindo_folder.main.id
-  policy_json = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["s3:*"], Resource = ["arn:aws:s3:::${kvindo_s3_bucket.main.name}/*"] }]
-  })
+  metadata = {
+    name      = "my-app-rw-${random_id.suffix.hex}"
+    folder_id = kvindo_folder.main.id
+  }
+  spec = {
+    policy_json = jsonencode({
+      Version   = "2012-10-17"
+      Statement = [{ Effect = "Allow", Action = ["s3:*"], Resource = ["arn:aws:s3:::${kvindo_s3_bucket.main.metadata.name}/*"] }]
+    })
+  }
 }
 
 resource "kvindo_s3_user" "app" {
-  name              = "my-app-user-${random_id.suffix.hex}"
-  folder_id         = kvindo_folder.main.id
-  bucket_id         = kvindo_s3_bucket.main.id
-  access_policy_ids = [kvindo_s3_user_access_policy.rw.id]
+  metadata = {
+    name      = "my-app-user-${random_id.suffix.hex}"
+    folder_id = kvindo_folder.main.id
+  }
+  spec = {
+    bucket_id         = kvindo_s3_bucket.main.id
+    access_policy_ids = [kvindo_s3_user_access_policy.rw.id]
+  }
 }
 
-output "endpoint"   { value = kvindo_s3_bucket.main.info.endpoint_url }
-output "access_key" { value = kvindo_s3_user.app.info.access_key  sensitive = true }
-output "secret_key" { value = kvindo_s3_user.app.info.secret_key  sensitive = true }
+output "endpoint"   { value = kvindo_s3_bucket.main.status.endpoint_url }
+output "access_key" { value = kvindo_s3_user.app.status.access_key  sensitive = true }
+output "secret_key" { value = kvindo_s3_user.app.status.secret_key  sensitive = true }
 ```
 
 ## Example: Atomic Transaction
 
-Creates bucket + policies + users in a single API round-trip:
+Creates folder + bucket + policy + user in a single API round-trip. Sub-resources live under
+`spec`, keyed by a name you choose. To cross-reference one from another, pre-assign its `id`
+under `metadata.id` (a ULID you generate) and reference that same value where it's needed:
 
 ```hcl
+locals {
+  bucket_id = "01j8z0bckt0000000000000000"
+  policy_id = "01j8z0pcy00000000000000000"
+}
+
 resource "kvindo_transaction" "main" {
-  name      = "my-app"
-  folder_id = kvindo_folder.main.id
-  delete_resources_on_transaction_delete = true
+  metadata = { name = "my-app" }
 
-  s3_buckets = {
-    "bucket" = {
-      name      = "my-app-txn-${random_id.suffix.hex}"
-      folder_id = kvindo_folder.main.id
-      tier      = "standard"
-      region    = "ru-msk-1"
-      quota_gib = 10
+  spec = {
+    delete_resources_on_transaction_delete = true
+
+    s3_buckets = {
+      "bucket" = {
+        metadata = { id = local.bucket_id, name = "my-app-txn-${random_id.suffix.hex}" }
+        spec     = { tier = "standard", region = "ru-msk-1", quota_gib = 10 }
+      }
     }
-  }
 
-  s3_user_access_policies = {
-    "rw" = {
-      name        = "my-app-txn-rw"
-      folder_id   = kvindo_folder.main.id
-      policy_json = jsonencode({ ... })
+    s3_user_access_policies = {
+      "rw" = {
+        metadata = { id = local.policy_id, name = "my-app-txn-rw" }
+        spec     = { policy_json = jsonencode({ Version = "2012-10-17", Statement = [] }) }
+      }
     }
-  }
 
-  s3_users = {
-    "app" = {
-      id                = local.txn_user_app_id   # pre-generated ULID
-      name              = "my-app-txn-user"
-      folder_id         = kvindo_folder.main.id
-      bucket_id         = local.txn_bucket_id
-      access_policy_ids = [local.txn_policy_rw_id]
+    s3_users = {
+      "app" = {
+        metadata = { name = "my-app-txn-user" }
+        spec = {
+          bucket_id         = local.bucket_id
+          access_policy_ids = [local.policy_id]
+        }
+      }
     }
   }
 }
 
 output "access_key" {
-  value     = kvindo_transaction.main.s3_users["app"].info.access_key
+  value     = kvindo_transaction.main.spec.s3_users["app"].status.access_key
   sensitive = true
 }
 ```
@@ -219,78 +259,79 @@ output "access_key" {
 
 ```hcl
 resource "kvindo_vpc" "main" {
-  name      = "app-net"
-  folder_id = kvindo_folder.main.id
+  metadata = { name = "app-net", folder_id = kvindo_folder.main.id }
+  spec     = { hosting_provider_id = var.hosting_provider_id, ipv4_cidr = "10.10.0.0/16" }
 }
 
 resource "kvindo_vpc_subnet" "main" {
-  name      = "app-subnet"
-  folder_id = kvindo_folder.main.id
-  vpc_id    = kvindo_vpc.main.id
-  ipv4_cidr = "10.10.0.0/24"
+  metadata = { name = "app-subnet", folder_id = kvindo_folder.main.id }
+  spec     = { vpc_id = kvindo_vpc.main.id, ipv4_cidr = "10.10.0.0/24" }
 }
 
 resource "kvindo_ssh_key" "main" {
-  name       = "deploy-key"
-  folder_id  = kvindo_folder.main.id
-  public_key = file("~/.ssh/id_ed25519.pub")
+  metadata = { name = "deploy-key", folder_id = kvindo_folder.main.id }
+  spec     = { public_key = file("~/.ssh/id_ed25519.pub") }
 }
 
 resource "kvindo_vm" "web" {
-  name          = "web-1"
-  folder_id     = kvindo_folder.main.id
-  vpc_subnet_id = kvindo_vpc_subnet.main.id
-  ssh_key_ids   = [kvindo_ssh_key.main.id]
-  offer_id      = var.vm_offer_id   # compute-offer ULID — see GET /api/v1/vm-offer in the swagger
-  image_id      = var.vm_image_id   # OS-image ULID — see GET /api/v1/image
+  metadata = { name = "web-1", folder_id = kvindo_folder.main.id }
+  spec = {
+    vpc_subnet_id = kvindo_vpc_subnet.main.id
+    ssh_key_ids   = [kvindo_ssh_key.main.id]
+    offer_id      = var.vm_offer_id   # compute-offer ULID — see GET /api/v1/vm-offer in the swagger
+    image_id      = var.vm_image_id   # OS-image ULID — see GET /api/v1/image
+  }
 }
 
-output "web_public_ip"  { value = kvindo_vm.web.info.public_ipv4 }
-output "web_private_ip" { value = kvindo_vm.web.info.private_ipv4 }
+output "web_public_ip"  { value = kvindo_vm.web.status.public_ipv4 }
+output "web_private_ip" { value = kvindo_vm.web.status.private_ipv4 }
 ```
 
 ## Example: Kubernetes Cluster
 
 ```hcl
 resource "kvindo_kubernetes" "main" {
-  name          = "app-cluster"
-  folder_id     = kvindo_folder.main.id
-  vpc_subnet_id = kvindo_vpc_subnet.main.id
-  version       = "1.30"        # see swagger for supported versions
-  tier          = "standard"
+  metadata = { name = "app-cluster", folder_id = kvindo_folder.main.id }
+  spec = {
+    vpc_subnet_id = kvindo_vpc_subnet.main.id
+    version       = "1.30"        # see swagger for supported versions
+    tier          = "standard"
+  }
 }
 
 resource "kvindo_kubernetes_node_group" "workers" {
-  name               = "workers"
-  folder_id          = kvindo_folder.main.id
-  kubernetes_id      = kvindo_kubernetes.main.id
-  vpc_subnet_id      = kvindo_vpc_subnet.main.id
-  desired_node_count = 3
-  vm_offer_id        = var.vm_offer_id
-  volume_offer_id    = var.volume_offer_id
-  volume_size_gib    = 50
+  metadata = { name = "workers", folder_id = kvindo_folder.main.id }
+  spec = {
+    kubernetes_id      = kvindo_kubernetes.main.id
+    vpc_subnet_id      = kvindo_vpc_subnet.main.id
+    desired_node_count = 3
+    vm_offer_id        = var.vm_offer_id
+    volume_offer_id    = var.volume_offer_id
+    volume_size_gib    = 50
+  }
 }
 
-output "kube_api_server" { value = kvindo_kubernetes.main.info.api_server_url }
+output "kube_api_server" { value = kvindo_kubernetes.main.status.api_server_url }
 ```
 
 ## Example: Managed PostgreSQL
 
 ```hcl
 resource "kvindo_postgresql_standalone" "db" {
-  name            = "app-db"
-  folder_id       = kvindo_folder.main.id
-  vpc_subnet_id   = kvindo_vpc_subnet.main.id
-  version         = "16"          # see swagger for supported versions
-  tier            = "standard"
-  root_password   = var.db_root_password   # write-only — the API never returns this
-  vm_offer_id     = var.vm_offer_id
-  volume_offer_id = var.volume_offer_id
-  volume_size_gib = 20
+  metadata = { name = "app-db", folder_id = kvindo_folder.main.id }
+  spec = {
+    vpc_subnet_id   = kvindo_vpc_subnet.main.id
+    version         = "16"          # see swagger for supported versions
+    tier            = "standard"
+    root_password   = var.db_root_password   # write-only — the API never returns this
+    vm_offer_id     = var.vm_offer_id
+    volume_offer_id = var.volume_offer_id
+    volume_size_gib = 20
+  }
 }
 
-output "db_host" { value = kvindo_postgresql_standalone.db.info.private_ip_v4 }
-output "db_port" { value = kvindo_postgresql_standalone.db.info.port }
+output "db_host" { value = kvindo_postgresql_standalone.db.status.private_ip_v4 }
+output "db_port" { value = kvindo_postgresql_standalone.db.status.port }
 ```
 
 ## Resource Lifecycle
@@ -305,21 +346,15 @@ terraform import kvindo_s3_bucket.main <resource-id>
 
 A few decisions differ from a naive provider and are worth explaining:
 
-### Field names mirror the API
-See [Field Naming](#field-naming). Attribute names track the OpenAPI schema at
-<https://cloud-api.kvindo.com/swagger> one-to-one (only casing changes). This keeps the
-provider a thin, predictable mapping over the REST API rather than an opinionated
-re-modeling — you can always cross-reference the swagger to find a field, its type, and
-its accepted values.
+### Three blocks mirror the API envelope
+The API wraps every resource as `{ metadata, spec, status }`; the provider exposes the same
+three blocks rather than flattening them. This keeps the provider a thin, predictable mapping
+over the REST API (cross-reference any field in the swagger at
+<https://cloud-api.kvindo.com/swagger>), and makes it obvious which attributes you set
+(`metadata`/`spec`) versus which the API returns (`status`).
 
-### Read-only data lives in `info`
-Everything the server computes — `state`, IP addresses, endpoints, generated
-credentials — is grouped under one computed `info` object instead of being mixed into the
-configurable top-level schema. This makes it obvious which attributes you set versus which
-the API returns, and gives every resource the same access pattern: `<resource>.info.<field>`.
-
-### `state` uses a terminal-gated plan modifier
-`info.state` is volatile: the server moves a resource through
+### `status.state` uses a terminal-gated plan modifier
+`status.state` is volatile: the server moves a resource through
 `scheduling → reconciling → stable` (or `schedulingfailed`). A plain `UseStateForUnknown`
 would freeze a stale value into the plan and then fail apply with *"Provider produced
 inconsistent result after apply"*; always recomputing it would show a perpetual
@@ -338,12 +373,15 @@ write-only secrets like `root_password`, or references that stay null until atta
 ### IDs are ULIDs
 Every resource ID is a lowercase 26-char Crockford-base32 ULID, generated client-side for
 new resources. Client-side generation is what lets a `kvindo_transaction` reference a
-sub-resource's ID before the API has created it.
+sub-resource's ID (via `metadata.id`) before the API has created it.
 
-### Transactions are two-phase
+### Transactions are two-phase and cross-referenceable
 `kvindo_transaction` creates many sub-resources in one atomic API call. Sub-resources are
-map attributes keyed by a name you choose; those keys are kept stable in state across
-applies (matched back by ID), so editing one entry never churns the others.
+map attributes under `spec`, keyed by a name you choose; those keys are kept stable in state
+across applies (matched back by ID), so editing one entry never churns the others. Any
+sub-resource can reference another created in the same transaction: the producer pins its
+`metadata.id`, the consumer references that ULID in its `spec` (e.g. an s3_user's
+`bucket_id`).
 
 ### Resilient polling
 Every create/update polls until the resource reaches a terminal state (30-minute timeout).
@@ -355,4 +393,4 @@ apply recovers cleanly on the next run.
 
 - All IDs are ULIDs (lowercase 26-char Crockford base32), not UUIDs.
 - S3 bucket names are globally unique — always use a `random_id` suffix.
-- Transaction sub-resource map keys are stable across `terraform apply` — the key you choose in config (e.g. `"app"`) is preserved in state. 
+- Transaction sub-resource map keys are stable across `terraform apply` — the key you choose in config (e.g. `"app"`) is preserved in state.

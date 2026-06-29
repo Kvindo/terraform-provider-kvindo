@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -11,41 +12,32 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// FloatingIpDataSourceModel describes the data source data model.
 type FloatingIpDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	HostingProviderId types.String `tfsdk:"hosting_provider_id"`
-	InfoState types.String `tfsdk:"info_state"`
-	InfoPublicIpV4 types.String `tfsdk:"info_public_ip_v4"`
+	ID       types.String        `tfsdk:"id"`
+	Metadata metadataModel       `tfsdk:"metadata"`
+	Spec     FloatingIpSpecModel `tfsdk:"spec"`
+	Status   types.Object        `tfsdk:"status"`
 }
 
-type FloatingIpDataSource struct {
-	client *client.Client
-}
+type FloatingIpDataSource struct{ client *client.Client }
 
-func NewFloatingIpDataSource() datasource.DataSource {
-	return &FloatingIpDataSource{}
-}
+func NewFloatingIpDataSource() datasource.DataSource { return &FloatingIpDataSource{} }
 
 func (d *FloatingIpDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_floating_ip"
 }
 
 func (d *FloatingIpDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["hosting_provider_id"] = schema.StringAttribute{Computed: true}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-	attrs["info_public_ip_v4"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"hosting_provider_id": schema.StringAttribute{Computed: true},
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"public_ip_v4": schema.StringAttribute{Computed: true}}),
+	}}
 }
 
 func (d *FloatingIpDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -62,12 +54,10 @@ func (d *FloatingIpDataSource) Configure(_ context.Context, req datasource.Confi
 
 func (d *FloatingIpDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state FloatingIpDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/floating-ip", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -77,13 +67,18 @@ func (d *FloatingIpDataSource) Read(ctx context.Context, req datasource.ReadRequ
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.HostingProviderId = getString(apiData, "hostingProviderId")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	state.InfoPublicIpV4 = getStringFromInfo(apiData, "publicipv4")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.HostingProviderId = getString(spec, "hostingProviderId")
+	state.Status = buildInfoObj(apiData,
+		map[string]attr.Type{
+			"public_ip_v4": types.StringType,
+		},
+		map[string]attr.Value{
+			"public_ip_v4": getStringFromInfo(apiData, "publicIpV4"),
+		})
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

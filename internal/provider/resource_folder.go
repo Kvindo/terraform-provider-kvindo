@@ -6,43 +6,38 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/kvindo/terraform-provider-kvindo/internal/client"
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// FolderResourceModel describes the resource data model.
 type FolderResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Info types.Object `tfsdk:"info"`
+	ID       types.String  `tfsdk:"id"`
+	Metadata metadataModel `tfsdk:"metadata"`
+	Status   types.Object  `tfsdk:"status"`
 }
 
-// FolderResource defines the resource implementation.
-type FolderResource struct {
-	client *client.Client
-}
+type FolderResource struct{ client *client.Client }
 
-func NewFolderResource() resource.Resource {
-	return &FolderResource{}
-}
+func NewFolderResource() resource.Resource { return &FolderResource{} }
 
 func (r *FolderResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_folder"
 }
 
+func FolderResourceSchemaAttrs() map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *FolderResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: FolderResourceSchemaAttrs()}
 }
 
 func (r *FolderResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -58,30 +53,25 @@ func (r *FolderResource) Configure(_ context.Context, req resource.ConfigureRequ
 }
 
 func buildFolderRequestMap(ctx context.Context, plan FolderResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
 	return m
 }
 
 func populateFolderState(ctx context.Context, data map[string]interface{}, state *FolderResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	// API omits folderId for root folders; resolve unknown to null so framework accepts the result.
-	if state.FolderID.IsUnknown() {
-		state.FolderID = types.StringNull()
-	}
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *FolderResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan FolderResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildFolderRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/folder", body)
@@ -93,7 +83,6 @@ func (r *FolderResource) Create(ctx context.Context, req resource.CreateRequest,
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -108,21 +97,18 @@ func (r *FolderResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 	if err := populateFolderState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *FolderResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state FolderResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/folder", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -133,28 +119,20 @@ func (r *FolderResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 	if err := populateFolderState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *FolderResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan FolderResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state FolderResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state FolderResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildFolderRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/folder", body)
 	if err != nil {
@@ -165,32 +143,28 @@ func (r *FolderResource) Update(ctx context.Context, req resource.UpdateRequest,
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/folder", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateFolderState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *FolderResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state FolderResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/folder", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -203,7 +177,6 @@ func (r *FolderResource) Delete(ctx context.Context, req resource.DeleteRequest,
 }
 
 func (r *FolderResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state FolderResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/folder", req.ID)
@@ -212,13 +185,12 @@ func (r *FolderResource) ImportState(ctx context.Context, req resource.ImportSta
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateFolderState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

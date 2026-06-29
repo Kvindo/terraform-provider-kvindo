@@ -6,79 +6,57 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/kvindo/terraform-provider-kvindo/internal/client"
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// OpenVpnUserSettingsResourceModel describes the resource data model.
-type OpenVpnUserSettingsResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
+type OpenVpnUserSettingsSpecModel struct {
+	AllowedDomains   types.List `tfsdk:"allowed_domains"`
 	AllowedIpV4Cidrs types.List `tfsdk:"allowed_ip_v4_cidrs"`
 	AllowedIpV6Cidrs types.List `tfsdk:"allowed_ip_v6_cidrs"`
-	DeniedIpV4Cidrs types.List `tfsdk:"denied_ip_v4_cidrs"`
-	DeniedIpV6Cidrs types.List `tfsdk:"denied_ip_v6_cidrs"`
-	AllowedDomains types.List `tfsdk:"allowed_domains"`
-	DeniedDomains types.List `tfsdk:"denied_domains"`
-	Info types.Object `tfsdk:"info"`
+	DeniedDomains    types.List `tfsdk:"denied_domains"`
+	DeniedIpV4Cidrs  types.List `tfsdk:"denied_ip_v4_cidrs"`
+	DeniedIpV6Cidrs  types.List `tfsdk:"denied_ip_v6_cidrs"`
 }
 
-// OpenVpnUserSettingsResource defines the resource implementation.
-type OpenVpnUserSettingsResource struct {
-	client *client.Client
+type OpenVpnUserSettingsResourceModel struct {
+	ID       types.String                 `tfsdk:"id"`
+	Metadata metadataModel                `tfsdk:"metadata"`
+	Spec     OpenVpnUserSettingsSpecModel `tfsdk:"spec"`
+	Status   types.Object                 `tfsdk:"status"`
 }
 
-func NewOpenVpnUserSettingsResource() resource.Resource {
-	return &OpenVpnUserSettingsResource{}
-}
+type OpenVpnUserSettingsResource struct{ client *client.Client }
+
+func NewOpenVpnUserSettingsResource() resource.Resource { return &OpenVpnUserSettingsResource{} }
 
 func (r *OpenVpnUserSettingsResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_open_vpn_user_settings"
 }
 
+func OpenVpnUserSettingsResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"allowed_domains":     schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"allowed_ip_v4_cidrs": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"allowed_ip_v6_cidrs": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"denied_domains":      schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"denied_ip_v4_cidrs":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"denied_ip_v6_cidrs":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *OpenVpnUserSettingsResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["allowed_ip_v4_cidrs"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["allowed_ip_v6_cidrs"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["denied_ip_v4_cidrs"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["denied_ip_v6_cidrs"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["allowed_domains"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["denied_domains"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: OpenVpnUserSettingsResourceSchemaAttrs()}
 }
 
 func (r *OpenVpnUserSettingsResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -94,50 +72,51 @@ func (r *OpenVpnUserSettingsResource) Configure(_ context.Context, req resource.
 }
 
 func buildOpenVpnUserSettingsRequestMap(ctx context.Context, plan OpenVpnUserSettingsResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.AllowedIpV4Cidrs.IsNull() && !plan.AllowedIpV4Cidrs.IsUnknown() {
-		m["allowedIpV4Cidrs"] = stringListToInterface(ctx, plan.AllowedIpV4Cidrs)
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.AllowedDomains.IsNull() && !plan.Spec.AllowedDomains.IsUnknown() {
+		spec["allowedDomains"] = stringListToInterface(ctx, plan.Spec.AllowedDomains)
 	}
-	if !plan.AllowedIpV6Cidrs.IsNull() && !plan.AllowedIpV6Cidrs.IsUnknown() {
-		m["allowedIpV6Cidrs"] = stringListToInterface(ctx, plan.AllowedIpV6Cidrs)
+	if !plan.Spec.AllowedIpV4Cidrs.IsNull() && !plan.Spec.AllowedIpV4Cidrs.IsUnknown() {
+		spec["allowedIpV4Cidrs"] = stringListToInterface(ctx, plan.Spec.AllowedIpV4Cidrs)
 	}
-	if !plan.DeniedIpV4Cidrs.IsNull() && !plan.DeniedIpV4Cidrs.IsUnknown() {
-		m["deniedIpV4Cidrs"] = stringListToInterface(ctx, plan.DeniedIpV4Cidrs)
+	if !plan.Spec.AllowedIpV6Cidrs.IsNull() && !plan.Spec.AllowedIpV6Cidrs.IsUnknown() {
+		spec["allowedIpV6Cidrs"] = stringListToInterface(ctx, plan.Spec.AllowedIpV6Cidrs)
 	}
-	if !plan.DeniedIpV6Cidrs.IsNull() && !plan.DeniedIpV6Cidrs.IsUnknown() {
-		m["deniedIpV6Cidrs"] = stringListToInterface(ctx, plan.DeniedIpV6Cidrs)
+	if !plan.Spec.DeniedDomains.IsNull() && !plan.Spec.DeniedDomains.IsUnknown() {
+		spec["deniedDomains"] = stringListToInterface(ctx, plan.Spec.DeniedDomains)
 	}
-	if !plan.AllowedDomains.IsNull() && !plan.AllowedDomains.IsUnknown() {
-		m["allowedDomains"] = stringListToInterface(ctx, plan.AllowedDomains)
+	if !plan.Spec.DeniedIpV4Cidrs.IsNull() && !plan.Spec.DeniedIpV4Cidrs.IsUnknown() {
+		spec["deniedIpV4Cidrs"] = stringListToInterface(ctx, plan.Spec.DeniedIpV4Cidrs)
 	}
-	if !plan.DeniedDomains.IsNull() && !plan.DeniedDomains.IsUnknown() {
-		m["deniedDomains"] = stringListToInterface(ctx, plan.DeniedDomains)
+	if !plan.Spec.DeniedIpV6Cidrs.IsNull() && !plan.Spec.DeniedIpV6Cidrs.IsUnknown() {
+		spec["deniedIpV6Cidrs"] = stringListToInterface(ctx, plan.Spec.DeniedIpV6Cidrs)
 	}
 	return m
 }
 
 func populateOpenVpnUserSettingsState(ctx context.Context, data map[string]interface{}, state *OpenVpnUserSettingsResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.AllowedIpV4Cidrs = getStringList(ctx, data, "allowedIpV4Cidrs")
-	state.AllowedIpV6Cidrs = getStringList(ctx, data, "allowedIpV6Cidrs")
-	state.DeniedIpV4Cidrs = getStringList(ctx, data, "deniedIpV4Cidrs")
-	state.DeniedIpV6Cidrs = getStringList(ctx, data, "deniedIpV6Cidrs")
-	state.AllowedDomains = getStringList(ctx, data, "allowedDomains")
-	state.DeniedDomains = getStringList(ctx, data, "deniedDomains")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.AllowedDomains = getStringList(ctx, spec, "allowedDomains")
+	state.Spec.AllowedIpV4Cidrs = getStringList(ctx, spec, "allowedIpV4Cidrs")
+	state.Spec.AllowedIpV6Cidrs = getStringList(ctx, spec, "allowedIpV6Cidrs")
+	state.Spec.DeniedDomains = getStringList(ctx, spec, "deniedDomains")
+	state.Spec.DeniedIpV4Cidrs = getStringList(ctx, spec, "deniedIpV4Cidrs")
+	state.Spec.DeniedIpV6Cidrs = getStringList(ctx, spec, "deniedIpV6Cidrs")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *OpenVpnUserSettingsResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan OpenVpnUserSettingsResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildOpenVpnUserSettingsRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/open-vpn-user-settings", body)
@@ -149,7 +128,6 @@ func (r *OpenVpnUserSettingsResource) Create(ctx context.Context, req resource.C
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -164,21 +142,18 @@ func (r *OpenVpnUserSettingsResource) Create(ctx context.Context, req resource.C
 		return
 	}
 	if err := populateOpenVpnUserSettingsState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *OpenVpnUserSettingsResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state OpenVpnUserSettingsResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/open-vpn-user-settings", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -189,28 +164,20 @@ func (r *OpenVpnUserSettingsResource) Read(ctx context.Context, req resource.Rea
 		return
 	}
 	if err := populateOpenVpnUserSettingsState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *OpenVpnUserSettingsResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan OpenVpnUserSettingsResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state OpenVpnUserSettingsResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state OpenVpnUserSettingsResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildOpenVpnUserSettingsRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/open-vpn-user-settings", body)
 	if err != nil {
@@ -221,32 +188,28 @@ func (r *OpenVpnUserSettingsResource) Update(ctx context.Context, req resource.U
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/open-vpn-user-settings", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateOpenVpnUserSettingsState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *OpenVpnUserSettingsResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state OpenVpnUserSettingsResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/open-vpn-user-settings", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -259,7 +222,6 @@ func (r *OpenVpnUserSettingsResource) Delete(ctx context.Context, req resource.D
 }
 
 func (r *OpenVpnUserSettingsResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state OpenVpnUserSettingsResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/open-vpn-user-settings", req.ID)
@@ -268,13 +230,12 @@ func (r *OpenVpnUserSettingsResource) ImportState(ctx context.Context, req resou
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateOpenVpnUserSettingsState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

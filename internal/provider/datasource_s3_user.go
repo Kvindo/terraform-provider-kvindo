@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -11,45 +12,33 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// S3UserDataSourceModel describes the data source data model.
 type S3UserDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	BucketId types.String `tfsdk:"bucket_id"`
-	AccessPolicyIds types.List `tfsdk:"access_policy_ids"`
-	InfoState types.String `tfsdk:"info_state"`
-	InfoAccessKey types.String `tfsdk:"info_access_key"`
-	InfoSecretKey types.String `tfsdk:"info_secret_key"`
+	ID       types.String    `tfsdk:"id"`
+	Metadata metadataModel   `tfsdk:"metadata"`
+	Spec     S3UserSpecModel `tfsdk:"spec"`
+	Status   types.Object    `tfsdk:"status"`
 }
 
-type S3UserDataSource struct {
-	client *client.Client
-}
+type S3UserDataSource struct{ client *client.Client }
 
-func NewS3UserDataSource() datasource.DataSource {
-	return &S3UserDataSource{}
-}
+func NewS3UserDataSource() datasource.DataSource { return &S3UserDataSource{} }
 
 func (d *S3UserDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_s3_user"
 }
 
 func (d *S3UserDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["bucket_id"] = schema.StringAttribute{Computed: true}
-	attrs["access_policy_ids"] = schema.ListAttribute{Computed: true, ElementType: types.StringType}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-	attrs["info_access_key"] = schema.StringAttribute{Computed: true, Sensitive: true}
-	attrs["info_secret_key"] = schema.StringAttribute{Computed: true, Sensitive: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"access_policy_ids": schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"bucket_id":         schema.StringAttribute{Computed: true},
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"access_key": schema.StringAttribute{Computed: true}, "secret_key": schema.StringAttribute{Computed: true, Sensitive: true}}),
+	}}
 }
 
 func (d *S3UserDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -66,12 +55,10 @@ func (d *S3UserDataSource) Configure(_ context.Context, req datasource.Configure
 
 func (d *S3UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state S3UserDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/s3-user", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -81,15 +68,21 @@ func (d *S3UserDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.BucketId = getString(apiData, "bucketId")
-	state.AccessPolicyIds = getStringList(ctx, apiData, "accessPolicyIds")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	state.InfoAccessKey = getStringFromInfo(apiData, "accesskey")
-	state.InfoSecretKey = getStringFromInfo(apiData, "secretkey")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.AccessPolicyIds = getStringList(ctx, spec, "accessPolicyIds")
+	state.Spec.BucketId = getString(spec, "bucketId")
+	state.Status = buildInfoObj(apiData,
+		map[string]attr.Type{
+			"access_key": types.StringType,
+			"secret_key": types.StringType,
+		},
+		map[string]attr.Value{
+			"access_key": getStringFromInfo(apiData, "accessKey"),
+			"secret_key": getStringFromInfo(apiData, "secretKey"),
+		})
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

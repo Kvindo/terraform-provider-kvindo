@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -11,30 +12,15 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// KubernetesNodeGroupDataSourceModel describes the data source data model.
 type KubernetesNodeGroupDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	KubernetesId types.String `tfsdk:"kubernetes_id"`
-	VpcSubnetId types.String `tfsdk:"vpc_subnet_id"`
-	VmOfferId types.String `tfsdk:"vm_offer_id"`
-	VolumeOfferId types.String `tfsdk:"volume_offer_id"`
-	VolumeSizeGib types.Int64 `tfsdk:"volume_size_gib"`
-	DesiredNodeCount types.Int64 `tfsdk:"desired_node_count"`
-	VmState types.String `tfsdk:"vm_state"`
-	CreatePublicIpv4 types.Bool `tfsdk:"create_public_ipv4"`
-	InfoState types.String `tfsdk:"info_state"`
+	ID       types.String                 `tfsdk:"id"`
+	Metadata metadataModel                `tfsdk:"metadata"`
+	Spec     KubernetesNodeGroupSpecModel `tfsdk:"spec"`
+	Status   types.Object                 `tfsdk:"status"`
 }
 
-type KubernetesNodeGroupDataSource struct {
-	client *client.Client
-}
+type KubernetesNodeGroupDataSource struct{ client *client.Client }
 
 func NewKubernetesNodeGroupDataSource() datasource.DataSource {
 	return &KubernetesNodeGroupDataSource{}
@@ -45,19 +31,22 @@ func (d *KubernetesNodeGroupDataSource) Metadata(_ context.Context, req datasour
 }
 
 func (d *KubernetesNodeGroupDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["kubernetes_id"] = schema.StringAttribute{Computed: true}
-	attrs["vpc_subnet_id"] = schema.StringAttribute{Computed: true}
-	attrs["vm_offer_id"] = schema.StringAttribute{Computed: true}
-	attrs["volume_offer_id"] = schema.StringAttribute{Computed: true}
-	attrs["volume_size_gib"] = schema.Int64Attribute{Computed: true}
-	attrs["desired_node_count"] = schema.Int64Attribute{Computed: true}
-	attrs["vm_state"] = schema.StringAttribute{Computed: true}
-	attrs["create_public_ipv4"] = schema.BoolAttribute{Computed: true}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"create_public_ipv4": schema.BoolAttribute{Computed: true},
+		"desired_node_count": schema.Int64Attribute{Computed: true},
+		"kubernetes_id":      schema.StringAttribute{Computed: true},
+		"vm_offer_id":        schema.StringAttribute{Computed: true},
+		"vm_state":           schema.StringAttribute{Computed: true},
+		"volume_offer_id":    schema.StringAttribute{Computed: true},
+		"volume_size_gib":    schema.Int64Attribute{Computed: true},
+		"vpc_subnet_id":      schema.StringAttribute{Computed: true},
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"nodes": schema.StringAttribute{Computed: true}}),
+	}}
 }
 
 func (d *KubernetesNodeGroupDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -74,12 +63,10 @@ func (d *KubernetesNodeGroupDataSource) Configure(_ context.Context, req datasou
 
 func (d *KubernetesNodeGroupDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state KubernetesNodeGroupDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/kubernetes-node-group", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -89,19 +76,25 @@ func (d *KubernetesNodeGroupDataSource) Read(ctx context.Context, req datasource
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.KubernetesId = getString(apiData, "kubernetesId")
-	state.VpcSubnetId = getString(apiData, "vpcSubnetId")
-	state.VmOfferId = getString(apiData, "vmOfferId")
-	state.VolumeOfferId = getString(apiData, "volumeOfferId")
-	state.VolumeSizeGib = getInt64(apiData, "volumeSizeGib")
-	state.DesiredNodeCount = getInt64(apiData, "desiredNodeCount")
-	state.VmState = getString(apiData, "vmState")
-	state.CreatePublicIpv4 = getBool(apiData, "createPublicIpv4")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.CreatePublicIpv4 = getBool(spec, "createPublicIpv4")
+	state.Spec.DesiredNodeCount = getInt64(spec, "desiredNodeCount")
+	state.Spec.KubernetesId = getString(spec, "kubernetesId")
+	state.Spec.VmOfferId = getString(spec, "vmOfferId")
+	state.Spec.VmState = getString(spec, "vmState")
+	state.Spec.VolumeOfferId = getString(spec, "volumeOfferId")
+	state.Spec.VolumeSizeGib = getInt64(spec, "volumeSizeGiB")
+	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
+	state.Status = buildInfoObj(apiData,
+		map[string]attr.Type{
+			"nodes": types.StringType,
+		},
+		map[string]attr.Value{
+			"nodes": getStringFromInfo(apiData, "nodes"),
+		})
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

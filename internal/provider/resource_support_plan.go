@@ -13,44 +13,42 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// SupportPlanResourceModel describes the resource data model.
+type SupportPlanSpecModel struct {
+	State types.String `tfsdk:"state"`
+	Tier  types.String `tfsdk:"tier"`
+}
+
 type SupportPlanResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Tier types.String `tfsdk:"tier"`
-	Info types.Object `tfsdk:"info"`
+	ID       types.String         `tfsdk:"id"`
+	Metadata metadataModel        `tfsdk:"metadata"`
+	Spec     SupportPlanSpecModel `tfsdk:"spec"`
+	Status   types.Object         `tfsdk:"status"`
 }
 
-// SupportPlanResource defines the resource implementation.
-type SupportPlanResource struct {
-	client *client.Client
-}
+type SupportPlanResource struct{ client *client.Client }
 
-func NewSupportPlanResource() resource.Resource {
-	return &SupportPlanResource{}
-}
+func NewSupportPlanResource() resource.Resource { return &SupportPlanResource{} }
 
 func (r *SupportPlanResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_support_plan"
 }
 
+func SupportPlanResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"state": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"tier":  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *SupportPlanResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["tier"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: SupportPlanResourceSchemaAttrs()}
 }
 
 func (r *SupportPlanResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -66,30 +64,35 @@ func (r *SupportPlanResource) Configure(_ context.Context, req resource.Configur
 }
 
 func buildSupportPlanRequestMap(ctx context.Context, plan SupportPlanResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.Tier.IsNull() && !plan.Tier.IsUnknown() {
-		m["tier"] = plan.Tier.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.State.IsNull() && !plan.Spec.State.IsUnknown() {
+		spec["state"] = plan.Spec.State.ValueString()
+	}
+	if !plan.Spec.Tier.IsNull() && !plan.Spec.Tier.IsUnknown() {
+		spec["tier"] = plan.Spec.Tier.ValueString()
 	}
 	return m
 }
 
 func populateSupportPlanState(ctx context.Context, data map[string]interface{}, state *SupportPlanResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.Tier = getString(data, "tier")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.State = getString(spec, "state")
+	state.Spec.Tier = getString(spec, "tier")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *SupportPlanResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan SupportPlanResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildSupportPlanRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/support-plan", body)
@@ -101,7 +104,6 @@ func (r *SupportPlanResource) Create(ctx context.Context, req resource.CreateReq
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -116,21 +118,18 @@ func (r *SupportPlanResource) Create(ctx context.Context, req resource.CreateReq
 		return
 	}
 	if err := populateSupportPlanState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *SupportPlanResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state SupportPlanResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/support-plan", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -141,28 +140,20 @@ func (r *SupportPlanResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 	if err := populateSupportPlanState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *SupportPlanResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan SupportPlanResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state SupportPlanResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state SupportPlanResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildSupportPlanRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/support-plan", body)
 	if err != nil {
@@ -173,32 +164,28 @@ func (r *SupportPlanResource) Update(ctx context.Context, req resource.UpdateReq
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/support-plan", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateSupportPlanState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *SupportPlanResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state SupportPlanResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/support-plan", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -211,7 +198,6 @@ func (r *SupportPlanResource) Delete(ctx context.Context, req resource.DeleteReq
 }
 
 func (r *SupportPlanResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state SupportPlanResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/support-plan", req.ID)
@@ -220,13 +206,12 @@ func (r *SupportPlanResource) ImportState(ctx context.Context, req resource.Impo
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateSupportPlanState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

@@ -6,67 +6,53 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/kvindo/terraform-provider-kvindo/internal/client"
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// KubernetesUserRoleResourceModel describes the resource data model.
-type KubernetesUserRoleResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	ApiGroups types.List `tfsdk:"api_groups"`
-	Resources types.List `tfsdk:"resources"`
-	Verbs types.List `tfsdk:"verbs"`
+type KubernetesUserRoleSpecModel struct {
+	ApiGroups  types.List `tfsdk:"api_groups"`
 	Namespaces types.List `tfsdk:"namespaces"`
-	Info types.Object `tfsdk:"info"`
+	Resources  types.List `tfsdk:"resources"`
+	Verbs      types.List `tfsdk:"verbs"`
 }
 
-// KubernetesUserRoleResource defines the resource implementation.
-type KubernetesUserRoleResource struct {
-	client *client.Client
+type KubernetesUserRoleResourceModel struct {
+	ID       types.String                `tfsdk:"id"`
+	Metadata metadataModel               `tfsdk:"metadata"`
+	Spec     KubernetesUserRoleSpecModel `tfsdk:"spec"`
+	Status   types.Object                `tfsdk:"status"`
 }
 
-func NewKubernetesUserRoleResource() resource.Resource {
-	return &KubernetesUserRoleResource{}
-}
+type KubernetesUserRoleResource struct{ client *client.Client }
+
+func NewKubernetesUserRoleResource() resource.Resource { return &KubernetesUserRoleResource{} }
 
 func (r *KubernetesUserRoleResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_kubernetes_user_role"
 }
 
+func KubernetesUserRoleResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"api_groups": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"namespaces": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"resources":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"verbs":      schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *KubernetesUserRoleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["api_groups"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["resources"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["verbs"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["namespaces"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: KubernetesUserRoleResourceSchemaAttrs()}
 }
 
 func (r *KubernetesUserRoleResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -82,42 +68,43 @@ func (r *KubernetesUserRoleResource) Configure(_ context.Context, req resource.C
 }
 
 func buildKubernetesUserRoleRequestMap(ctx context.Context, plan KubernetesUserRoleResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.ApiGroups.IsNull() && !plan.ApiGroups.IsUnknown() {
-		m["apiGroups"] = stringListToInterface(ctx, plan.ApiGroups)
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.ApiGroups.IsNull() && !plan.Spec.ApiGroups.IsUnknown() {
+		spec["apiGroups"] = stringListToInterface(ctx, plan.Spec.ApiGroups)
 	}
-	if !plan.Resources.IsNull() && !plan.Resources.IsUnknown() {
-		m["resources"] = stringListToInterface(ctx, plan.Resources)
+	if !plan.Spec.Namespaces.IsNull() && !plan.Spec.Namespaces.IsUnknown() {
+		spec["namespaces"] = stringListToInterface(ctx, plan.Spec.Namespaces)
 	}
-	if !plan.Verbs.IsNull() && !plan.Verbs.IsUnknown() {
-		m["verbs"] = stringListToInterface(ctx, plan.Verbs)
+	if !plan.Spec.Resources.IsNull() && !plan.Spec.Resources.IsUnknown() {
+		spec["resources"] = stringListToInterface(ctx, plan.Spec.Resources)
 	}
-	if !plan.Namespaces.IsNull() && !plan.Namespaces.IsUnknown() {
-		m["namespaces"] = stringListToInterface(ctx, plan.Namespaces)
+	if !plan.Spec.Verbs.IsNull() && !plan.Spec.Verbs.IsUnknown() {
+		spec["verbs"] = stringListToInterface(ctx, plan.Spec.Verbs)
 	}
 	return m
 }
 
 func populateKubernetesUserRoleState(ctx context.Context, data map[string]interface{}, state *KubernetesUserRoleResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.ApiGroups = getStringList(ctx, data, "apiGroups")
-	state.Resources = getStringList(ctx, data, "resources")
-	state.Verbs = getStringList(ctx, data, "verbs")
-	state.Namespaces = getStringList(ctx, data, "namespaces")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.ApiGroups = getStringList(ctx, spec, "apiGroups")
+	state.Spec.Namespaces = getStringList(ctx, spec, "namespaces")
+	state.Spec.Resources = getStringList(ctx, spec, "resources")
+	state.Spec.Verbs = getStringList(ctx, spec, "verbs")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *KubernetesUserRoleResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan KubernetesUserRoleResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildKubernetesUserRoleRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/kubernetes-user-role", body)
@@ -129,7 +116,6 @@ func (r *KubernetesUserRoleResource) Create(ctx context.Context, req resource.Cr
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -144,21 +130,18 @@ func (r *KubernetesUserRoleResource) Create(ctx context.Context, req resource.Cr
 		return
 	}
 	if err := populateKubernetesUserRoleState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *KubernetesUserRoleResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state KubernetesUserRoleResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/kubernetes-user-role", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -169,28 +152,20 @@ func (r *KubernetesUserRoleResource) Read(ctx context.Context, req resource.Read
 		return
 	}
 	if err := populateKubernetesUserRoleState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *KubernetesUserRoleResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan KubernetesUserRoleResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state KubernetesUserRoleResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state KubernetesUserRoleResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildKubernetesUserRoleRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/kubernetes-user-role", body)
 	if err != nil {
@@ -201,32 +176,28 @@ func (r *KubernetesUserRoleResource) Update(ctx context.Context, req resource.Up
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/kubernetes-user-role", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateKubernetesUserRoleState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *KubernetesUserRoleResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state KubernetesUserRoleResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/kubernetes-user-role", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -239,7 +210,6 @@ func (r *KubernetesUserRoleResource) Delete(ctx context.Context, req resource.De
 }
 
 func (r *KubernetesUserRoleResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state KubernetesUserRoleResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/kubernetes-user-role", req.ID)
@@ -248,13 +218,12 @@ func (r *KubernetesUserRoleResource) ImportState(ctx context.Context, req resour
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateKubernetesUserRoleState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -11,41 +12,27 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// BillingAccountDataSourceModel describes the data source data model.
 type BillingAccountDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	ResourceName types.String `tfsdk:"resource_name"`
-	InfoState types.String `tfsdk:"info_state"`
-	InfoRubBalance types.String `tfsdk:"info_rub_balance"`
+	ID       types.String  `tfsdk:"id"`
+	Metadata metadataModel `tfsdk:"metadata"`
+	Status   types.Object  `tfsdk:"status"`
 }
 
-type BillingAccountDataSource struct {
-	client *client.Client
-}
+type BillingAccountDataSource struct{ client *client.Client }
 
-func NewBillingAccountDataSource() datasource.DataSource {
-	return &BillingAccountDataSource{}
-}
+func NewBillingAccountDataSource() datasource.DataSource { return &BillingAccountDataSource{} }
 
 func (d *BillingAccountDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_billing_account"
 }
 
 func (d *BillingAccountDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["resource_name"] = schema.StringAttribute{Computed: true}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-	attrs["info_rub_balance"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"rub_balance": schema.StringAttribute{Computed: true}}),
+	}}
 }
 
 func (d *BillingAccountDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -62,12 +49,10 @@ func (d *BillingAccountDataSource) Configure(_ context.Context, req datasource.C
 
 func (d *BillingAccountDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state BillingAccountDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/billing-account", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -77,13 +62,16 @@ func (d *BillingAccountDataSource) Read(ctx context.Context, req datasource.Read
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.ResourceName = getString(apiData, "resourceName")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	state.InfoRubBalance = getStringFromInfo(apiData, "rubbalance")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	state.Status = buildInfoObj(apiData,
+		map[string]attr.Type{
+			"rub_balance": types.StringType,
+		},
+		map[string]attr.Value{
+			"rub_balance": getStringFromInfo(apiData, "rubBalance"),
+		})
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

@@ -13,43 +13,40 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// S3UserAccessPolicyResourceModel describes the resource data model.
-type S3UserAccessPolicyResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
+type S3UserAccessPolicySpecModel struct {
 	PolicyJson types.String `tfsdk:"policy_json"`
-	Info types.Object `tfsdk:"info"`
 }
 
-// S3UserAccessPolicyResource defines the resource implementation.
-type S3UserAccessPolicyResource struct {
-	client *client.Client
+type S3UserAccessPolicyResourceModel struct {
+	ID       types.String                `tfsdk:"id"`
+	Metadata metadataModel               `tfsdk:"metadata"`
+	Spec     S3UserAccessPolicySpecModel `tfsdk:"spec"`
+	Status   types.Object                `tfsdk:"status"`
 }
 
-func NewS3UserAccessPolicyResource() resource.Resource {
-	return &S3UserAccessPolicyResource{}
-}
+type S3UserAccessPolicyResource struct{ client *client.Client }
+
+func NewS3UserAccessPolicyResource() resource.Resource { return &S3UserAccessPolicyResource{} }
 
 func (r *S3UserAccessPolicyResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_s3_user_access_policy"
 }
 
+func S3UserAccessPolicyResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"policy_json": schema.StringAttribute{Required: true},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Required: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *S3UserAccessPolicyResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["policy_json"] = schema.StringAttribute{
-			Required: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: S3UserAccessPolicyResourceSchemaAttrs()}
 }
 
 func (r *S3UserAccessPolicyResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -65,30 +62,31 @@ func (r *S3UserAccessPolicyResource) Configure(_ context.Context, req resource.C
 }
 
 func buildS3UserAccessPolicyRequestMap(ctx context.Context, plan S3UserAccessPolicyResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.PolicyJson.IsNull() && !plan.PolicyJson.IsUnknown() {
-		m["policyJson"] = plan.PolicyJson.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.PolicyJson.IsNull() && !plan.Spec.PolicyJson.IsUnknown() {
+		spec["policyJson"] = plan.Spec.PolicyJson.ValueString()
 	}
 	return m
 }
 
 func populateS3UserAccessPolicyState(ctx context.Context, data map[string]interface{}, state *S3UserAccessPolicyResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.PolicyJson = getString(data, "policyJson")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.PolicyJson = getString(spec, "policyJson")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *S3UserAccessPolicyResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan S3UserAccessPolicyResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildS3UserAccessPolicyRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/s3-user-access-policy", body)
@@ -100,7 +98,6 @@ func (r *S3UserAccessPolicyResource) Create(ctx context.Context, req resource.Cr
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -115,21 +112,18 @@ func (r *S3UserAccessPolicyResource) Create(ctx context.Context, req resource.Cr
 		return
 	}
 	if err := populateS3UserAccessPolicyState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *S3UserAccessPolicyResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state S3UserAccessPolicyResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/s3-user-access-policy", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -140,28 +134,20 @@ func (r *S3UserAccessPolicyResource) Read(ctx context.Context, req resource.Read
 		return
 	}
 	if err := populateS3UserAccessPolicyState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *S3UserAccessPolicyResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan S3UserAccessPolicyResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state S3UserAccessPolicyResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state S3UserAccessPolicyResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildS3UserAccessPolicyRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/s3-user-access-policy", body)
 	if err != nil {
@@ -172,32 +158,28 @@ func (r *S3UserAccessPolicyResource) Update(ctx context.Context, req resource.Up
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/s3-user-access-policy", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateS3UserAccessPolicyState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *S3UserAccessPolicyResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state S3UserAccessPolicyResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/s3-user-access-policy", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -210,7 +192,6 @@ func (r *S3UserAccessPolicyResource) Delete(ctx context.Context, req resource.De
 }
 
 func (r *S3UserAccessPolicyResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state S3UserAccessPolicyResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/s3-user-access-policy", req.ID)
@@ -219,13 +200,12 @@ func (r *S3UserAccessPolicyResource) ImportState(ctx context.Context, req resour
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateS3UserAccessPolicyState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

@@ -11,43 +11,34 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// VolumeAttachmentDataSourceModel describes the data source data model.
 type VolumeAttachmentDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	VolumeId types.String `tfsdk:"volume_id"`
-	VmId types.String `tfsdk:"vm_id"`
-	VmDeviceIndex types.Int64 `tfsdk:"vm_device_index"`
-	InfoState types.String `tfsdk:"info_state"`
+	ID       types.String              `tfsdk:"id"`
+	Metadata metadataModel             `tfsdk:"metadata"`
+	Spec     VolumeAttachmentSpecModel `tfsdk:"spec"`
+	Status   types.Object              `tfsdk:"status"`
 }
 
-type VolumeAttachmentDataSource struct {
-	client *client.Client
-}
+type VolumeAttachmentDataSource struct{ client *client.Client }
 
-func NewVolumeAttachmentDataSource() datasource.DataSource {
-	return &VolumeAttachmentDataSource{}
-}
+func NewVolumeAttachmentDataSource() datasource.DataSource { return &VolumeAttachmentDataSource{} }
 
 func (d *VolumeAttachmentDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_volume_attachment"
 }
 
 func (d *VolumeAttachmentDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["volume_id"] = schema.StringAttribute{Computed: true}
-	attrs["vm_id"] = schema.StringAttribute{Computed: true}
-	attrs["vm_device_index"] = schema.Int64Attribute{Computed: true}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"vm_device_index": schema.Int64Attribute{Computed: true},
+		"vm_id":           schema.StringAttribute{Computed: true},
+		"volume_id":       schema.StringAttribute{Computed: true},
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(nil),
+	}}
 }
 
 func (d *VolumeAttachmentDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -64,12 +55,10 @@ func (d *VolumeAttachmentDataSource) Configure(_ context.Context, req datasource
 
 func (d *VolumeAttachmentDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state VolumeAttachmentDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/volume-attachment", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -79,14 +68,14 @@ func (d *VolumeAttachmentDataSource) Read(ctx context.Context, req datasource.Re
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.VolumeId = getString(apiData, "volumeId")
-	state.VmId = getString(apiData, "vmId")
-	state.VmDeviceIndex = getInt64(apiData, "vmDeviceIndex")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.VmDeviceIndex = getInt64(spec, "vmDeviceIndex")
+	state.Spec.VmId = getString(spec, "vmId")
+	state.Spec.VolumeId = getString(spec, "volumeId")
+	state.Status = simpleStateInfoObj(apiData)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

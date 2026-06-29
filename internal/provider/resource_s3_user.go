@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -15,47 +15,41 @@ import (
 
 var _ = fmt.Sprintf
 
-// S3UserResourceModel describes the resource data model.
+type S3UserSpecModel struct {
+	AccessPolicyIds types.List   `tfsdk:"access_policy_ids"`
+	BucketId        types.String `tfsdk:"bucket_id"`
+}
+
 type S3UserResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	BucketId         types.String `tfsdk:"bucket_id"`
-	AccessPolicyIds  types.List   `tfsdk:"access_policy_ids"`
-	Info types.Object `tfsdk:"info"`
+	ID       types.String    `tfsdk:"id"`
+	Metadata metadataModel   `tfsdk:"metadata"`
+	Spec     S3UserSpecModel `tfsdk:"spec"`
+	Status   types.Object    `tfsdk:"status"`
 }
 
-// S3UserResource defines the resource implementation.
-type S3UserResource struct {
-	client *client.Client
-}
+type S3UserResource struct{ client *client.Client }
 
-func NewS3UserResource() resource.Resource {
-	return &S3UserResource{}
-}
+func NewS3UserResource() resource.Resource { return &S3UserResource{} }
 
 func (r *S3UserResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_s3_user"
 }
 
+func S3UserResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"access_policy_ids": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"bucket_id":         schema.StringAttribute{Required: true},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Required: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(map[string]schema.Attribute{"access_key": schema.StringAttribute{Computed: true}, "secret_key": schema.StringAttribute{Computed: true, Sensitive: true}}),
+	}
+}
+
 func (r *S3UserResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["bucket_id"] = schema.StringAttribute{
-			Required: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["access_policy_ids"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}, "access_key": schema.StringAttribute{Computed: true}, "secret_key": schema.StringAttribute{Computed: true, Sensitive: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: S3UserResourceSchemaAttrs()}
 }
 
 func (r *S3UserResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -71,34 +65,43 @@ func (r *S3UserResource) Configure(_ context.Context, req resource.ConfigureRequ
 }
 
 func buildS3UserRequestMap(ctx context.Context, plan S3UserResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.BucketId.IsNull() && !plan.BucketId.IsUnknown() {
-		m["bucketId"] = plan.BucketId.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.AccessPolicyIds.IsNull() && !plan.Spec.AccessPolicyIds.IsUnknown() {
+		spec["accessPolicyIds"] = stringListToInterface(ctx, plan.Spec.AccessPolicyIds)
 	}
-	if !plan.AccessPolicyIds.IsNull() && !plan.AccessPolicyIds.IsUnknown() {
-		m["accessPolicyIds"] = stringListToInterface(ctx, plan.AccessPolicyIds)
+	if !plan.Spec.BucketId.IsNull() && !plan.Spec.BucketId.IsUnknown() {
+		spec["bucketId"] = plan.Spec.BucketId.ValueString()
 	}
 	return m
 }
 
 func populateS3UserState(ctx context.Context, data map[string]interface{}, state *S3UserResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.BucketId = getString(data, "bucketId")
-	state.AccessPolicyIds = getStringList(ctx, data, "accessPolicyIds")
-	state.Info, _ = types.ObjectValue(map[string]attr.Type{"state": types.StringType, "access_key": types.StringType, "secret_key": types.StringType}, map[string]attr.Value{"state": getStringFromInfo(data, "state"), "access_key": getStringFromInfo(data, "accessKey"), "secret_key": getStringFromInfo(data, "secretKey")})
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.AccessPolicyIds = getStringList(ctx, spec, "accessPolicyIds")
+	state.Spec.BucketId = getString(spec, "bucketId")
+	state.Status = buildInfoObj(data,
+		map[string]attr.Type{
+			"access_key": types.StringType,
+			"secret_key": types.StringType,
+		},
+		map[string]attr.Value{
+			"access_key": getStringFromInfo(data, "accessKey"),
+			"secret_key": getStringFromInfo(data, "secretKey"),
+		})
 	return nil
 }
 
 func (r *S3UserResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan S3UserResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildS3UserRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/s3-user", body)
@@ -110,7 +113,6 @@ func (r *S3UserResource) Create(ctx context.Context, req resource.CreateRequest,
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -125,21 +127,18 @@ func (r *S3UserResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 	if err := populateS3UserState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *S3UserResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state S3UserResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/s3-user", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -150,28 +149,20 @@ func (r *S3UserResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 	if err := populateS3UserState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *S3UserResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan S3UserResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state S3UserResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state S3UserResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildS3UserRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/s3-user", body)
 	if err != nil {
@@ -182,32 +173,28 @@ func (r *S3UserResource) Update(ctx context.Context, req resource.UpdateRequest,
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/s3-user", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateS3UserState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *S3UserResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state S3UserResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/s3-user", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -220,7 +207,6 @@ func (r *S3UserResource) Delete(ctx context.Context, req resource.DeleteRequest,
 }
 
 func (r *S3UserResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state S3UserResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/s3-user", req.ID)
@@ -229,13 +215,12 @@ func (r *S3UserResource) ImportState(ctx context.Context, req resource.ImportSta
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateS3UserState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

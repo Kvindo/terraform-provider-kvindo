@@ -157,29 +157,147 @@ func (m volatileStateModifier) PlanModifyString(ctx context.Context, req planmod
 	}
 }
 
+// Attr-type maps for the nested objects inside the info block.
+var userInfoAttrTypes = map[string]attr.Type{"id": types.StringType, "name": types.StringType}
+var lcrInfoAttrTypes = map[string]attr.Type{
+	"state": types.StringType, "create_time": types.StringType,
+	"error_message":   types.StringType,
+	"created_by_user": types.ObjectType{AttrTypes: userInfoAttrTypes},
+}
+var pricingInfoAttrTypes = map[string]attr.Type{
+	"month": types.Float64Type, "day": types.Float64Type, "hour": types.Float64Type,
+}
+
+// simpleStateInfoAttrTypes is the attr.Type map for the base ResourceInfo object.
+var simpleStateInfoAttrTypes = map[string]attr.Type{
+	"state":               types.StringType,
+	"create_time":         types.StringType,
+	"created_by_user":     types.ObjectType{AttrTypes: userInfoAttrTypes},
+	"last_change_request": types.ObjectType{AttrTypes: lcrInfoAttrTypes},
+	"pricing":             types.ObjectType{AttrTypes: pricingInfoAttrTypes},
+}
+
+func buildUserInfoObj(m map[string]interface{}) types.Object {
+	if m == nil {
+		return types.ObjectNull(userInfoAttrTypes)
+	}
+	obj, _ := types.ObjectValue(userInfoAttrTypes, map[string]attr.Value{
+		"id": getString(m, "id"), "name": getString(m, "name"),
+	})
+	return obj
+}
+
+func buildLcrInfoObj(m map[string]interface{}) types.Object {
+	if m == nil {
+		return types.ObjectNull(lcrInfoAttrTypes)
+	}
+	var cbu map[string]interface{}
+	if v, ok := m["createdByUser"].(map[string]interface{}); ok {
+		cbu = v
+	}
+	obj, _ := types.ObjectValue(lcrInfoAttrTypes, map[string]attr.Value{
+		"state":           getString(m, "state"),
+		"create_time":     getString(m, "createTime"),
+		"error_message":   getString(m, "errorMessage"),
+		"created_by_user": buildUserInfoObj(cbu),
+	})
+	return obj
+}
+
+func buildPricingObj(m map[string]interface{}) types.Object {
+	if m == nil {
+		return types.ObjectNull(pricingInfoAttrTypes)
+	}
+	obj, _ := types.ObjectValue(pricingInfoAttrTypes, map[string]attr.Value{
+		"month": getFloat64(m, "month"), "day": getFloat64(m, "day"), "hour": getFloat64(m, "hour"),
+	})
+	return obj
+}
+
+// buildInfoObj reads the full ResourceInfo from data["status"] and merges resource-specific extras.
+// Simple resources call simpleStateInfoObj (no extras). Resources with extra status fields
+// (e.g. VM's public_ipv4) pass them via extraAttrTypes / extraVals.
+func buildInfoObj(data map[string]interface{}, extraAttrTypes map[string]attr.Type, extraVals map[string]attr.Value) types.Object {
+	status, _ := data["status"].(map[string]interface{})
+	if status == nil {
+		status = map[string]interface{}{}
+	}
+	var cbu, lcr, pricing map[string]interface{}
+	if v, ok := status["createdByUser"].(map[string]interface{}); ok {
+		cbu = v
+	}
+	if v, ok := status["lastChangeRequest"].(map[string]interface{}); ok {
+		lcr = v
+	}
+	if v, ok := status["pricing"].(map[string]interface{}); ok {
+		pricing = v
+	}
+
+	attrTypes := map[string]attr.Type{}
+	for k, v := range simpleStateInfoAttrTypes {
+		attrTypes[k] = v
+	}
+	for k, v := range extraAttrTypes {
+		attrTypes[k] = v
+	}
+
+	vals := map[string]attr.Value{
+		"state":               getString(status, "state"),
+		"create_time":         getString(status, "createTime"),
+		"created_by_user":     buildUserInfoObj(cbu),
+		"last_change_request": buildLcrInfoObj(lcr),
+		"pricing":             buildPricingObj(pricing),
+	}
+	for k, v := range extraVals {
+		vals[k] = v
+	}
+
+	obj, _ := types.ObjectValue(attrTypes, vals)
+	return obj
+}
+
+// simpleStateInfoObj builds a types.Object with the full base ResourceInfo from data["status"].
+func simpleStateInfoObj(data map[string]interface{}) types.Object {
+	return buildInfoObj(data, nil, nil)
+}
+
+func baseInfoSchemaAttrs() map[string]schema.Attribute {
+	userAttrs := map[string]schema.Attribute{
+		"id":   schema.StringAttribute{Computed: true},
+		"name": schema.StringAttribute{Computed: true},
+	}
+	return map[string]schema.Attribute{
+		"state":           schema.StringAttribute{Computed: true},
+		"create_time":     schema.StringAttribute{Computed: true},
+		"created_by_user": schema.SingleNestedAttribute{Computed: true, Attributes: userAttrs},
+		"last_change_request": schema.SingleNestedAttribute{Computed: true, Attributes: map[string]schema.Attribute{
+			"state":           schema.StringAttribute{Computed: true},
+			"create_time":     schema.StringAttribute{Computed: true},
+			"error_message":   schema.StringAttribute{Computed: true},
+			"created_by_user": schema.SingleNestedAttribute{Computed: true, Attributes: userAttrs},
+		}},
+		"pricing": schema.SingleNestedAttribute{Computed: true, Attributes: map[string]schema.Attribute{
+			"month": schema.Float64Attribute{Computed: true},
+			"day":   schema.Float64Attribute{Computed: true},
+			"hour":  schema.Float64Attribute{Computed: true},
+		}},
+	}
+}
+
 // commonInfoSchema returns a Computed SingleNestedAttribute for the "info" block.
-// Pass the set of attributes the info block should expose for this resource.
+// The base ResourceInfo fields (state, create_time, created_by_user, last_change_request, pricing)
+// are included automatically. Pass extra resource-specific attrs to merge in.
 // Access in HCL: resource.foo.info.state, resource.foo.info.public_ip_v4, etc.
-func commonInfoSchema(attrs map[string]schema.Attribute) schema.Attribute {
+func commonInfoSchema(extraAttrs map[string]schema.Attribute) schema.Attribute {
+	attrs := baseInfoSchemaAttrs()
+	for k, v := range extraAttrs {
+		attrs[k] = v
+	}
 	return schema.SingleNestedAttribute{
 		Computed:      true,
 		Attributes:    attrs,
 		PlanModifiers: []planmodifier.Object{volatileInfoModifier{}},
 	}
-}
-
-// simpleStateInfoAttrTypes is the attr.Type map for state-only info objects.
-var simpleStateInfoAttrTypes = map[string]attr.Type{
-	"state": types.StringType,
-}
-
-// simpleStateInfoObj builds a types.Object containing just {"state": <value>}.
-// Used by resources whose only info field is state.
-func simpleStateInfoObj(data map[string]interface{}) types.Object {
-	obj, _ := types.ObjectValue(simpleStateInfoAttrTypes, map[string]attr.Value{
-		"state": getStringFromInfo(data, "state"),
-	})
-	return obj
 }
 
 // CommonPriorSchema builds the PriorSchema argument for CommonInfoUpgrader.
@@ -276,57 +394,119 @@ type CommonModel struct {
 	Labels           types.Map    `tfsdk:"labels"`
 }
 
-// buildCommonRequestMap creates the PUT request body.
-// The API expects common fields (name, description, labels, folderId, deleteProtection) at the
-// top level, with the resource id and type-specific fields nested under "resource".
-func buildCommonRequestMap(id, name string, description types.String, folderID types.String, deleteProtection types.Bool, labels types.Map, ctx context.Context) map[string]interface{} {
-	resourceMap := map[string]interface{}{"id": id}
-	m := map[string]interface{}{
-		"name":     name,
-		"resource": resourceMap,
+// metadataModel is the shared nested "metadata" block model, mirroring the API's
+// metadata envelope. Every resource and datasource embeds this as its `metadata` block.
+// id is a computed mirror of the root-level id (which Terraform requires at the root for
+// import/tooling); name/description/folder_id/delete_protection/labels are the user-settable
+// identity fields.
+type metadataModel struct {
+	ID               types.String `tfsdk:"id"`
+	Name             types.String `tfsdk:"name"`
+	Description      types.String `tfsdk:"description"`
+	FolderID         types.String `tfsdk:"folder_id"`
+	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
+	Labels           types.Map    `tfsdk:"labels"`
+}
+
+// metadataResourceSchema returns the Required "metadata" SingleNestedAttribute for resources.
+// name is Required; the rest are Optional+Computed (server may default them); id is Computed.
+func metadataResourceSchema() schema.Attribute {
+	return schema.SingleNestedAttribute{
+		Required: true,
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Computed:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"name": schema.StringAttribute{Required: true},
+			"description": schema.StringAttribute{
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"folder_id": schema.StringAttribute{
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"delete_protection": schema.BoolAttribute{
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
+			"labels": schema.MapAttribute{
+				Optional:      true,
+				Computed:      true,
+				ElementType:   types.StringType,
+				PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()},
+			},
+		},
 	}
+}
+
+// setCommonFieldsNested fills a metadataModel from an API response (delegates to setCommonFields,
+// which reads the "metadata" sub-map and resolves absent folderId to null for root resources).
+func setCommonFieldsNested(ctx context.Context, data map[string]interface{}, md *metadataModel) error {
+	return setCommonFields(ctx, data, &md.ID, &md.Name, &md.Description, &md.FolderID, &md.DeleteProtection, &md.Labels)
+}
+
+// buildCommonRequestMap creates the PUT request body.
+// The API uses k8s-style nesting: common fields (id, name, description, folderId,
+// deleteProtection, labels) go under "metadata"; type-specific fields go under "spec".
+// Callers must extract m["spec"].(map[string]interface{}) and add their fields to it.
+func buildCommonRequestMap(id, name string, description types.String, folderID types.String, deleteProtection types.Bool, labels types.Map, ctx context.Context) map[string]interface{} {
+	metadata := map[string]interface{}{"id": id, "name": name}
 	if !description.IsNull() && !description.IsUnknown() {
-		m["description"] = description.ValueString()
+		metadata["description"] = description.ValueString()
 	}
 	if !folderID.IsNull() && !folderID.IsUnknown() {
-		m["folderId"] = folderID.ValueString()
+		metadata["folderId"] = folderID.ValueString()
 	}
 	if !deleteProtection.IsNull() && !deleteProtection.IsUnknown() {
-		m["deleteProtection"] = deleteProtection.ValueBool()
+		metadata["deleteProtection"] = deleteProtection.ValueBool()
 	}
 	if !labels.IsNull() && !labels.IsUnknown() {
 		labelsMap := make(map[string]string)
 		diags := labels.ElementsAs(ctx, &labelsMap, false)
 		if !diags.HasError() {
-			m["labels"] = labelsMap
+			metadata["labels"] = labelsMap
 		}
 	}
-	return m
+	return map[string]interface{}{"metadata": metadata, "spec": map[string]interface{}{}}
 }
 
 // setCommonFields populates common model fields from an API response map.
+// The API returns common fields nested under "metadata"; this function extracts that sub-map.
 func setCommonFields(ctx context.Context, data map[string]interface{}, id *types.String, name *types.String, description *types.String, folderID *types.String, deleteProtection *types.Bool, labels *types.Map) error {
-	if v, ok := data["id"].(string); ok {
+	md, _ := data["metadata"].(map[string]interface{})
+	if md == nil {
+		md = map[string]interface{}{}
+	}
+	if v, ok := md["id"].(string); ok {
 		*id = types.StringValue(v)
 	}
-	if v, ok := data["name"].(string); ok {
+	if v, ok := md["name"].(string); ok {
 		*name = types.StringValue(v)
 	}
-	if v, ok := data["description"].(string); ok {
+	if v, ok := md["description"].(string); ok {
 		*description = types.StringValue(v)
 	} else {
 		*description = types.StringValue("")
 	}
-	if v, ok := data["folderId"].(string); ok && v != "" {
+	if v, ok := md["folderId"].(string); ok && v != "" {
 		*folderID = types.StringValue(v)
+	} else {
+		// folderId absent = root-level resource; resolve to null so Terraform doesn't
+		// see an unknown value after apply (Optional+Computed requires a known result).
+		*folderID = types.StringNull()
 	}
-	if v, ok := data["deleteProtection"].(bool); ok {
+	if v, ok := md["deleteProtection"].(bool); ok {
 		*deleteProtection = types.BoolValue(v)
 	} else {
 		*deleteProtection = types.BoolValue(false)
 	}
 
-	labelsRaw, ok := data["labels"].(map[string]interface{})
+	labelsRaw, ok := md["labels"].(map[string]interface{})
 	if ok && len(labelsRaw) > 0 {
 		labelsMap := make(map[string]attr.Value, len(labelsRaw))
 		for k, v := range labelsRaw {
@@ -346,43 +526,71 @@ func setCommonFields(ctx context.Context, data map[string]interface{}, id *types
 	return nil
 }
 
-// getStringFromInfo extracts a string field from the "info" sub-object of an API response.
-func getStringFromInfo(data map[string]interface{}, field string) types.String {
-	info, ok := data["info"].(map[string]interface{})
-	if !ok {
-		return types.StringValue("")
+// getSpec extracts the "spec" sub-map from an API response (type-specific fields).
+func getSpec(data map[string]interface{}) map[string]interface{} {
+	if spec, ok := data["spec"].(map[string]interface{}); ok {
+		return spec
 	}
-	if v, ok := info[field].(string); ok {
-		return types.StringValue(v)
+	return map[string]interface{}{}
+}
+
+// infoFieldRaw looks up a field in the "status" sub-object case-insensitively.
+//
+// Why case-insensitive: the wire keys for status fields are inconsistently cased by the
+// C# serializer — IP fields arrive all-lowercase ("publicipv4") while others are camelCase
+// ("windowsAdministratorPassword", "endpointUrl"), and neither matches the swagger property
+// casing the generator derives keys from. An exact-match lookup would silently read empty for
+// the mismatched ones. A case-insensitive match is parity-preserving (any key an exact match
+// already found is still found) and lets the generator emit one uniform key per field without
+// a per-field wire-key override table. Why this over a table: one helper vs ~25 hand entries.
+func infoFieldRaw(data map[string]interface{}, field string) (interface{}, bool) {
+	info, ok := data["status"].(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	if v, ok := info[field]; ok {
+		return v, true
+	}
+	lf := strings.ToLower(field)
+	for k, v := range info {
+		if strings.ToLower(k) == lf {
+			return v, true
+		}
+	}
+	return nil, false
+}
+
+// getStringFromInfo extracts a string field from the "status" sub-object of an API response.
+func getStringFromInfo(data map[string]interface{}, field string) types.String {
+	if v, ok := infoFieldRaw(data, field); ok {
+		if s, ok := v.(string); ok {
+			return types.StringValue(s)
+		}
 	}
 	return types.StringValue("")
 }
 
-// getInt64FromInfo extracts an int64 field from the "info" sub-object.
+// getInt64FromInfo extracts an int64 field from the "status" sub-object.
 func getInt64FromInfo(data map[string]interface{}, field string) types.Int64 {
-	info, ok := data["info"].(map[string]interface{})
-	if !ok {
-		return types.Int64Value(0)
-	}
-	switch v := info[field].(type) {
-	case float64:
-		return types.Int64Value(int64(v))
-	case int64:
-		return types.Int64Value(v)
-	case int:
-		return types.Int64Value(int64(v))
+	if v, ok := infoFieldRaw(data, field); ok {
+		switch n := v.(type) {
+		case float64:
+			return types.Int64Value(int64(n))
+		case int64:
+			return types.Int64Value(n)
+		case int:
+			return types.Int64Value(int64(n))
+		}
 	}
 	return types.Int64Value(0)
 }
 
-// getBoolFromInfo extracts a bool field from the "info" sub-object.
+// getBoolFromInfo extracts a bool field from the "status" sub-object.
 func getBoolFromInfo(data map[string]interface{}, field string) types.Bool {
-	info, ok := data["info"].(map[string]interface{})
-	if !ok {
-		return types.BoolValue(false)
-	}
-	if v, ok := info[field].(bool); ok {
-		return types.BoolValue(v)
+	if v, ok := infoFieldRaw(data, field); ok {
+		if b, ok := v.(bool); ok {
+			return types.BoolValue(b)
+		}
 	}
 	return types.BoolValue(false)
 }

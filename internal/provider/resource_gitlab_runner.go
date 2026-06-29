@@ -14,98 +14,62 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// GitlabRunnerResourceModel describes the resource data model.
-type GitlabRunnerResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Tier types.String `tfsdk:"tier"`
-	VpcSubnetId types.String `tfsdk:"vpc_subnet_id"`
-	FloatingIpId types.String `tfsdk:"floating_ip_id"`
-	VmState types.String `tfsdk:"vm_state"`
-	VmOfferId types.String `tfsdk:"vm_offer_id"`
-	VolumeOfferId types.String `tfsdk:"volume_offer_id"`
-	VolumeSizeGib types.Int64 `tfsdk:"volume_size_gib"`
-	Concurrency types.Int64 `tfsdk:"concurrency"`
-	Version types.String `tfsdk:"version"`
+var gitlabRunnerGitlabInstancesObjFields = []objField{{TF: "runner_token", API: "runnerToken", Kind: "string"}, {TF: "url", API: "url", Kind: "string"}}
+
+type GitlabRunnerSpecModel struct {
+	Concurrency             types.Int64  `tfsdk:"concurrency"`
 	DockerOptionsJsonString types.String `tfsdk:"docker_options_json_string"`
-	Info types.Object `tfsdk:"info"`
+	FloatingIpId            types.String `tfsdk:"floating_ip_id"`
+	GitlabInstances         types.List   `tfsdk:"gitlab_instances"`
+	Tier                    types.String `tfsdk:"tier"`
+	Version                 types.String `tfsdk:"version"`
+	VmOfferId               types.String `tfsdk:"vm_offer_id"`
+	VmState                 types.String `tfsdk:"vm_state"`
+	VolumeOfferId           types.String `tfsdk:"volume_offer_id"`
+	VolumeSizeGib           types.Int64  `tfsdk:"volume_size_gib"`
+	VpcSubnetId             types.String `tfsdk:"vpc_subnet_id"`
 }
 
-// GitlabRunnerResource defines the resource implementation.
-type GitlabRunnerResource struct {
-	client *client.Client
+type GitlabRunnerResourceModel struct {
+	ID       types.String          `tfsdk:"id"`
+	Metadata metadataModel         `tfsdk:"metadata"`
+	Spec     GitlabRunnerSpecModel `tfsdk:"spec"`
+	Status   types.Object          `tfsdk:"status"`
 }
 
-func NewGitlabRunnerResource() resource.Resource {
-	return &GitlabRunnerResource{}
-}
+type GitlabRunnerResource struct{ client *client.Client }
+
+func NewGitlabRunnerResource() resource.Resource { return &GitlabRunnerResource{} }
 
 func (r *GitlabRunnerResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_gitlab_runner"
 }
 
+func GitlabRunnerResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"concurrency":                schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"docker_options_json_string": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"floating_ip_id":             schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"gitlab_instances":           listObjResourceSchema(gitlabRunnerGitlabInstancesObjFields),
+		"tier":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"version":                    schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"vm_offer_id":                schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"vm_state":                   schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"volume_offer_id":            schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"volume_size_gib":            schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"vpc_subnet_id":              schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *GitlabRunnerResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["tier"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["vpc_subnet_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["floating_ip_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["vm_state"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["vm_offer_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["volume_offer_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["volume_size_gib"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["concurrency"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["version"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["docker_options_json_string"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: GitlabRunnerResourceSchemaAttrs()}
 }
 
 func (r *GitlabRunnerResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -121,66 +85,71 @@ func (r *GitlabRunnerResource) Configure(_ context.Context, req resource.Configu
 }
 
 func buildGitlabRunnerRequestMap(ctx context.Context, plan GitlabRunnerResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.Tier.IsNull() && !plan.Tier.IsUnknown() {
-		m["tier"] = plan.Tier.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.Concurrency.IsNull() && !plan.Spec.Concurrency.IsUnknown() {
+		spec["concurrency"] = plan.Spec.Concurrency.ValueInt64()
 	}
-	if !plan.VpcSubnetId.IsNull() && !plan.VpcSubnetId.IsUnknown() {
-		m["vpcSubnetId"] = plan.VpcSubnetId.ValueString()
+	if !plan.Spec.DockerOptionsJsonString.IsNull() && !plan.Spec.DockerOptionsJsonString.IsUnknown() {
+		spec["dockerOptionsJsonString"] = plan.Spec.DockerOptionsJsonString.ValueString()
 	}
-	if !plan.FloatingIpId.IsNull() && !plan.FloatingIpId.IsUnknown() {
-		m["floatingIpId"] = plan.FloatingIpId.ValueString()
+	if !plan.Spec.FloatingIpId.IsNull() && !plan.Spec.FloatingIpId.IsUnknown() {
+		spec["floatingIpId"] = plan.Spec.FloatingIpId.ValueString()
 	}
-	if !plan.VmState.IsNull() && !plan.VmState.IsUnknown() {
-		m["vmState"] = plan.VmState.ValueString()
+	if !plan.Spec.GitlabInstances.IsNull() && !plan.Spec.GitlabInstances.IsUnknown() {
+		spec["gitlabInstances"] = listObjToAPI(plan.Spec.GitlabInstances, gitlabRunnerGitlabInstancesObjFields)
 	}
-	if !plan.VmOfferId.IsNull() && !plan.VmOfferId.IsUnknown() {
-		m["vmOfferId"] = plan.VmOfferId.ValueString()
+	if !plan.Spec.Tier.IsNull() && !plan.Spec.Tier.IsUnknown() {
+		spec["tier"] = plan.Spec.Tier.ValueString()
 	}
-	if !plan.VolumeOfferId.IsNull() && !plan.VolumeOfferId.IsUnknown() {
-		m["volumeOfferId"] = plan.VolumeOfferId.ValueString()
+	if !plan.Spec.Version.IsNull() && !plan.Spec.Version.IsUnknown() {
+		spec["version"] = plan.Spec.Version.ValueString()
 	}
-	if !plan.VolumeSizeGib.IsNull() && !plan.VolumeSizeGib.IsUnknown() {
-		m["volumeSizeGiB"] = plan.VolumeSizeGib.ValueInt64()
+	if !plan.Spec.VmOfferId.IsNull() && !plan.Spec.VmOfferId.IsUnknown() {
+		spec["vmOfferId"] = plan.Spec.VmOfferId.ValueString()
 	}
-	if !plan.Concurrency.IsNull() && !plan.Concurrency.IsUnknown() {
-		m["concurrency"] = plan.Concurrency.ValueInt64()
+	if !plan.Spec.VmState.IsNull() && !plan.Spec.VmState.IsUnknown() {
+		spec["vmState"] = plan.Spec.VmState.ValueString()
 	}
-	if !plan.Version.IsNull() && !plan.Version.IsUnknown() {
-		m["version"] = plan.Version.ValueString()
+	if !plan.Spec.VolumeOfferId.IsNull() && !plan.Spec.VolumeOfferId.IsUnknown() {
+		spec["volumeOfferId"] = plan.Spec.VolumeOfferId.ValueString()
 	}
-	if !plan.DockerOptionsJsonString.IsNull() && !plan.DockerOptionsJsonString.IsUnknown() {
-		m["dockerOptionsJsonString"] = plan.DockerOptionsJsonString.ValueString()
+	if !plan.Spec.VolumeSizeGib.IsNull() && !plan.Spec.VolumeSizeGib.IsUnknown() {
+		spec["volumeSizeGiB"] = plan.Spec.VolumeSizeGib.ValueInt64()
+	}
+	if !plan.Spec.VpcSubnetId.IsNull() && !plan.Spec.VpcSubnetId.IsUnknown() {
+		spec["vpcSubnetId"] = plan.Spec.VpcSubnetId.ValueString()
 	}
 	return m
 }
 
 func populateGitlabRunnerState(ctx context.Context, data map[string]interface{}, state *GitlabRunnerResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.Tier = getString(data, "tier")
-	state.VpcSubnetId = getString(data, "vpcSubnetId")
-	state.FloatingIpId = getString(data, "floatingIpId")
-	state.VmState = getString(data, "vmState")
-	state.VmOfferId = getString(data, "vmOfferId")
-	state.VolumeOfferId = getString(data, "volumeOfferId")
-	state.VolumeSizeGib = getInt64(data, "volumeSizeGiB")
-	state.Concurrency = getInt64(data, "concurrency")
-	state.Version = getString(data, "version")
-	state.DockerOptionsJsonString = getString(data, "dockerOptionsJsonString")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.Concurrency = getInt64(spec, "concurrency")
+	state.Spec.DockerOptionsJsonString = getString(spec, "dockerOptionsJsonString")
+	state.Spec.FloatingIpId = getString(spec, "floatingIpId")
+	state.Spec.GitlabInstances = listObjFromAPI(objList(spec, "gitlabInstances"), gitlabRunnerGitlabInstancesObjFields)
+	state.Spec.Tier = getString(spec, "tier")
+	state.Spec.Version = getString(spec, "version")
+	state.Spec.VmOfferId = getString(spec, "vmOfferId")
+	state.Spec.VmState = getString(spec, "vmState")
+	state.Spec.VolumeOfferId = getString(spec, "volumeOfferId")
+	state.Spec.VolumeSizeGib = getInt64(spec, "volumeSizeGiB")
+	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *GitlabRunnerResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan GitlabRunnerResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildGitlabRunnerRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/gitlab-runner", body)
@@ -192,7 +161,6 @@ func (r *GitlabRunnerResource) Create(ctx context.Context, req resource.CreateRe
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -207,21 +175,18 @@ func (r *GitlabRunnerResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 	if err := populateGitlabRunnerState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *GitlabRunnerResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state GitlabRunnerResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/gitlab-runner", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -232,28 +197,20 @@ func (r *GitlabRunnerResource) Read(ctx context.Context, req resource.ReadReques
 		return
 	}
 	if err := populateGitlabRunnerState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *GitlabRunnerResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan GitlabRunnerResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state GitlabRunnerResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state GitlabRunnerResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildGitlabRunnerRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/gitlab-runner", body)
 	if err != nil {
@@ -264,32 +221,28 @@ func (r *GitlabRunnerResource) Update(ctx context.Context, req resource.UpdateRe
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/gitlab-runner", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateGitlabRunnerState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *GitlabRunnerResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state GitlabRunnerResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/gitlab-runner", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -302,7 +255,6 @@ func (r *GitlabRunnerResource) Delete(ctx context.Context, req resource.DeleteRe
 }
 
 func (r *GitlabRunnerResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state GitlabRunnerResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/gitlab-runner", req.ID)
@@ -311,13 +263,12 @@ func (r *GitlabRunnerResource) ImportState(ctx context.Context, req resource.Imp
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateGitlabRunnerState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

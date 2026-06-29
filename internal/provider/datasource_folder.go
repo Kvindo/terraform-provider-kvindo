@@ -11,37 +11,27 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// FolderDataSourceModel describes the data source data model.
 type FolderDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	InfoState types.String `tfsdk:"info_state"`
+	ID       types.String  `tfsdk:"id"`
+	Metadata metadataModel `tfsdk:"metadata"`
+	Status   types.Object  `tfsdk:"status"`
 }
 
-type FolderDataSource struct {
-	client *client.Client
-}
+type FolderDataSource struct{ client *client.Client }
 
-func NewFolderDataSource() datasource.DataSource {
-	return &FolderDataSource{}
-}
+func NewFolderDataSource() datasource.DataSource { return &FolderDataSource{} }
 
 func (d *FolderDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_folder"
 }
 
 func (d *FolderDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"status":   commonInfoDatasourceSchema(nil),
+	}}
 }
 
 func (d *FolderDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -58,12 +48,10 @@ func (d *FolderDataSource) Configure(_ context.Context, req datasource.Configure
 
 func (d *FolderDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state FolderDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/folder", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -73,11 +61,10 @@ func (d *FolderDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.InfoState = getStringFromInfo(apiData, "state")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	state.Status = simpleStateInfoObj(apiData)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

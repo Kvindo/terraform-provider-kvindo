@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -11,49 +12,36 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// VpcDataSourceModel describes the data source data model.
 type VpcDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	HostingProviderId types.String `tfsdk:"hosting_provider_id"`
-	Ipv4Cidr types.String `tfsdk:"ipv4_cidr"`
-	NatFloatingIpId types.String `tfsdk:"nat_floating_ip_id"`
-	SecurityGroupIds types.List `tfsdk:"security_group_ids"`
-	ExternallyManaged types.Bool `tfsdk:"externally_managed"`
-	InfoState types.String `tfsdk:"info_state"`
-	InfoNatPublicIpV4 types.String `tfsdk:"info_nat_public_ip_v4"`
+	ID       types.String  `tfsdk:"id"`
+	Metadata metadataModel `tfsdk:"metadata"`
+	Spec     VpcSpecModel  `tfsdk:"spec"`
+	Status   types.Object  `tfsdk:"status"`
 }
 
-type VpcDataSource struct {
-	client *client.Client
-}
+type VpcDataSource struct{ client *client.Client }
 
-func NewVpcDataSource() datasource.DataSource {
-	return &VpcDataSource{}
-}
+func NewVpcDataSource() datasource.DataSource { return &VpcDataSource{} }
 
 func (d *VpcDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_vpc"
 }
 
 func (d *VpcDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["hosting_provider_id"] = schema.StringAttribute{Computed: true}
-	attrs["ipv4_cidr"] = schema.StringAttribute{Computed: true}
-	attrs["nat_floating_ip_id"] = schema.StringAttribute{Computed: true}
-	attrs["security_group_ids"] = schema.ListAttribute{Computed: true, ElementType: types.StringType}
-	attrs["externally_managed"] = schema.BoolAttribute{Computed: true}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-	attrs["info_nat_public_ip_v4"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"externally_managed":  schema.BoolAttribute{Computed: true},
+		"hosting_provider_id": schema.StringAttribute{Computed: true},
+		"ipv4_cidr":           schema.StringAttribute{Computed: true},
+		"nat_floating_ip_id":  schema.StringAttribute{Computed: true},
+		"security_group_ids":  schema.ListAttribute{Computed: true, ElementType: types.StringType},
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"nat_public_ip_v4": schema.StringAttribute{Computed: true}}),
+	}}
 }
 
 func (d *VpcDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -70,12 +58,10 @@ func (d *VpcDataSource) Configure(_ context.Context, req datasource.ConfigureReq
 
 func (d *VpcDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state VpcDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/vpc", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -85,17 +71,22 @@ func (d *VpcDataSource) Read(ctx context.Context, req datasource.ReadRequest, re
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.HostingProviderId = getString(apiData, "hostingProviderId")
-	state.Ipv4Cidr = getString(apiData, "ipv4Cidr")
-	state.NatFloatingIpId = getString(apiData, "natFloatingIpId")
-	state.SecurityGroupIds = getStringList(ctx, apiData, "securityGroupIds")
-	state.ExternallyManaged = getBool(apiData, "externallyManaged")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	state.InfoNatPublicIpV4 = getStringFromInfo(apiData, "natpublicipv4")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.ExternallyManaged = getBool(spec, "externallyManaged")
+	state.Spec.HostingProviderId = getString(spec, "hostingProviderId")
+	state.Spec.Ipv4Cidr = getString(spec, "ipv4Cidr")
+	state.Spec.NatFloatingIpId = getString(spec, "natFloatingIpId")
+	state.Spec.SecurityGroupIds = getStringList(ctx, spec, "securityGroupIds")
+	state.Status = buildInfoObj(apiData,
+		map[string]attr.Type{
+			"nat_public_ip_v4": types.StringType,
+		},
+		map[string]attr.Value{
+			"nat_public_ip_v4": getStringFromInfo(apiData, "natPublicIpV4"),
+		})
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

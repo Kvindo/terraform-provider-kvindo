@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
@@ -16,86 +16,54 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// S3BucketResourceModel describes the resource data model.
+type S3BucketSpecModel struct {
+	ComplianceRetentionDays types.Int64  `tfsdk:"compliance_retention_days"`
+	IsLockEnabled           types.Bool   `tfsdk:"is_lock_enabled"`
+	IsPublic                types.Bool   `tfsdk:"is_public"`
+	IsVersioned             types.Bool   `tfsdk:"is_versioned"`
+	ObjectExpirationDays    types.Int64  `tfsdk:"object_expiration_days"`
+	QuotaGib                types.Int64  `tfsdk:"quota_gib"`
+	Region                  types.String `tfsdk:"region"`
+	Tier                    types.String `tfsdk:"tier"`
+}
+
 type S3BucketResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Tier types.String `tfsdk:"tier"`
-	Region types.String `tfsdk:"region"`
-	IsPublic types.Bool `tfsdk:"is_public"`
-	IsLockEnabled types.Bool `tfsdk:"is_lock_enabled"`
-	IsVersioned types.Bool `tfsdk:"is_versioned"`
-	ObjectExpirationDays types.Int64 `tfsdk:"object_expiration_days"`
-	ComplianceRetentionDays types.Int64 `tfsdk:"compliance_retention_days"`
-	QuotaGib types.Int64 `tfsdk:"quota_gib"`
-	Info types.Object `tfsdk:"info"`
+	ID       types.String      `tfsdk:"id"`
+	Metadata metadataModel     `tfsdk:"metadata"`
+	Spec     S3BucketSpecModel `tfsdk:"spec"`
+	Status   types.Object      `tfsdk:"status"`
 }
 
-// S3BucketResource defines the resource implementation.
-type S3BucketResource struct {
-	client *client.Client
-}
+type S3BucketResource struct{ client *client.Client }
 
-func NewS3BucketResource() resource.Resource {
-	return &S3BucketResource{}
-}
+func NewS3BucketResource() resource.Resource { return &S3BucketResource{} }
 
 func (r *S3BucketResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_s3_bucket"
 }
 
+func S3BucketResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"compliance_retention_days": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"is_lock_enabled":           schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
+		"is_public":                 schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
+		"is_versioned":              schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
+		"object_expiration_days":    schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"quota_gib":                 schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"region":                    schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"tier":                      schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(map[string]schema.Attribute{"endpoint_url": schema.StringAttribute{Computed: true}}),
+	}
+}
+
 func (r *S3BucketResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["tier"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["region"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["is_public"] = schema.BoolAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
-		}
-	attrs["is_lock_enabled"] = schema.BoolAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
-		}
-	attrs["is_versioned"] = schema.BoolAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
-		}
-	attrs["object_expiration_days"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["compliance_retention_days"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["quota_gib"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}, "endpoint_url": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: S3BucketResourceSchemaAttrs()}
 }
 
 func (r *S3BucketResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -111,58 +79,65 @@ func (r *S3BucketResource) Configure(_ context.Context, req resource.ConfigureRe
 }
 
 func buildS3BucketRequestMap(ctx context.Context, plan S3BucketResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.Tier.IsNull() && !plan.Tier.IsUnknown() {
-		m["tier"] = plan.Tier.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.ComplianceRetentionDays.IsNull() && !plan.Spec.ComplianceRetentionDays.IsUnknown() {
+		spec["complianceRetentionDays"] = plan.Spec.ComplianceRetentionDays.ValueInt64()
 	}
-	if !plan.Region.IsNull() && !plan.Region.IsUnknown() {
-		m["region"] = plan.Region.ValueString()
+	if !plan.Spec.IsLockEnabled.IsNull() && !plan.Spec.IsLockEnabled.IsUnknown() {
+		spec["isLockEnabled"] = plan.Spec.IsLockEnabled.ValueBool()
 	}
-	if !plan.IsPublic.IsNull() && !plan.IsPublic.IsUnknown() {
-		m["isPublic"] = plan.IsPublic.ValueBool()
+	if !plan.Spec.IsPublic.IsNull() && !plan.Spec.IsPublic.IsUnknown() {
+		spec["isPublic"] = plan.Spec.IsPublic.ValueBool()
 	}
-	if !plan.IsLockEnabled.IsNull() && !plan.IsLockEnabled.IsUnknown() {
-		m["isLockEnabled"] = plan.IsLockEnabled.ValueBool()
+	if !plan.Spec.IsVersioned.IsNull() && !plan.Spec.IsVersioned.IsUnknown() {
+		spec["isVersioned"] = plan.Spec.IsVersioned.ValueBool()
 	}
-	if !plan.IsVersioned.IsNull() && !plan.IsVersioned.IsUnknown() {
-		m["isVersioned"] = plan.IsVersioned.ValueBool()
+	if !plan.Spec.ObjectExpirationDays.IsNull() && !plan.Spec.ObjectExpirationDays.IsUnknown() {
+		spec["objectExpirationDays"] = plan.Spec.ObjectExpirationDays.ValueInt64()
 	}
-	if !plan.ObjectExpirationDays.IsNull() && !plan.ObjectExpirationDays.IsUnknown() {
-		m["objectExpirationDays"] = plan.ObjectExpirationDays.ValueInt64()
+	if !plan.Spec.QuotaGib.IsNull() && !plan.Spec.QuotaGib.IsUnknown() {
+		spec["quotaGiB"] = plan.Spec.QuotaGib.ValueInt64()
 	}
-	if !plan.ComplianceRetentionDays.IsNull() && !plan.ComplianceRetentionDays.IsUnknown() {
-		m["complianceRetentionDays"] = plan.ComplianceRetentionDays.ValueInt64()
+	if !plan.Spec.Region.IsNull() && !plan.Spec.Region.IsUnknown() {
+		spec["region"] = plan.Spec.Region.ValueString()
 	}
-	if !plan.QuotaGib.IsNull() && !plan.QuotaGib.IsUnknown() {
-		m["quotaGiB"] = plan.QuotaGib.ValueInt64()
+	if !plan.Spec.Tier.IsNull() && !plan.Spec.Tier.IsUnknown() {
+		spec["tier"] = plan.Spec.Tier.ValueString()
 	}
 	return m
 }
 
 func populateS3BucketState(ctx context.Context, data map[string]interface{}, state *S3BucketResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.Tier = getString(data, "tier")
-	state.Region = getString(data, "region")
-	state.IsPublic = getBool(data, "isPublic")
-	state.IsLockEnabled = getBool(data, "isLockEnabled")
-	state.IsVersioned = getBool(data, "isVersioned")
-	state.ObjectExpirationDays = getInt64(data, "objectExpirationDays")
-	state.ComplianceRetentionDays = getInt64(data, "complianceRetentionDays")
-	state.QuotaGib = getInt64(data, "quotaGiB")
-	state.Info, _ = types.ObjectValue(map[string]attr.Type{"state": types.StringType, "endpoint_url": types.StringType}, map[string]attr.Value{"state": getStringFromInfo(data, "state"), "endpoint_url": getStringFromInfo(data, "endpointUrl")})
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.ComplianceRetentionDays = getInt64(spec, "complianceRetentionDays")
+	state.Spec.IsLockEnabled = getBool(spec, "isLockEnabled")
+	state.Spec.IsPublic = getBool(spec, "isPublic")
+	state.Spec.IsVersioned = getBool(spec, "isVersioned")
+	state.Spec.ObjectExpirationDays = getInt64(spec, "objectExpirationDays")
+	state.Spec.QuotaGib = getInt64(spec, "quotaGiB")
+	state.Spec.Region = getString(spec, "region")
+	state.Spec.Tier = getString(spec, "tier")
+	state.Status = buildInfoObj(data,
+		map[string]attr.Type{
+			"endpoint_url": types.StringType,
+		},
+		map[string]attr.Value{
+			"endpoint_url": getStringFromInfo(data, "endpointUrl"),
+		})
 	return nil
 }
 
 func (r *S3BucketResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan S3BucketResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildS3BucketRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/s3-bucket", body)
@@ -174,7 +149,6 @@ func (r *S3BucketResource) Create(ctx context.Context, req resource.CreateReques
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -189,21 +163,18 @@ func (r *S3BucketResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 	if err := populateS3BucketState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *S3BucketResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state S3BucketResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/s3-bucket", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -214,28 +185,20 @@ func (r *S3BucketResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 	if err := populateS3BucketState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *S3BucketResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan S3BucketResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state S3BucketResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state S3BucketResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildS3BucketRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/s3-bucket", body)
 	if err != nil {
@@ -246,32 +209,28 @@ func (r *S3BucketResource) Update(ctx context.Context, req resource.UpdateReques
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/s3-bucket", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateS3BucketState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *S3BucketResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state S3BucketResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/s3-bucket", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -284,7 +243,6 @@ func (r *S3BucketResource) Delete(ctx context.Context, req resource.DeleteReques
 }
 
 func (r *S3BucketResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state S3BucketResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/s3-bucket", req.ID)
@@ -293,13 +251,12 @@ func (r *S3BucketResource) ImportState(ctx context.Context, req resource.ImportS
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateS3BucketState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

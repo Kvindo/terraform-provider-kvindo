@@ -11,30 +11,15 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// LoadbalancerTlsListenerDataSourceModel describes the data source data model.
 type LoadbalancerTlsListenerDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	LoadbalancerId types.String `tfsdk:"loadbalancer_id"`
-	Interface types.String `tfsdk:"interface"`
-	Order types.Int64 `tfsdk:"order"`
-	Ports types.List `tfsdk:"ports"`
-	Hosts types.List `tfsdk:"hosts"`
-	TlsCertificateId types.String `tfsdk:"tls_certificate_id"`
-	TlsProtocols types.List `tfsdk:"tls_protocols"`
-	TlsAutogenerateCertificate types.Bool `tfsdk:"tls_autogenerate_certificate"`
-	InfoState types.String `tfsdk:"info_state"`
+	ID       types.String                     `tfsdk:"id"`
+	Metadata metadataModel                    `tfsdk:"metadata"`
+	Spec     LoadbalancerTlsListenerSpecModel `tfsdk:"spec"`
+	Status   types.Object                     `tfsdk:"status"`
 }
 
-type LoadbalancerTlsListenerDataSource struct {
-	client *client.Client
-}
+type LoadbalancerTlsListenerDataSource struct{ client *client.Client }
 
 func NewLoadbalancerTlsListenerDataSource() datasource.DataSource {
 	return &LoadbalancerTlsListenerDataSource{}
@@ -45,19 +30,21 @@ func (d *LoadbalancerTlsListenerDataSource) Metadata(_ context.Context, req data
 }
 
 func (d *LoadbalancerTlsListenerDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["loadbalancer_id"] = schema.StringAttribute{Computed: true}
-	attrs["interface"] = schema.StringAttribute{Computed: true}
-	attrs["order"] = schema.Int64Attribute{Computed: true}
-	attrs["ports"] = schema.ListAttribute{Computed: true, ElementType: types.StringType}
-	attrs["hosts"] = schema.ListAttribute{Computed: true, ElementType: types.StringType}
-	attrs["tls_certificate_id"] = schema.StringAttribute{Computed: true}
-	attrs["tls_protocols"] = schema.ListAttribute{Computed: true, ElementType: types.StringType}
-	attrs["tls_autogenerate_certificate"] = schema.BoolAttribute{Computed: true}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"hosts":           schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"interface":       schema.StringAttribute{Computed: true},
+		"loadbalancer_id": schema.StringAttribute{Computed: true},
+		"order":           schema.Int64Attribute{Computed: true},
+		"ports":           schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"security_rules":  listObjDatasourceSchema(loadbalancerTlsListenerSecurityRulesObjFields),
+		"tls":             objDatasourceSchema(loadbalancerTlsListenerTlsObjFields),
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(nil),
+	}}
 }
 
 func (d *LoadbalancerTlsListenerDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -74,12 +61,10 @@ func (d *LoadbalancerTlsListenerDataSource) Configure(_ context.Context, req dat
 
 func (d *LoadbalancerTlsListenerDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state LoadbalancerTlsListenerDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/loadbalancer-tls-listener", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -89,19 +74,18 @@ func (d *LoadbalancerTlsListenerDataSource) Read(ctx context.Context, req dataso
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.LoadbalancerId = getString(apiData, "loadbalancerId")
-	state.Interface = getString(apiData, "interface")
-	state.Order = getInt64(apiData, "order")
-	state.Ports = getStringList(ctx, apiData, "ports")
-	state.Hosts = getStringList(ctx, apiData, "hosts")
-	state.TlsCertificateId = getString(apiData, "tlsCertificateId")
-	state.TlsProtocols = getStringList(ctx, apiData, "tlsProtocols")
-	state.TlsAutogenerateCertificate = getBool(apiData, "tlsAutogenerateCertificate")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.Hosts = getStringList(ctx, spec, "hosts")
+	state.Spec.Interface = getString(spec, "interface")
+	state.Spec.LoadbalancerId = getString(spec, "loadbalancerId")
+	state.Spec.Order = getInt64(spec, "order")
+	state.Spec.Ports = getStringList(ctx, spec, "ports")
+	state.Spec.SecurityRules = listObjFromAPI(objList(spec, "securityRules"), loadbalancerTlsListenerSecurityRulesObjFields)
+	state.Spec.Tls = objFromAPI(objMap(spec, "tls"), loadbalancerTlsListenerTlsObjFields)
+	state.Status = simpleStateInfoObj(apiData)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

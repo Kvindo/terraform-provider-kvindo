@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -15,99 +15,60 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// PostgresqlStandaloneResourceModel describes the resource data model.
-type PostgresqlStandaloneResourceModel struct {
-	ID                  types.String `tfsdk:"id"`
-	Name                types.String `tfsdk:"name"`
-	Description         types.String `tfsdk:"description"`
-	FolderID            types.String `tfsdk:"folder_id"`
-	DeleteProtection    types.Bool   `tfsdk:"delete_protection"`
-	Labels              types.Map    `tfsdk:"labels"`
-	Tier                types.String `tfsdk:"tier"`
-	Version             types.String `tfsdk:"version"`
-	RootPassword        types.String `tfsdk:"root_password"`
-	ParametersSetId     types.String `tfsdk:"parameters_set_id"`
+type PostgresqlStandaloneSpecModel struct {
 	BackupRetentionDays types.Int64  `tfsdk:"backup_retention_days"`
 	FloatingIpId        types.String `tfsdk:"floating_ip_id"`
-	VpcSubnetId         types.String `tfsdk:"vpc_subnet_id"`
-	VmState             types.String `tfsdk:"vm_state"`
+	ParametersSetId     types.String `tfsdk:"parameters_set_id"`
+	RootPassword        types.String `tfsdk:"root_password"`
+	Tier                types.String `tfsdk:"tier"`
+	Version             types.String `tfsdk:"version"`
 	VmOfferId           types.String `tfsdk:"vm_offer_id"`
+	VmState             types.String `tfsdk:"vm_state"`
 	VolumeOfferId       types.String `tfsdk:"volume_offer_id"`
 	VolumeSizeGib       types.Int64  `tfsdk:"volume_size_gib"`
-	Info types.Object `tfsdk:"info"`
+	VpcSubnetId         types.String `tfsdk:"vpc_subnet_id"`
 }
 
-// PostgresqlStandaloneResource defines the resource implementation.
-type PostgresqlStandaloneResource struct {
-	client *client.Client
+type PostgresqlStandaloneResourceModel struct {
+	ID       types.String                  `tfsdk:"id"`
+	Metadata metadataModel                 `tfsdk:"metadata"`
+	Spec     PostgresqlStandaloneSpecModel `tfsdk:"spec"`
+	Status   types.Object                  `tfsdk:"status"`
 }
 
-func NewPostgresqlStandaloneResource() resource.Resource {
-	return &PostgresqlStandaloneResource{}
-}
+type PostgresqlStandaloneResource struct{ client *client.Client }
+
+func NewPostgresqlStandaloneResource() resource.Resource { return &PostgresqlStandaloneResource{} }
 
 func (r *PostgresqlStandaloneResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_postgresql_standalone"
 }
 
+func PostgresqlStandaloneResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"backup_retention_days": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"floating_ip_id":        schema.StringAttribute{Optional: true},
+		"parameters_set_id":     schema.StringAttribute{Optional: true},
+		"root_password":         schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"tier":                  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"version":               schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"vm_offer_id":           schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"vm_state":              schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"volume_offer_id":       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"volume_size_gib":       schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"vpc_subnet_id":         schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(map[string]schema.Attribute{"port": schema.Int64Attribute{Computed: true}, "private_ip_v4": schema.StringAttribute{Computed: true}, "public_ip_v4": schema.StringAttribute{Computed: true}, "root_user_name": schema.StringAttribute{Computed: true}}),
+	}
+}
+
 func (r *PostgresqlStandaloneResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["tier"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["version"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["root_password"] = schema.StringAttribute{
-			Optional:  true,
-			Sensitive: true,
-		}
-	attrs["parameters_set_id"] = schema.StringAttribute{
-			Optional: true,
-		}
-	attrs["backup_retention_days"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["floating_ip_id"] = schema.StringAttribute{
-			Optional: true,
-		}
-	attrs["vpc_subnet_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["vm_state"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["vm_offer_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["volume_offer_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["volume_size_gib"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}, "root_user_name": schema.StringAttribute{Computed: true}, "public_ip_v4": schema.StringAttribute{Computed: true}, "private_ip_v4": schema.StringAttribute{Computed: true}, "port": schema.Int64Attribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: PostgresqlStandaloneResourceSchemaAttrs()}
 }
 
 func (r *PostgresqlStandaloneResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -123,69 +84,83 @@ func (r *PostgresqlStandaloneResource) Configure(_ context.Context, req resource
 }
 
 func buildPostgresqlStandaloneRequestMap(ctx context.Context, plan PostgresqlStandaloneResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.Tier.IsNull() && !plan.Tier.IsUnknown() {
-		m["tier"] = plan.Tier.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.BackupRetentionDays.IsNull() && !plan.Spec.BackupRetentionDays.IsUnknown() {
+		spec["backupRetentionDays"] = plan.Spec.BackupRetentionDays.ValueInt64()
 	}
-	if !plan.Version.IsNull() && !plan.Version.IsUnknown() {
-		m["version"] = plan.Version.ValueString()
+	if !plan.Spec.FloatingIpId.IsNull() && !plan.Spec.FloatingIpId.IsUnknown() {
+		spec["floatingIpId"] = plan.Spec.FloatingIpId.ValueString()
 	}
-	if !plan.RootPassword.IsNull() && !plan.RootPassword.IsUnknown() {
-		m["rootPassword"] = plan.RootPassword.ValueString()
+	if !plan.Spec.ParametersSetId.IsNull() && !plan.Spec.ParametersSetId.IsUnknown() {
+		spec["parametersSetId"] = plan.Spec.ParametersSetId.ValueString()
 	}
-	if !plan.ParametersSetId.IsNull() && !plan.ParametersSetId.IsUnknown() {
-		m["parametersSetId"] = plan.ParametersSetId.ValueString()
+	if !plan.Spec.RootPassword.IsNull() && !plan.Spec.RootPassword.IsUnknown() {
+		spec["rootPassword"] = plan.Spec.RootPassword.ValueString()
 	}
-	if !plan.BackupRetentionDays.IsNull() && !plan.BackupRetentionDays.IsUnknown() {
-		m["backupRetentionDays"] = plan.BackupRetentionDays.ValueInt64()
+	if !plan.Spec.Tier.IsNull() && !plan.Spec.Tier.IsUnknown() {
+		spec["tier"] = plan.Spec.Tier.ValueString()
 	}
-	if !plan.FloatingIpId.IsNull() && !plan.FloatingIpId.IsUnknown() {
-		m["floatingIpId"] = plan.FloatingIpId.ValueString()
+	if !plan.Spec.Version.IsNull() && !plan.Spec.Version.IsUnknown() {
+		spec["version"] = plan.Spec.Version.ValueString()
 	}
-	if !plan.VpcSubnetId.IsNull() && !plan.VpcSubnetId.IsUnknown() {
-		m["vpcSubnetId"] = plan.VpcSubnetId.ValueString()
+	if !plan.Spec.VmOfferId.IsNull() && !plan.Spec.VmOfferId.IsUnknown() {
+		spec["vmOfferId"] = plan.Spec.VmOfferId.ValueString()
 	}
-	if !plan.VmState.IsNull() && !plan.VmState.IsUnknown() {
-		m["vmState"] = plan.VmState.ValueString()
+	if !plan.Spec.VmState.IsNull() && !plan.Spec.VmState.IsUnknown() {
+		spec["vmState"] = plan.Spec.VmState.ValueString()
 	}
-	if !plan.VmOfferId.IsNull() && !plan.VmOfferId.IsUnknown() {
-		m["vmOfferId"] = plan.VmOfferId.ValueString()
+	if !plan.Spec.VolumeOfferId.IsNull() && !plan.Spec.VolumeOfferId.IsUnknown() {
+		spec["volumeOfferId"] = plan.Spec.VolumeOfferId.ValueString()
 	}
-	if !plan.VolumeOfferId.IsNull() && !plan.VolumeOfferId.IsUnknown() {
-		m["volumeOfferId"] = plan.VolumeOfferId.ValueString()
+	if !plan.Spec.VolumeSizeGib.IsNull() && !plan.Spec.VolumeSizeGib.IsUnknown() {
+		spec["volumeSizeGiB"] = plan.Spec.VolumeSizeGib.ValueInt64()
 	}
-	if !plan.VolumeSizeGib.IsNull() && !plan.VolumeSizeGib.IsUnknown() {
-		m["volumeSizeGiB"] = plan.VolumeSizeGib.ValueInt64()
+	if !plan.Spec.VpcSubnetId.IsNull() && !plan.Spec.VpcSubnetId.IsUnknown() {
+		spec["vpcSubnetId"] = plan.Spec.VpcSubnetId.ValueString()
 	}
 	return m
 }
 
 func populatePostgresqlStandaloneState(ctx context.Context, data map[string]interface{}, state *PostgresqlStandaloneResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.Tier = getString(data, "tier")
-	state.Version = getString(data, "version")
-	state.ParametersSetId = getString(data, "parametersSetId")
-	state.BackupRetentionDays = getInt64(data, "backupRetentionDays")
-	state.FloatingIpId = getString(data, "floatingIpId")
-	state.VpcSubnetId = getString(data, "vpcSubnetId")
-	state.VmState = getString(data, "vmState")
-	state.VmOfferId = getString(data, "vmOfferId")
-	state.VolumeOfferId = getString(data, "volumeOfferId")
-	state.VolumeSizeGib = getInt64(data, "volumeSizeGiB")
-	state.Info, _ = types.ObjectValue(map[string]attr.Type{"state": types.StringType, "root_user_name": types.StringType, "public_ip_v4": types.StringType, "private_ip_v4": types.StringType, "port": types.Int64Type}, map[string]attr.Value{"state": getStringFromInfo(data, "state"), "root_user_name": getStringFromInfo(data, "rootUserName"), "public_ip_v4": getStringFromInfo(data, "publicipv4"), "private_ip_v4": getStringFromInfo(data, "privateipv4"), "port": getInt64FromInfo(data, "port")})
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.BackupRetentionDays = getInt64(spec, "backupRetentionDays")
+	state.Spec.FloatingIpId = getString(spec, "floatingIpId")
+	state.Spec.ParametersSetId = getString(spec, "parametersSetId")
+	state.Spec.RootPassword = getString(spec, "rootPassword")
+	state.Spec.Tier = getString(spec, "tier")
+	state.Spec.Version = getString(spec, "version")
+	state.Spec.VmOfferId = getString(spec, "vmOfferId")
+	state.Spec.VmState = getString(spec, "vmState")
+	state.Spec.VolumeOfferId = getString(spec, "volumeOfferId")
+	state.Spec.VolumeSizeGib = getInt64(spec, "volumeSizeGiB")
+	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
+	state.Status = buildInfoObj(data,
+		map[string]attr.Type{
+			"port":           types.Int64Type,
+			"private_ip_v4":  types.StringType,
+			"public_ip_v4":   types.StringType,
+			"root_user_name": types.StringType,
+		},
+		map[string]attr.Value{
+			"port":           getInt64FromInfo(data, "port"),
+			"private_ip_v4":  getStringFromInfo(data, "privateIpV4"),
+			"public_ip_v4":   getStringFromInfo(data, "publicIpV4"),
+			"root_user_name": getStringFromInfo(data, "rootUserName"),
+		})
 	return nil
 }
 
 func (r *PostgresqlStandaloneResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan PostgresqlStandaloneResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildPostgresqlStandaloneRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/postgresql-standalone", body)
@@ -197,7 +172,6 @@ func (r *PostgresqlStandaloneResource) Create(ctx context.Context, req resource.
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -212,21 +186,18 @@ func (r *PostgresqlStandaloneResource) Create(ctx context.Context, req resource.
 		return
 	}
 	if err := populatePostgresqlStandaloneState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *PostgresqlStandaloneResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state PostgresqlStandaloneResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/postgresql-standalone", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -237,28 +208,20 @@ func (r *PostgresqlStandaloneResource) Read(ctx context.Context, req resource.Re
 		return
 	}
 	if err := populatePostgresqlStandaloneState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *PostgresqlStandaloneResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan PostgresqlStandaloneResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state PostgresqlStandaloneResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state PostgresqlStandaloneResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildPostgresqlStandaloneRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/postgresql-standalone", body)
 	if err != nil {
@@ -269,32 +232,28 @@ func (r *PostgresqlStandaloneResource) Update(ctx context.Context, req resource.
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/postgresql-standalone", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populatePostgresqlStandaloneState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *PostgresqlStandaloneResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state PostgresqlStandaloneResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/postgresql-standalone", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -307,7 +266,6 @@ func (r *PostgresqlStandaloneResource) Delete(ctx context.Context, req resource.
 }
 
 func (r *PostgresqlStandaloneResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state PostgresqlStandaloneResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/postgresql-standalone", req.ID)
@@ -316,13 +274,12 @@ func (r *PostgresqlStandaloneResource) ImportState(ctx context.Context, req reso
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populatePostgresqlStandaloneState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

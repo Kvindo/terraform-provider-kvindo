@@ -4,118 +4,55 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/kvindo/terraform-provider-kvindo/internal/client"
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
-var _ = listplanmodifier.UseStateForUnknown
 
-// SecurityGroupResourceModel describes the resource data model.
-type SecurityGroupResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
+var securityGroupEgressObjFields = []objField{{TF: "action", API: "action", Kind: "string"}, {TF: "ipv4_blocks", API: "ipv4Blocks", Kind: "list_string"}, {TF: "ports", API: "ports", Kind: "list_string"}}
+
+var securityGroupIngressObjFields = []objField{{TF: "action", API: "action", Kind: "string"}, {TF: "ipv4_blocks", API: "ipv4Blocks", Kind: "list_string"}, {TF: "ports", API: "ports", Kind: "list_string"}}
+
+type SecurityGroupSpecModel struct {
+	Egress  types.List `tfsdk:"egress"`
 	Ingress types.List `tfsdk:"ingress"`
-	Egress types.List `tfsdk:"egress"`
-	Info types.Object `tfsdk:"info"`
 }
 
-// SecurityGroupIngressModel is the nested object model for ingress.
-type SecurityGroupIngressModel struct {
-	Ports types.List `tfsdk:"ports"`
-	Ipv4Blocks types.List `tfsdk:"ipv4_blocks"`
-	Ipv6Blocks types.List `tfsdk:"ipv6_blocks"`
-	Action types.String `tfsdk:"action"`
+type SecurityGroupResourceModel struct {
+	ID       types.String           `tfsdk:"id"`
+	Metadata metadataModel          `tfsdk:"metadata"`
+	Spec     SecurityGroupSpecModel `tfsdk:"spec"`
+	Status   types.Object           `tfsdk:"status"`
 }
 
-// SecurityGroupEgressModel is the nested object model for egress.
-type SecurityGroupEgressModel struct {
-	Ports types.List `tfsdk:"ports"`
-	Ipv4Blocks types.List `tfsdk:"ipv4_blocks"`
-	Ipv6Blocks types.List `tfsdk:"ipv6_blocks"`
-	Action types.String `tfsdk:"action"`
-}
+type SecurityGroupResource struct{ client *client.Client }
 
-// SecurityGroupResource defines the resource implementation.
-type SecurityGroupResource struct {
-	client *client.Client
-}
-
-func NewSecurityGroupResource() resource.Resource {
-	return &SecurityGroupResource{}
-}
+func NewSecurityGroupResource() resource.Resource { return &SecurityGroupResource{} }
 
 func (r *SecurityGroupResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_security_group"
 }
 
+func SecurityGroupResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"egress":  listObjResourceSchema(securityGroupEgressObjFields),
+		"ingress": listObjResourceSchema(securityGroupIngressObjFields),
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *SecurityGroupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["ingress"] = schema.ListNestedAttribute{
-			Optional: true,
-			Computed: true,
-			NestedObject: schema.NestedAttributeObject{
-				Attributes: map[string]schema.Attribute{
-					"ports": schema.ListAttribute{
-			Computed: true,
-				ElementType: types.StringType,
-		},
-					"ipv4_blocks": schema.ListAttribute{
-			Computed: true,
-				ElementType: types.StringType,
-		},
-					"ipv6_blocks": schema.ListAttribute{
-			Computed: true,
-				ElementType: types.StringType,
-		},
-					"action": schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		},
-				},
-			},
-		}
-	attrs["egress"] = schema.ListNestedAttribute{
-			Optional: true,
-			Computed: true,
-			NestedObject: schema.NestedAttributeObject{
-				Attributes: map[string]schema.Attribute{
-					"ports": schema.ListAttribute{
-			Computed: true,
-				ElementType: types.StringType,
-		},
-					"ipv4_blocks": schema.ListAttribute{
-			Computed: true,
-				ElementType: types.StringType,
-		},
-					"ipv6_blocks": schema.ListAttribute{
-			Computed: true,
-				ElementType: types.StringType,
-		},
-					"action": schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		},
-				},
-			},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: SecurityGroupResourceSchemaAttrs()}
 }
 
 func (r *SecurityGroupResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -131,132 +68,35 @@ func (r *SecurityGroupResource) Configure(_ context.Context, req resource.Config
 }
 
 func buildSecurityGroupRequestMap(ctx context.Context, plan SecurityGroupResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.Ingress.IsNull() && !plan.Ingress.IsUnknown() {
-		var items []map[string]interface{}
-		for _, elem := range plan.Ingress.Elements() {
-			if ov, ok := elem.(types.Object); ok {
-				item := map[string]interface{}{}
-				if v, ok := ov.Attributes()["ports"]; ok {
-					if lv, ok := v.(types.List); ok && !lv.IsNull() {
-						item["ports"] = stringListToInterface(ctx, lv)
-					}
-				}
-				if v, ok := ov.Attributes()["ipv4_blocks"]; ok {
-					if lv, ok := v.(types.List); ok && !lv.IsNull() {
-						item["ipv4Blocks"] = stringListToInterface(ctx, lv)
-					}
-				}
-				if v, ok := ov.Attributes()["ipv6_blocks"]; ok {
-					if lv, ok := v.(types.List); ok && !lv.IsNull() {
-						item["ipv6Blocks"] = stringListToInterface(ctx, lv)
-					}
-				}
-				if v, ok := ov.Attributes()["action"]; ok {
-					if sv, ok := v.(types.String); ok && !sv.IsNull() {
-						item["action"] = sv.ValueString()
-					}
-				}
-				items = append(items, item)
-			}
-		}
-		m["ingress"] = items
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.Egress.IsNull() && !plan.Spec.Egress.IsUnknown() {
+		spec["egress"] = listObjToAPI(plan.Spec.Egress, securityGroupEgressObjFields)
 	}
-	if !plan.Egress.IsNull() && !plan.Egress.IsUnknown() {
-		var items []map[string]interface{}
-		for _, elem := range plan.Egress.Elements() {
-			if ov, ok := elem.(types.Object); ok {
-				item := map[string]interface{}{}
-				if v, ok := ov.Attributes()["ports"]; ok {
-					if lv, ok := v.(types.List); ok && !lv.IsNull() {
-						item["ports"] = stringListToInterface(ctx, lv)
-					}
-				}
-				if v, ok := ov.Attributes()["ipv4_blocks"]; ok {
-					if lv, ok := v.(types.List); ok && !lv.IsNull() {
-						item["ipv4Blocks"] = stringListToInterface(ctx, lv)
-					}
-				}
-				if v, ok := ov.Attributes()["ipv6_blocks"]; ok {
-					if lv, ok := v.(types.List); ok && !lv.IsNull() {
-						item["ipv6Blocks"] = stringListToInterface(ctx, lv)
-					}
-				}
-				if v, ok := ov.Attributes()["action"]; ok {
-					if sv, ok := v.(types.String); ok && !sv.IsNull() {
-						item["action"] = sv.ValueString()
-					}
-				}
-				items = append(items, item)
-			}
-		}
-		m["egress"] = items
+	if !plan.Spec.Ingress.IsNull() && !plan.Spec.Ingress.IsUnknown() {
+		spec["ingress"] = listObjToAPI(plan.Spec.Ingress, securityGroupIngressObjFields)
 	}
 	return m
 }
 
 func populateSecurityGroupState(ctx context.Context, data map[string]interface{}, state *SecurityGroupResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	{
-		rawIngress, _ := data["ingress"].([]interface{})
-		attrTypes := map[string]attr.Type{
-			"ports": types.ListType{ElemType: types.StringType},
-			"ipv4_blocks": types.ListType{ElemType: types.StringType},
-			"ipv6_blocks": types.ListType{ElemType: types.StringType},
-			"action": types.StringType,
-		}
-		objs := make([]attr.Value, 0, len(rawIngress))
-		for _, item := range rawIngress {
-			if m, ok := item.(map[string]interface{}); ok {
-				attrs := map[string]attr.Value{
-					"ports": getStringList(ctx, m, "ports"),
-					"ipv4_blocks": getStringList(ctx, m, "ipv4Blocks"),
-					"ipv6_blocks": getStringList(ctx, m, "ipv6Blocks"),
-					"action": getString(m, "action"),
-				}
-				obj, _ := types.ObjectValue(attrTypes, attrs)
-				objs = append(objs, obj)
-			}
-		}
-		state.Ingress, _ = types.ListValue(types.ObjectType{AttrTypes: attrTypes}, objs)
-	}
-	{
-		rawEgress, _ := data["egress"].([]interface{})
-		attrTypes := map[string]attr.Type{
-			"ports": types.ListType{ElemType: types.StringType},
-			"ipv4_blocks": types.ListType{ElemType: types.StringType},
-			"ipv6_blocks": types.ListType{ElemType: types.StringType},
-			"action": types.StringType,
-		}
-		objs := make([]attr.Value, 0, len(rawEgress))
-		for _, item := range rawEgress {
-			if m, ok := item.(map[string]interface{}); ok {
-				attrs := map[string]attr.Value{
-					"ports": getStringList(ctx, m, "ports"),
-					"ipv4_blocks": getStringList(ctx, m, "ipv4Blocks"),
-					"ipv6_blocks": getStringList(ctx, m, "ipv6Blocks"),
-					"action": getString(m, "action"),
-				}
-				obj, _ := types.ObjectValue(attrTypes, attrs)
-				objs = append(objs, obj)
-			}
-		}
-		state.Egress, _ = types.ListValue(types.ObjectType{AttrTypes: attrTypes}, objs)
-	}
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.Egress = listObjFromAPI(objList(spec, "egress"), securityGroupEgressObjFields)
+	state.Spec.Ingress = listObjFromAPI(objList(spec, "ingress"), securityGroupIngressObjFields)
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *SecurityGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan SecurityGroupResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildSecurityGroupRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/security-group", body)
@@ -268,7 +108,6 @@ func (r *SecurityGroupResource) Create(ctx context.Context, req resource.CreateR
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -283,21 +122,18 @@ func (r *SecurityGroupResource) Create(ctx context.Context, req resource.CreateR
 		return
 	}
 	if err := populateSecurityGroupState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *SecurityGroupResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state SecurityGroupResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/security-group", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -308,28 +144,20 @@ func (r *SecurityGroupResource) Read(ctx context.Context, req resource.ReadReque
 		return
 	}
 	if err := populateSecurityGroupState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *SecurityGroupResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan SecurityGroupResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state SecurityGroupResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state SecurityGroupResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildSecurityGroupRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/security-group", body)
 	if err != nil {
@@ -340,32 +168,28 @@ func (r *SecurityGroupResource) Update(ctx context.Context, req resource.UpdateR
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/security-group", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateSecurityGroupState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *SecurityGroupResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state SecurityGroupResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/security-group", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -378,7 +202,6 @@ func (r *SecurityGroupResource) Delete(ctx context.Context, req resource.DeleteR
 }
 
 func (r *SecurityGroupResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state SecurityGroupResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/security-group", req.ID)
@@ -387,13 +210,12 @@ func (r *SecurityGroupResource) ImportState(ctx context.Context, req resource.Im
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateSecurityGroupState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

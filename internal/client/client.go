@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 // ModificationResponse is returned from PUT and DELETE operations.
@@ -21,6 +22,8 @@ type ModificationResponse struct {
 }
 
 // RequestStatusResponse is returned from polling the async status endpoint.
+// NOTE: "Succeded" (single 'd') is a deliberate match to the API's misspelling;
+// changing it to "Succeeded" would silently break polling.
 type RequestStatusResponse struct {
 	Succeded            bool   `json:"succeded"`
 	ScheduledResourceId string `json:"scheduledResourceId"`
@@ -32,14 +35,16 @@ type RequestStatusResponse struct {
 type Client struct {
 	BaseURL    string
 	Token      string
+	Version    string
 	HTTPClient *http.Client
 }
 
 // New creates a new Kvindo API client.
-func New(baseURL, token string) *Client {
+func New(baseURL, token, version string) *Client {
 	return &Client{
-		BaseURL: baseURL,
-		Token:   token,
+		BaseURL:    baseURL,
+		Token:      token,
+		Version:    version,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -55,8 +60,7 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body inter
 		if err != nil {
 			return nil, fmt.Errorf("marshaling request body: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "[KVINDO DEBUG] %s %s body: %s\n", method, url, string(data))
-		if f, err2 := os.OpenFile("/tmp/kvindo_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err2 == nil { fmt.Fprintf(f, "[REQ] %s %s body: %s\n", method, url, string(data)); f.Close() }
+		tflog.Debug(ctx, "API request", map[string]interface{}{"method": method, "url": url, "body": string(data)})
 		bodyReader = bytes.NewReader(data)
 	}
 
@@ -68,10 +72,11 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body inter
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "terraform-provider-kvindo/"+c.Version)
 	return req, nil
 }
 
-func (c *Client) do(req *http.Request) ([]byte, int, error) {
+func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, int, error) {
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, 0, err
@@ -82,8 +87,7 @@ func (c *Client) do(req *http.Request) ([]byte, int, error) {
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("reading response body: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "[KVINDO DEBUG] response %d: %s\n", resp.StatusCode, string(data))
-	if f, err2 := os.OpenFile("/tmp/kvindo_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err2 == nil { fmt.Fprintf(f, "[RESP %d] %s\n", resp.StatusCode, string(data)); f.Close() }
+	tflog.Debug(ctx, "API response", map[string]interface{}{"status": resp.StatusCode, "body": string(data)})
 	return data, resp.StatusCode, nil
 }
 
@@ -93,7 +97,7 @@ func (c *Client) put(ctx context.Context, path string, body interface{}) (*Modif
 		return nil, err
 	}
 
-	data, statusCode, err := c.do(req)
+	data, statusCode, err := c.do(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +132,12 @@ func (c *Client) WaitUntilNotReconciling(ctx context.Context, path, id string) e
 			state := ""
 			if s, ok := data["state"].(string); ok {
 				state = s
+			} else if status, ok := data["status"].(map[string]interface{}); ok {
+				if s, ok := status["state"].(string); ok {
+					state = s
+				}
 			} else if info, ok := data["info"].(map[string]interface{}); ok {
+				// ponytail: keep old "info" key as fallback during API transition
 				if s, ok := info["state"].(string); ok {
 					state = s
 				}
@@ -167,8 +176,10 @@ func (c *Client) Put(ctx context.Context, path string, body interface{}) (*Modif
 
 		id := ""
 		if m, ok := body.(map[string]interface{}); ok {
-			if s, ok := m["id"].(string); ok {
-				id = s
+			if meta, ok := m["metadata"].(map[string]interface{}); ok {
+				if s, ok := meta["id"].(string); ok {
+					id = s
+				}
 			}
 		}
 		if id == "" {
@@ -188,13 +199,25 @@ func (c *Client) Get(ctx context.Context, path string, id string) (map[string]in
 		return nil, err
 	}
 
-	data, statusCode, err := c.do(req)
+	data, statusCode, err := c.do(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
 	if statusCode == 404 {
 		return nil, nil
+	}
+
+	// This API signals "does not exist" with 422 + errorCode "NotFound" (not 404). Treat that as
+	// not-found so Read removes the resource from state instead of erroring — otherwise an
+	// out-of-band-deleted resource permanently blocks refresh/plan.
+	if statusCode == 422 {
+		var env map[string]interface{}
+		if json.Unmarshal(data, &env) == nil {
+			if ec, _ := env["errorCode"].(string); ec == "NotFound" {
+				return nil, nil
+			}
+		}
 	}
 
 	if statusCode >= 400 {
@@ -221,7 +244,7 @@ func (c *Client) Delete(ctx context.Context, path string, id string) (*Modificat
 		return nil, err
 	}
 
-	data, statusCode, err := c.do(req)
+	data, statusCode, err := c.do(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +285,7 @@ func (c *Client) PollUntilDone(ctx context.Context, path string, requestId strin
 			return err
 		}
 
-		data, statusCode, err := c.do(req)
+		data, statusCode, err := c.do(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -313,7 +336,7 @@ func (c *Client) GetByLabels(ctx context.Context, path string, labels map[string
 		req.URL.RawQuery = q.Encode()
 	}
 
-	data, statusCode, err := c.do(req)
+	data, statusCode, err := c.do(ctx, req)
 	if err != nil {
 		return nil, err
 	}

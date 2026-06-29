@@ -11,57 +11,42 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// GitlabRunnerDataSourceModel describes the data source data model.
 type GitlabRunnerDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Tier types.String `tfsdk:"tier"`
-	VpcSubnetId types.String `tfsdk:"vpc_subnet_id"`
-	FloatingIpId types.String `tfsdk:"floating_ip_id"`
-	VmState types.String `tfsdk:"vm_state"`
-	VmOfferId types.String `tfsdk:"vm_offer_id"`
-	VolumeOfferId types.String `tfsdk:"volume_offer_id"`
-	VolumeSizeGib types.Int64 `tfsdk:"volume_size_gib"`
-	Concurrency types.Int64 `tfsdk:"concurrency"`
-	Version types.String `tfsdk:"version"`
-	DockerOptionsJsonString types.String `tfsdk:"docker_options_json_string"`
-	InfoState types.String `tfsdk:"info_state"`
+	ID       types.String          `tfsdk:"id"`
+	Metadata metadataModel         `tfsdk:"metadata"`
+	Spec     GitlabRunnerSpecModel `tfsdk:"spec"`
+	Status   types.Object          `tfsdk:"status"`
 }
 
-type GitlabRunnerDataSource struct {
-	client *client.Client
-}
+type GitlabRunnerDataSource struct{ client *client.Client }
 
-func NewGitlabRunnerDataSource() datasource.DataSource {
-	return &GitlabRunnerDataSource{}
-}
+func NewGitlabRunnerDataSource() datasource.DataSource { return &GitlabRunnerDataSource{} }
 
 func (d *GitlabRunnerDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_gitlab_runner"
 }
 
 func (d *GitlabRunnerDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["tier"] = schema.StringAttribute{Computed: true}
-	attrs["vpc_subnet_id"] = schema.StringAttribute{Computed: true}
-	attrs["floating_ip_id"] = schema.StringAttribute{Computed: true}
-	attrs["vm_state"] = schema.StringAttribute{Computed: true}
-	attrs["vm_offer_id"] = schema.StringAttribute{Computed: true}
-	attrs["volume_offer_id"] = schema.StringAttribute{Computed: true}
-	attrs["volume_size_gib"] = schema.Int64Attribute{Computed: true}
-	attrs["concurrency"] = schema.Int64Attribute{Computed: true}
-	attrs["version"] = schema.StringAttribute{Computed: true}
-	attrs["docker_options_json_string"] = schema.StringAttribute{Computed: true}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"concurrency":                schema.Int64Attribute{Computed: true},
+		"docker_options_json_string": schema.StringAttribute{Computed: true},
+		"floating_ip_id":             schema.StringAttribute{Computed: true},
+		"gitlab_instances":           listObjDatasourceSchema(gitlabRunnerGitlabInstancesObjFields),
+		"tier":                       schema.StringAttribute{Computed: true},
+		"version":                    schema.StringAttribute{Computed: true},
+		"vm_offer_id":                schema.StringAttribute{Computed: true},
+		"vm_state":                   schema.StringAttribute{Computed: true},
+		"volume_offer_id":            schema.StringAttribute{Computed: true},
+		"volume_size_gib":            schema.Int64Attribute{Computed: true},
+		"vpc_subnet_id":              schema.StringAttribute{Computed: true},
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(nil),
+	}}
 }
 
 func (d *GitlabRunnerDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -78,12 +63,10 @@ func (d *GitlabRunnerDataSource) Configure(_ context.Context, req datasource.Con
 
 func (d *GitlabRunnerDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state GitlabRunnerDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/gitlab-runner", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -93,21 +76,22 @@ func (d *GitlabRunnerDataSource) Read(ctx context.Context, req datasource.ReadRe
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.Tier = getString(apiData, "tier")
-	state.VpcSubnetId = getString(apiData, "vpcSubnetId")
-	state.FloatingIpId = getString(apiData, "floatingIpId")
-	state.VmState = getString(apiData, "vmState")
-	state.VmOfferId = getString(apiData, "vmOfferId")
-	state.VolumeOfferId = getString(apiData, "volumeOfferId")
-	state.VolumeSizeGib = getInt64(apiData, "volumeSizeGib")
-	state.Concurrency = getInt64(apiData, "concurrency")
-	state.Version = getString(apiData, "version")
-	state.DockerOptionsJsonString = getString(apiData, "dockerOptionsJsonString")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.Concurrency = getInt64(spec, "concurrency")
+	state.Spec.DockerOptionsJsonString = getString(spec, "dockerOptionsJsonString")
+	state.Spec.FloatingIpId = getString(spec, "floatingIpId")
+	state.Spec.GitlabInstances = listObjFromAPI(objList(spec, "gitlabInstances"), gitlabRunnerGitlabInstancesObjFields)
+	state.Spec.Tier = getString(spec, "tier")
+	state.Spec.Version = getString(spec, "version")
+	state.Spec.VmOfferId = getString(spec, "vmOfferId")
+	state.Spec.VmState = getString(spec, "vmState")
+	state.Spec.VolumeOfferId = getString(spec, "volumeOfferId")
+	state.Spec.VolumeSizeGib = getInt64(spec, "volumeSizeGiB")
+	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
+	state.Status = simpleStateInfoObj(apiData)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

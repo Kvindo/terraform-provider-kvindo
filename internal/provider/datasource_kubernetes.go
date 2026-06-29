@@ -12,54 +12,35 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// KubernetesDataSourceModel describes the data source data model.
 type KubernetesDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Tier types.String `tfsdk:"tier"`
-	AssignPublicIpV4 types.Bool `tfsdk:"assign_public_ip_v4"`
-	Version types.String `tfsdk:"version"`
-	ControlPlaneLocations types.List `tfsdk:"control_plane_locations"`
-	InfoState types.String `tfsdk:"info_state"`
-	InfoApiServerUrl types.String `tfsdk:"info_api_server_url"`
+	ID       types.String        `tfsdk:"id"`
+	Metadata metadataModel       `tfsdk:"metadata"`
+	Spec     KubernetesSpecModel `tfsdk:"spec"`
+	Status   types.Object        `tfsdk:"status"`
 }
 
-type KubernetesDataSource struct {
-	client *client.Client
-}
+type KubernetesDataSource struct{ client *client.Client }
 
-func NewKubernetesDataSource() datasource.DataSource {
-	return &KubernetesDataSource{}
-}
+func NewKubernetesDataSource() datasource.DataSource { return &KubernetesDataSource{} }
 
 func (d *KubernetesDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_kubernetes"
 }
 
 func (d *KubernetesDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["tier"] = schema.StringAttribute{Computed: true}
-	attrs["assign_public_ip_v4"] = schema.BoolAttribute{Computed: true}
-	attrs["version"] = schema.StringAttribute{Computed: true}
-	attrs["control_plane_locations"] = schema.ListNestedAttribute{
-			Computed: true,
-			NestedObject: schema.NestedAttributeObject{
-				Attributes: map[string]schema.Attribute{
-					"vpc_subnet_id": schema.StringAttribute{Computed: true},
-				},
-			},
-		}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-	attrs["info_api_server_url"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"assign_public_ip_v4":     schema.BoolAttribute{Computed: true},
+		"control_plane_locations": listObjDatasourceSchema(kubernetesControlPlaneLocationsObjFields),
+		"tier":                    schema.StringAttribute{Computed: true},
+		"version":                 schema.StringAttribute{Computed: true},
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"api_server_url": schema.StringAttribute{Computed: true}}),
+	}}
 }
 
 func (d *KubernetesDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -76,12 +57,10 @@ func (d *KubernetesDataSource) Configure(_ context.Context, req datasource.Confi
 
 func (d *KubernetesDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state KubernetesDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/kubernetes", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -91,32 +70,21 @@ func (d *KubernetesDataSource) Read(ctx context.Context, req datasource.ReadRequ
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.Tier = getString(apiData, "tier")
-	state.AssignPublicIpV4 = getBool(apiData, "assignPublicIpV4")
-	state.Version = getString(apiData, "version")
-	{
-		rawControlPlaneLocations, _ := apiData["controlPlaneLocations"].([]interface{})
-		attrTypes := map[string]attr.Type{
-			"vpc_subnet_id": types.StringType,
-		}
-		objs := make([]attr.Value, 0, len(rawControlPlaneLocations))
-		for _, item := range rawControlPlaneLocations {
-			if m, ok := item.(map[string]interface{}); ok {
-				attrs := map[string]attr.Value{
-					"vpc_subnet_id": getString(m, "vpcSubnetId"),
-				}
-				obj, _ := types.ObjectValue(attrTypes, attrs)
-				objs = append(objs, obj)
-			}
-		}
-		state.ControlPlaneLocations, _ = types.ListValue(types.ObjectType{AttrTypes: attrTypes}, objs)
-	}
-	state.InfoState = getStringFromInfo(apiData, "state")
-	state.InfoApiServerUrl = getStringFromInfo(apiData, "apiserverurl")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.AssignPublicIpV4 = getBool(spec, "assignPublicIpV4")
+	state.Spec.ControlPlaneLocations = listObjFromAPI(objList(spec, "controlPlaneLocations"), kubernetesControlPlaneLocationsObjFields)
+	state.Spec.Tier = getString(spec, "tier")
+	state.Spec.Version = getString(spec, "version")
+	state.Status = buildInfoObj(apiData,
+		map[string]attr.Type{
+			"api_server_url": types.StringType,
+		},
+		map[string]attr.Value{
+			"api_server_url": getStringFromInfo(apiData, "apiServerUrl"),
+		})
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

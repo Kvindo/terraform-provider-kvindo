@@ -11,26 +11,15 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// LoadbalancerTlsListenerRuleDataSourceModel describes the data source data model.
 type LoadbalancerTlsListenerRuleDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	TlsListenerId types.String `tfsdk:"tls_listener_id"`
-	Order types.Int64 `tfsdk:"order"`
-	ActionType types.String `tfsdk:"action_type"`
-	ActionJson types.String `tfsdk:"action_json"`
-	InfoState types.String `tfsdk:"info_state"`
+	ID       types.String                         `tfsdk:"id"`
+	Metadata metadataModel                        `tfsdk:"metadata"`
+	Spec     LoadbalancerTlsListenerRuleSpecModel `tfsdk:"spec"`
+	Status   types.Object                         `tfsdk:"status"`
 }
 
-type LoadbalancerTlsListenerRuleDataSource struct {
-	client *client.Client
-}
+type LoadbalancerTlsListenerRuleDataSource struct{ client *client.Client }
 
 func NewLoadbalancerTlsListenerRuleDataSource() datasource.DataSource {
 	return &LoadbalancerTlsListenerRuleDataSource{}
@@ -41,15 +30,18 @@ func (d *LoadbalancerTlsListenerRuleDataSource) Metadata(_ context.Context, req 
 }
 
 func (d *LoadbalancerTlsListenerRuleDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["tls_listener_id"] = schema.StringAttribute{Computed: true}
-	attrs["order"] = schema.Int64Attribute{Computed: true}
-	attrs["action_type"] = schema.StringAttribute{Computed: true}
-	attrs["action_json"] = schema.StringAttribute{Computed: true}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"forward_to_tcp_response_action": objDatasourceSchema(loadbalancerTlsListenerRuleForwardToTcpResponseActionObjFields),
+		"forward_to_tls_response_action": objDatasourceSchema(loadbalancerTlsListenerRuleForwardToTlsResponseActionObjFields),
+		"order":                          schema.Int64Attribute{Computed: true},
+		"tls_listener_id":                schema.StringAttribute{Computed: true},
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(nil),
+	}}
 }
 
 func (d *LoadbalancerTlsListenerRuleDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -66,12 +58,10 @@ func (d *LoadbalancerTlsListenerRuleDataSource) Configure(_ context.Context, req
 
 func (d *LoadbalancerTlsListenerRuleDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state LoadbalancerTlsListenerRuleDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/loadbalancer-tls-listener-rule", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -81,15 +71,15 @@ func (d *LoadbalancerTlsListenerRuleDataSource) Read(ctx context.Context, req da
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.TlsListenerId = getString(apiData, "tlsListenerId")
-	state.Order = getInt64(apiData, "order")
-	state.ActionType = getString(apiData, "actionType")
-	state.ActionJson = getString(apiData, "actionJson")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.ForwardToTcpResponseAction = objFromAPI(objMap(spec, "forwardToTcpResponseAction"), loadbalancerTlsListenerRuleForwardToTcpResponseActionObjFields)
+	state.Spec.ForwardToTlsResponseAction = objFromAPI(objMap(spec, "forwardToTlsResponseAction"), loadbalancerTlsListenerRuleForwardToTlsResponseActionObjFields)
+	state.Spec.Order = getInt64(spec, "order")
+	state.Spec.TlsListenerId = getString(spec, "tlsListenerId")
+	state.Status = simpleStateInfoObj(apiData)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

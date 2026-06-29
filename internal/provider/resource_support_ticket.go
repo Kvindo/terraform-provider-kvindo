@@ -13,56 +13,44 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// SupportTicketResourceModel describes the resource data model.
-type SupportTicketResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Kind types.String `tfsdk:"kind"`
+type SupportTicketSpecModel struct {
+	Kind     types.String `tfsdk:"kind"`
 	Severity types.String `tfsdk:"severity"`
-	Status types.String `tfsdk:"status"`
-	Info types.Object `tfsdk:"info"`
+	Status   types.String `tfsdk:"status"`
 }
 
-// SupportTicketResource defines the resource implementation.
-type SupportTicketResource struct {
-	client *client.Client
+type SupportTicketResourceModel struct {
+	ID       types.String           `tfsdk:"id"`
+	Metadata metadataModel          `tfsdk:"metadata"`
+	Spec     SupportTicketSpecModel `tfsdk:"spec"`
+	Status   types.Object           `tfsdk:"status"`
 }
 
-func NewSupportTicketResource() resource.Resource {
-	return &SupportTicketResource{}
-}
+type SupportTicketResource struct{ client *client.Client }
+
+func NewSupportTicketResource() resource.Resource { return &SupportTicketResource{} }
 
 func (r *SupportTicketResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_support_ticket"
 }
 
+func SupportTicketResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"kind":     schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"severity": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"status":   schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *SupportTicketResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["kind"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["severity"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["status"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: SupportTicketResourceSchemaAttrs()}
 }
 
 func (r *SupportTicketResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -78,38 +66,39 @@ func (r *SupportTicketResource) Configure(_ context.Context, req resource.Config
 }
 
 func buildSupportTicketRequestMap(ctx context.Context, plan SupportTicketResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.Kind.IsNull() && !plan.Kind.IsUnknown() {
-		m["kind"] = plan.Kind.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.Kind.IsNull() && !plan.Spec.Kind.IsUnknown() {
+		spec["kind"] = plan.Spec.Kind.ValueString()
 	}
-	if !plan.Severity.IsNull() && !plan.Severity.IsUnknown() {
-		m["severity"] = plan.Severity.ValueString()
+	if !plan.Spec.Severity.IsNull() && !plan.Spec.Severity.IsUnknown() {
+		spec["severity"] = plan.Spec.Severity.ValueString()
 	}
-	if !plan.Status.IsNull() && !plan.Status.IsUnknown() {
-		m["status"] = plan.Status.ValueString()
+	if !plan.Spec.Status.IsNull() && !plan.Spec.Status.IsUnknown() {
+		spec["status"] = plan.Spec.Status.ValueString()
 	}
 	return m
 }
 
 func populateSupportTicketState(ctx context.Context, data map[string]interface{}, state *SupportTicketResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.Kind = getString(data, "kind")
-	state.Severity = getString(data, "severity")
-	state.Status = getString(data, "status")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.Kind = getString(spec, "kind")
+	state.Spec.Severity = getString(spec, "severity")
+	state.Spec.Status = getString(spec, "status")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *SupportTicketResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan SupportTicketResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildSupportTicketRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/support-ticket", body)
@@ -121,7 +110,6 @@ func (r *SupportTicketResource) Create(ctx context.Context, req resource.CreateR
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -136,21 +124,18 @@ func (r *SupportTicketResource) Create(ctx context.Context, req resource.CreateR
 		return
 	}
 	if err := populateSupportTicketState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *SupportTicketResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state SupportTicketResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/support-ticket", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -161,28 +146,20 @@ func (r *SupportTicketResource) Read(ctx context.Context, req resource.ReadReque
 		return
 	}
 	if err := populateSupportTicketState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *SupportTicketResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan SupportTicketResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state SupportTicketResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state SupportTicketResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildSupportTicketRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/support-ticket", body)
 	if err != nil {
@@ -193,32 +170,28 @@ func (r *SupportTicketResource) Update(ctx context.Context, req resource.UpdateR
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/support-ticket", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateSupportTicketState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *SupportTicketResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state SupportTicketResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/support-ticket", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -231,7 +204,6 @@ func (r *SupportTicketResource) Delete(ctx context.Context, req resource.DeleteR
 }
 
 func (r *SupportTicketResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state SupportTicketResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/support-ticket", req.ID)
@@ -240,13 +212,12 @@ func (r *SupportTicketResource) ImportState(ctx context.Context, req resource.Im
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateSupportTicketState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

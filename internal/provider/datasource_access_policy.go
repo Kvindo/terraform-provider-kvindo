@@ -11,39 +11,32 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// AccessPolicyDataSourceModel describes the data source data model.
 type AccessPolicyDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Content types.String `tfsdk:"content"`
-	InfoState types.String `tfsdk:"info_state"`
+	ID       types.String          `tfsdk:"id"`
+	Metadata metadataModel         `tfsdk:"metadata"`
+	Spec     AccessPolicySpecModel `tfsdk:"spec"`
+	Status   types.Object          `tfsdk:"status"`
 }
 
-type AccessPolicyDataSource struct {
-	client *client.Client
-}
+type AccessPolicyDataSource struct{ client *client.Client }
 
-func NewAccessPolicyDataSource() datasource.DataSource {
-	return &AccessPolicyDataSource{}
-}
+func NewAccessPolicyDataSource() datasource.DataSource { return &AccessPolicyDataSource{} }
 
 func (d *AccessPolicyDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_access_policy"
 }
 
 func (d *AccessPolicyDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["content"] = schema.StringAttribute{Computed: true}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"content": schema.StringAttribute{Computed: true},
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(nil),
+	}}
 }
 
 func (d *AccessPolicyDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -60,12 +53,10 @@ func (d *AccessPolicyDataSource) Configure(_ context.Context, req datasource.Con
 
 func (d *AccessPolicyDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state AccessPolicyDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/access-policy", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -75,12 +66,12 @@ func (d *AccessPolicyDataSource) Read(ctx context.Context, req datasource.ReadRe
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.Content = getString(apiData, "content")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.Content = getString(spec, "content")
+	state.Status = simpleStateInfoObj(apiData)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

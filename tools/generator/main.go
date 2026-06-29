@@ -64,21 +64,113 @@ type SchemaObject struct {
 
 // FieldDef describes a single terraform schema field.
 type FieldDef struct {
-	TFName    string
-	APIName   string
-	FieldType string // "string", "bool", "int64", "float64", "list_string", "map_string", "list_object"
-	Required  bool
-	Computed  bool
-	Sensitive bool
-	ObjFields []FieldDef
+	TFName       string
+	APIName      string
+	FieldType    string // "string", "bool", "int64", "float64", "list_string", "map_string", "list_object"
+	Required     bool
+	OptionalOnly bool // Optional but NOT Computed (server never defaults it)
+	Computed     bool
+	Sensitive    bool
+	ObjFields    []FieldDef
 }
 
 // ResourceDef describes a complete resource to generate.
 type ResourceDef struct {
-	Name       string
-	APIPath    string
-	Fields     []FieldDef
-	InfoFields []FieldDef
+	Name        string
+	APIPath     string
+	Fields      []FieldDef // spec fields (type-specific)
+	StatusExtra []FieldDef // status fields beyond the base ResourceInfo
+}
+
+// ---- Overrides for things the swagger cannot express ----
+//
+// The swagger marks no fields `required` and only `resourceName`/`id` readOnly, and its status
+// field casing does not match the wire. These tables encode the human decisions captured from
+// the previous hand-written provider so regeneration reproduces them exactly.
+
+// skipResources are PUT-path resources present in the swagger that the provider does NOT expose
+// (removed/unimplemented backends, plus the hand-written transaction resource).
+var skipResources = map[string]bool{
+	"etcd": true, "etcd_node_group": true, "grafana": true, "nat_gateway": true,
+	"ollama": true, "postgresql": true, "postgresql_node_group": true,
+	"vm_on_off_maintenance_action": true, "vm_recurrent_command_maintenance_action": true,
+	"transaction": true,
+}
+
+// resourceNameOverride maps a path-derived name to the provider's resource name.
+var resourceNameOverride = map[string]string{
+	"route_table_attachments": "route_table_attachment",
+}
+
+// requiredSpecFields[resource][tf_field] = true marks a spec field Required.
+var requiredSpecFields = map[string]map[string]bool{
+	"access_policy":                                      {"content": true},
+	"certificate":                                        {"certificate_pem": true, "private_key_pem": true},
+	"kubernetes_node_group":                              {"kubernetes_id": true},
+	"kubernetes_user":                                    {"kubernetes_id": true},
+	"loadbalancer_http_listener":                         {"loadbalancer_id": true},
+	"loadbalancer_http_listener_rule":                    {"http_listener_id": true},
+	"loadbalancer_https_listener":                        {"loadbalancer_id": true},
+	"loadbalancer_https_listener_rule":                   {"https_listener_id": true},
+	"loadbalancer_target_group_service_discovery_target": {"target_group_id": true},
+	"loadbalancer_target_group_static_target":            {"target_group_id": true, "ip_or_hostname": true},
+	"loadbalancer_tcp_listener":                          {"loadbalancer_id": true},
+	"loadbalancer_tcp_listener_rule":                     {"tcp_listener_id": true},
+	"loadbalancer_tls_listener":                          {"loadbalancer_id": true},
+	"loadbalancer_tls_listener_rule":                     {"tls_listener_id": true},
+	"loadbalancer_udp_listener":                          {"loadbalancer_id": true},
+	"loadbalancer_udp_listener_rule":                     {"udp_listener_id": true},
+	"open_vpn_user":                                      {"open_vpn_id": true},
+	"quota_change_request":                               {"quota_id": true, "new_quota_limit": true},
+	"route_table_attachment":                             {"route_table_id": true, "vpc_id": true},
+	"route_table_route":                                  {"route_table_id": true, "destination_cidr": true, "target_ip": true},
+	"s3_user":                                            {"bucket_id": true},
+	"s3_user_access_policy":                              {"policy_json": true},
+	"ssh_key":                                            {"public_key": true},
+	"ssh_private_key":                                    {"private_key": true},
+	"support_ticket_comment":                             {"ticket_id": true},
+	"user":                                               {"email": true},
+	"user_token":                                         {"user_id": true},
+	"volume_attachment":                                  {"volume_id": true, "vm_id": true},
+	"vpc_peering_external_peer":                          {"vpc_peering_id": true},
+	"vpc_peering_peer":                                   {"vpc_peering_id": true},
+	"vpc_subnet":                                         {"vpc_id": true, "ipv4_cidr": true},
+}
+
+// optionalOnlySpecFields[resource][tf_field] = true marks a spec field Optional (NOT Computed):
+// the server never defaults it, so making it Computed would produce spurious plan diffs.
+var optionalOnlySpecFields = map[string]map[string]bool{
+	"gitlab":                    {"floating_ip_id": true, "record_name": true},
+	"loadbalancer":              {"floating_ip_id": true},
+	"open_vpn":                  {"floating_ip_id": true},
+	"postgresql_standalone":     {"parameters_set_id": true, "floating_ip_id": true},
+	"victoria_metrics":          {"dns_record_name": true},
+	"vm":                        {"floating_ip_id": true, "security_group_ids": true},
+	"vpc":                       {"nat_floating_ip_id": true},
+	"vpc_peering_external_peer": {"ssh_private_key_id": true},
+}
+
+// sensitiveSpecFields[resource][tf_field] = true marks a spec field Sensitive. The swagger
+// keyword heuristic over-matches (it would mark public_key etc.), so sensitivity is explicit.
+var sensitiveSpecFields = map[string]map[string]bool{
+	"certificate":           {"private_key_pem": true},
+	"gitlab":                {"root_password": true},
+	"postgresql_standalone": {"root_password": true},
+	"ssh_private_key":       {"private_key": true},
+}
+
+// sensitiveStatusFields[tf_field] = true marks a status field Sensitive (consistent by name
+// across resources).
+var sensitiveStatusFields = map[string]bool{
+	"token": true, "kubeconfig": true, "secret_key": true, "config": true,
+	"windows_administrator_password": true,
+}
+
+// baseInfoFields are the ResourceInfo fields handled by the common status block; they must NOT
+// be emitted as resource-specific status extras.
+var baseInfoFields = map[string]bool{
+	"state": true, "createTime": true, "createdByUser": true,
+	"lastChangeRequest": true, "pricing": true,
 }
 
 func main() {
@@ -174,25 +266,45 @@ func extractResources(spec SwaggerSpec) []ResourceDef {
 
 		resourceSlug := strings.TrimPrefix(path, "/api/v1/")
 		resourceName := toSnakeCase(strings.ReplaceAll(resourceSlug, "-", "_"))
+		if override, ok := resourceNameOverride[resourceName]; ok {
+			resourceName = override
+		}
+		if skipResources[resourceName] {
+			continue
+		}
 
-		var fields, infoFields []FieldDef
+		var fields, statusExtra []FieldDef
 
 		if item.Put.RequestBody != nil {
 			if ct, ok := item.Put.RequestBody.Content["application/json"]; ok && ct.Schema != nil {
 				schemaName := extractRefName(ct.Schema.Ref)
 				if schemaName != "" {
 					if schema, ok := spec.Components.Schemas[schemaName]; ok {
-						fields, infoFields = extractFields(schema, spec.Components.Schemas)
+						fields, statusExtra = extractFields(schema, spec.Components.Schemas)
 					}
 				}
 			}
 		}
 
+		// Apply per-field overrides the swagger cannot express.
+		req := requiredSpecFields[resourceName]
+		optOnly := optionalOnlySpecFields[resourceName]
+		sens := sensitiveSpecFields[resourceName]
+		for i := range fields {
+			tf := fields[i].TFName
+			fields[i].Required = req[tf]
+			fields[i].OptionalOnly = optOnly[tf]
+			fields[i].Sensitive = sens[tf]
+		}
+		for i := range statusExtra {
+			statusExtra[i].Sensitive = sensitiveStatusFields[statusExtra[i].TFName]
+		}
+
 		resources = append(resources, ResourceDef{
-			Name:       resourceName,
-			APIPath:    path,
-			Fields:     fields,
-			InfoFields: infoFields,
+			Name:        resourceName,
+			APIPath:     path,
+			Fields:      fields,
+			StatusExtra: statusExtra,
 		})
 	}
 
@@ -200,24 +312,10 @@ func extractResources(spec SwaggerSpec) []ResourceDef {
 }
 
 // commonFields are fields handled by common schema and should be skipped in resource-specific fields.
+// resourceName is a legacy readOnly field removed from the provider; it is skipped entirely.
 var commonFieldNames = map[string]bool{
 	"id": true, "name": true, "description": true, "labels": true,
-	"folderId": true, "deleteProtection": true,
-}
-
-// sensitiveKeywords indicate a field should be marked sensitive.
-var sensitiveKeywords = []string{
-	"password", "token", "key", "secret", "pem", "config", "kubeconfig", "privateKey",
-}
-
-func isSensitive(name string) bool {
-	lower := strings.ToLower(name)
-	for _, kw := range sensitiveKeywords {
-		if strings.Contains(lower, strings.ToLower(kw)) {
-			return true
-		}
-	}
-	return false
+	"folderId": true, "deleteProtection": true, "resourceName": true,
 }
 
 func extractFields(schema SchemaObject, schemas map[string]SchemaObject) (fields, infoFields []FieldDef) {
@@ -248,18 +346,36 @@ func extractFields(schema SchemaObject, schemas map[string]SchemaObject) (fields
 		isInfo := apiName == "info" || strings.HasPrefix(apiName, "info")
 
 		if apiName == "info" && prop.Ref != "" {
-			// Extract info sub-fields
+			// Extract status (info) sub-fields beyond the base ResourceInfo. The base fields
+			// (state/createTime/createdByUser/lastChangeRequest/pricing) are rendered by the
+			// common status block, so only resource-specific extras are collected here.
 			refName := extractRefName(prop.Ref)
 			if infoSchema, ok := schemas[refName]; ok {
-				for infoFieldName, infoFieldProp := range infoSchema.Properties {
-					infoTFName := "info_" + camelToSnake(infoFieldName)
-					ft := swaggerTypeToFieldType(infoFieldProp)
+				infoProps := infoSchema.Properties
+				if infoProps == nil && len(infoSchema.AllOf) > 0 {
+					infoProps = make(map[string]*SchemaRef)
+					for _, s := range infoSchema.AllOf {
+						if s.Ref != "" {
+							if rs, ok := schemas[extractRefName(s.Ref)]; ok {
+								for k, v := range rs.Properties {
+									infoProps[k] = v
+								}
+							}
+						}
+						for k, v := range s.Properties {
+							infoProps[k] = v
+						}
+					}
+				}
+				for infoFieldName, infoFieldProp := range infoProps {
+					if baseInfoFields[infoFieldName] {
+						continue
+					}
 					infoFields = append(infoFields, FieldDef{
-						TFName:    infoTFName,
-						APIName:   "info." + infoFieldName,
-						FieldType: ft,
+						TFName:    camelToSnake(infoFieldName),
+						APIName:   infoFieldName,
+						FieldType: swaggerTypeToFieldType(infoFieldProp),
 						Computed:  true,
-						Sensitive: isSensitive(infoFieldName),
 					})
 				}
 			}
@@ -273,26 +389,16 @@ func extractFields(schema SchemaObject, schemas map[string]SchemaObject) (fields
 		ft := swaggerTypeToFieldType(prop)
 		var objFields []FieldDef
 
-		if ft == "list_object" && prop.Items != nil {
-			if prop.Items.Ref != "" {
-				refName := extractRefName(prop.Items.Ref)
-				if objSchema, ok := schemas[refName]; ok {
-					for objFieldName, objProp := range objSchema.Properties {
-						objFields = append(objFields, FieldDef{
-							TFName:    camelToSnake(objFieldName),
-							APIName:   objFieldName,
-							FieldType: swaggerTypeToFieldType(objProp),
-						})
-					}
-				}
-			} else if prop.Items.Properties != nil {
-				for objFieldName, objProp := range prop.Items.Properties {
-					objFields = append(objFields, FieldDef{
-						TFName:    camelToSnake(objFieldName),
-						APIName:   objFieldName,
-						FieldType: swaggerTypeToFieldType(objProp),
-					})
-				}
+		switch ft {
+		case "object":
+			objFields = extractObjFields(prop, schemas)
+			if len(objFields) == 0 {
+				ft = "string" // $ref to a scalar/enum
+			}
+		case "list_object":
+			objFields = extractObjFields(prop.Items, schemas)
+			if len(objFields) == 0 {
+				ft = "list_string" // array of scalars/enums
 			}
 		}
 
@@ -300,7 +406,6 @@ func extractFields(schema SchemaObject, schemas map[string]SchemaObject) (fields
 			TFName:    tfName,
 			APIName:   apiName,
 			FieldType: ft,
-			Sensitive: isSensitive(apiName),
 			ObjFields: objFields,
 		})
 	}
@@ -315,6 +420,11 @@ func swaggerTypeToFieldType(prop *SchemaRef) string {
 	if prop == nil {
 		return "string"
 	}
+	// A $ref points at another schema — a nested object (downgraded to string later if the
+	// target turns out to be a scalar/enum with no properties).
+	if prop.Ref != "" {
+		return "object"
+	}
 	switch prop.Type {
 	case "boolean":
 		return "bool"
@@ -327,18 +437,69 @@ func swaggerTypeToFieldType(prop *SchemaRef) string {
 			if prop.Items.Type == "string" {
 				return "list_string"
 			}
-			// array of objects
+			// array of objects (or $ref elements)
 			return "list_object"
 		}
 		return "list_string"
 	case "object":
-		if prop.Properties == nil && prop.Items == nil {
-			return "map_string"
+		if len(prop.Properties) > 0 {
+			return "object"
 		}
 		return "map_string"
 	default:
 		return "string"
 	}
+}
+
+// extractObjFields recursively extracts the sub-fields of a nested object schema (a $ref or an
+// inline object). Returns nil for scalar/enum targets (the caller downgrades such fields).
+func extractObjFields(ref *SchemaRef, schemas map[string]SchemaObject) []FieldDef {
+	if ref == nil {
+		return nil
+	}
+	var props map[string]*SchemaRef
+	if ref.Ref != "" {
+		if os, ok := schemas[extractRefName(ref.Ref)]; ok {
+			props = os.Properties
+			if props == nil && len(os.AllOf) > 0 {
+				props = map[string]*SchemaRef{}
+				for _, s := range os.AllOf {
+					if s.Ref != "" {
+						if rs, ok := schemas[extractRefName(s.Ref)]; ok {
+							for k, v := range rs.Properties {
+								props[k] = v
+							}
+						}
+					}
+					for k, v := range s.Properties {
+						props[k] = v
+					}
+				}
+			}
+		}
+	} else if len(ref.Properties) > 0 {
+		props = ref.Properties
+	}
+	var fields []FieldDef
+	for name, p := range props {
+		ft := swaggerTypeToFieldType(p)
+		fd := FieldDef{TFName: camelToSnake(name), APIName: name, FieldType: ft, Sensitive: sensitiveStatusFields[camelToSnake(name)]}
+		switch ft {
+		case "object":
+			fd.ObjFields = extractObjFields(p, schemas)
+			if len(fd.ObjFields) == 0 {
+				fd.FieldType = "string" // $ref to a scalar/enum
+			}
+		case "list_object":
+			fd.ObjFields = extractObjFields(p.Items, schemas)
+			if len(fd.ObjFields) == 0 {
+				fd.FieldType = "list_string" // array of scalars/enums
+			}
+		}
+		fields = append(fields, fd)
+	}
+	sort.Slice(fields, func(i, j int) bool { return fields[i].TFName < fields[j].TFName })
+	return fields
 }
 
 func extractRefName(ref string) string {
@@ -349,7 +510,18 @@ func extractRefName(ref string) string {
 	return parts[len(parts)-1]
 }
 
+// binaryUnitAcronyms normalizes mixed-case binary unit suffixes (e.g. GiB → Gib)
+// before camelToSnake so they don't get split into separate snake segments (gi_b).
+var binaryUnitAcronyms = strings.NewReplacer(
+	"GiB", "Gib",
+	"MiB", "Mib",
+	"TiB", "Tib",
+	"KiB", "Kib",
+	"PiB", "Pib",
+)
+
 func camelToSnake(s string) string {
+	s = binaryUnitAcronyms.Replace(s)
 	var result []rune
 	runes := []rune(s)
 	for i, r := range runes {
@@ -395,49 +567,86 @@ func typeToGoType(ft string) string {
 		return "types.List"
 	case "map_string":
 		return "types.Map"
+	case "object":
+		return "types.Object"
 	default:
 		return "types.String"
 	}
 }
 
-func generateResourceFile(r ResourceDef) string {
-	sn := structName(r.Name)
-	var sb strings.Builder
+// descVarName is the package-level variable name for a nested field's []objField descriptor.
+func descVarName(sn string, f FieldDef) string {
+	return lowerFirst(sn) + toTitle(f.TFName) + "ObjFields"
+}
 
-	// Determine needed imports
-	needsFloat64 := false
-	needsAttr := false
-	needsPlanmodifier := false
-	needsBool := false
-	needsInt64 := false
-	needsString := false
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	r[0] = unicode.ToLower(r[0])
+	return string(r)
+}
 
+// descLiteral emits a recursive []objField literal describing a nested object's sub-fields.
+func descLiteral(fields []FieldDef) string {
+	var b strings.Builder
+	b.WriteString("[]objField{")
+	for _, f := range fields {
+		b.WriteString(fmt.Sprintf("{TF: %q, API: %q, Kind: %q", f.TFName, f.APIName, f.FieldType))
+		if f.Sensitive {
+			b.WriteString(", Sensitive: true")
+		}
+		if f.FieldType == "object" || f.FieldType == "list_object" {
+			b.WriteString(", Obj: " + descLiteral(f.ObjFields))
+		}
+		b.WriteString("}, ")
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+// emitObjDescriptors writes the package-level []objField descriptor vars for a resource's nested
+// spec fields (object / list_object). The datasource file reuses these same vars.
+func emitObjDescriptors(sb *strings.Builder, sn string, r ResourceDef) {
 	for _, f := range r.Fields {
-		if f.FieldType == "float64" {
-			needsFloat64 = true
-		}
-		if f.FieldType == "list_object" {
-			needsAttr = true
-		}
-		if !f.Required && !f.Computed {
-			needsPlanmodifier = true
-			if f.FieldType == "bool" {
-				needsBool = true
-			} else if f.FieldType == "int64" {
-				needsInt64 = true
-			} else if f.FieldType == "float64" {
-				needsFloat64 = true
-			} else if f.FieldType == "string" {
-				needsString = true
-			}
+		if f.FieldType == "object" || f.FieldType == "list_object" {
+			sb.WriteString(fmt.Sprintf("var %s = %s\n\n", descVarName(sn, f), descLiteral(f.ObjFields)))
 		}
 	}
-	// All resources have common fields which use planmodifier
-	needsPlanmodifier = true
-	needsString = true
-	needsBool = true
-	needsInt64 = true
+}
 
+// hasRequiredSpec reports whether any spec field is Required (=> the spec block is Required).
+func hasRequiredSpec(r ResourceDef) bool {
+	for _, f := range r.Fields {
+		if f.Required {
+			return true
+		}
+	}
+	return false
+}
+
+// emitImports writes the import block for a resource file based on which features are used.
+func emitResourceImports(sb *strings.Builder, r ResourceDef) {
+	// attr is only needed for the status-extras buildInfoObj literals; nested objects are handled
+	// by runtime helpers in nested_objects.go.
+	needsAttr := len(r.StatusExtra) > 0
+	needsBool, needsInt64, needsFloat64 := false, false, false
+	// Plan modifiers are emitted only for top-level Optional+Computed scalar spec fields; nested
+	// object/list_object schemas are built at runtime without per-field modifiers.
+	for _, f := range r.Fields {
+		if f.Required || f.OptionalOnly {
+			continue
+		}
+		switch f.FieldType {
+		case "bool":
+			needsBool = true
+		case "int64":
+			needsInt64 = true
+		case "float64":
+			needsFloat64 = true
+		}
+	}
 	sb.WriteString("package provider\n\n")
 	sb.WriteString("import (\n")
 	sb.WriteString("\t\"context\"\n")
@@ -445,44 +654,119 @@ func generateResourceFile(r ResourceDef) string {
 	if needsAttr {
 		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/attr\"\n")
 	}
-	sb.WriteString("\t\"github.com/google/uuid\"\n")
 	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource\"\n")
 	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema\"\n")
-	if needsBool && needsPlanmodifier {
+	if needsBool {
 		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier\"\n")
 	}
-	if needsFloat64 && needsPlanmodifier {
+	if needsFloat64 {
 		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier\"\n")
 	}
-	if needsInt64 && needsPlanmodifier {
+	if needsInt64 {
 		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier\"\n")
 	}
-	if needsPlanmodifier {
-		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier\"\n")
-	}
-	if needsString && needsPlanmodifier {
-		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier\"\n")
-	}
+	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier\"\n")
+	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier\"\n")
 	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/types\"\n")
 	sb.WriteString("\t\"github.com/kvindo/terraform-provider-kvindo/internal/client\"\n")
 	sb.WriteString(")\n\n")
-
 	sb.WriteString("var _ = fmt.Sprintf\n\n")
+}
+
+// emitSpecModel writes the per-resource spec struct (omitted when there are no spec fields).
+func emitSpecModel(sb *strings.Builder, sn string, r ResourceDef) {
+	if len(r.Fields) == 0 {
+		return
+	}
+	sb.WriteString(fmt.Sprintf("type %sSpecModel struct {\n", sn))
+	for _, f := range r.Fields {
+		sb.WriteString(fmt.Sprintf("\t%s %s `tfsdk:%q`\n", toTitle(f.TFName), typeToGoType(f.FieldType), f.TFName))
+	}
+	sb.WriteString("}\n\n")
+}
+
+// emitStatusSchemaArg returns the argument expression for commonInfoSchema / commonInfoDatasourceSchema.
+func emitStatusSchemaArg(r ResourceDef) string {
+	if len(r.StatusExtra) == 0 {
+		return "nil"
+	}
+	var b strings.Builder
+	b.WriteString("map[string]schema.Attribute{")
+	for _, f := range r.StatusExtra {
+		var attrType string
+		switch f.FieldType {
+		case "int64":
+			attrType = "schema.Int64Attribute{Computed: true}"
+		case "bool":
+			attrType = "schema.BoolAttribute{Computed: true}"
+		default:
+			if f.Sensitive {
+				attrType = "schema.StringAttribute{Computed: true, Sensitive: true}"
+			} else {
+				attrType = "schema.StringAttribute{Computed: true}"
+			}
+		}
+		b.WriteString(fmt.Sprintf("%q: %s, ", f.TFName, attrType))
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+// emitStatusAssign writes the `state.Status = ...` line for populate/read. dataVar is the
+// response map variable ("data" in resources, "apiData" in datasources).
+func emitStatusAssign(sb *strings.Builder, r ResourceDef, dataVar string) {
+	if len(r.StatusExtra) == 0 {
+		sb.WriteString(fmt.Sprintf("\tstate.Status = simpleStateInfoObj(%s)\n", dataVar))
+		return
+	}
+	sb.WriteString("\tstate.Status = buildInfoObj(" + dataVar + ",\n")
+	sb.WriteString("\t\tmap[string]attr.Type{\n")
+	for _, f := range r.StatusExtra {
+		var at string
+		switch f.FieldType {
+		case "int64":
+			at = "types.Int64Type"
+		case "bool":
+			at = "types.BoolType"
+		default:
+			at = "types.StringType"
+		}
+		sb.WriteString(fmt.Sprintf("\t\t\t%q: %s,\n", f.TFName, at))
+	}
+	sb.WriteString("\t\t},\n")
+	sb.WriteString("\t\tmap[string]attr.Value{\n")
+	for _, f := range r.StatusExtra {
+		var getter string
+		switch f.FieldType {
+		case "int64":
+			getter = "getInt64FromInfo"
+		case "bool":
+			getter = "getBoolFromInfo"
+		default:
+			getter = "getStringFromInfo"
+		}
+		sb.WriteString(fmt.Sprintf("\t\t\t%q: %s(%s, %q),\n", f.TFName, getter, dataVar, f.APIName))
+	}
+	sb.WriteString("\t\t})\n")
+}
+
+func generateResourceFile(r ResourceDef) string {
+	sn := structName(r.Name)
+	hasSpec := len(r.Fields) > 0
+	var sb strings.Builder
+
+	emitResourceImports(&sb, r)
+	emitObjDescriptors(&sb, sn, r)
+	emitSpecModel(&sb, sn, r)
 
 	// Model
 	sb.WriteString(fmt.Sprintf("type %sResourceModel struct {\n", sn))
-	sb.WriteString("\tID               types.String `tfsdk:\"id\"`\n")
-	sb.WriteString("\tName             types.String `tfsdk:\"name\"`\n")
-	sb.WriteString("\tDescription      types.String `tfsdk:\"description\"`\n")
-	sb.WriteString("\tFolderID         types.String `tfsdk:\"folder_id\"`\n")
-	sb.WriteString("\tDeleteProtection types.Bool   `tfsdk:\"delete_protection\"`\n")
-	sb.WriteString("\tLabels           types.Map    `tfsdk:\"labels\"`\n")
-	for _, f := range r.Fields {
-		sb.WriteString(fmt.Sprintf("\t%s %s `tfsdk:\"%s\"`\n", toTitle(f.TFName), typeToGoType(f.FieldType), f.TFName))
+	sb.WriteString("\tID       types.String  `tfsdk:\"id\"`\n")
+	sb.WriteString("\tMetadata metadataModel `tfsdk:\"metadata\"`\n")
+	if hasSpec {
+		sb.WriteString(fmt.Sprintf("\tSpec     %sSpecModel `tfsdk:\"spec\"`\n", sn))
 	}
-	for _, f := range r.InfoFields {
-		sb.WriteString(fmt.Sprintf("\t%s %s `tfsdk:\"%s\"`\n", toTitle(f.TFName), typeToGoType(f.FieldType), f.TFName))
-	}
+	sb.WriteString("\tStatus   types.Object  `tfsdk:\"status\"`\n")
 	sb.WriteString("}\n\n")
 
 	// Resource struct
@@ -493,16 +777,40 @@ func generateResourceFile(r ResourceDef) string {
 	sb.WriteString(fmt.Sprintf("func (r *%sResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {\n", sn))
 	sb.WriteString(fmt.Sprintf("\tresp.TypeName = req.ProviderTypeName + \"_%s\"\n}\n\n", r.Name))
 
+	// Full resource schema attrs (exported so the transaction resource reuses one definition).
+	sb.WriteString(fmt.Sprintf("func %sResourceSchemaAttrs() map[string]schema.Attribute {\n", sn))
+	if hasSpec {
+		sb.WriteString("\tspecAttrs := map[string]schema.Attribute{\n")
+		for _, f := range r.Fields {
+			var expr string
+			switch f.FieldType {
+			case "object":
+				expr = fmt.Sprintf("objResourceSchema(%s)", descVarName(sn, f))
+			case "list_object":
+				expr = fmt.Sprintf("listObjResourceSchema(%s)", descVarName(sn, f))
+			default:
+				expr = resourceAttrDef(f)
+			}
+			sb.WriteString(fmt.Sprintf("\t\t%q: %s,\n", f.TFName, expr))
+		}
+		sb.WriteString("\t}\n")
+	}
+	sb.WriteString("\treturn map[string]schema.Attribute{\n")
+	sb.WriteString("\t\t\"id\": schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},\n")
+	sb.WriteString("\t\t\"metadata\": metadataResourceSchema(),\n")
+	if hasSpec {
+		if hasRequiredSpec(r) {
+			sb.WriteString("\t\t\"spec\": schema.SingleNestedAttribute{Required: true, Attributes: specAttrs},\n")
+		} else {
+			sb.WriteString("\t\t\"spec\": schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},\n")
+		}
+	}
+	sb.WriteString(fmt.Sprintf("\t\t\"status\": commonInfoSchema(%s),\n", emitStatusSchemaArg(r)))
+	sb.WriteString("\t}\n}\n\n")
+
 	// Schema
 	sb.WriteString(fmt.Sprintf("func (r *%sResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {\n", sn))
-	sb.WriteString("\tattrs := commonSchemaAttributes()\n")
-	for _, f := range r.Fields {
-		sb.WriteString(fmt.Sprintf("\tattrs[\"%s\"] = %s\n", f.TFName, resourceAttrDef(f)))
-	}
-	for _, f := range r.InfoFields {
-		sb.WriteString(fmt.Sprintf("\tattrs[\"%s\"] = %s\n", f.TFName, resourceComputedAttrDef(f)))
-	}
-	sb.WriteString("\tresp.Schema = schema.Schema{Attributes: attrs}\n}\n\n")
+	sb.WriteString(fmt.Sprintf("\tresp.Schema = schema.Schema{Attributes: %sResourceSchemaAttrs()}\n}\n\n", sn))
 
 	// Configure
 	sb.WriteString(fmt.Sprintf("func (r *%sResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {\n", sn))
@@ -512,155 +820,319 @@ func generateResourceFile(r ResourceDef) string {
 	sb.WriteString("\tr.client = pd.Client\n}\n\n")
 
 	// Build request map
-	sb.WriteString(fmt.Sprintf("func build%sRequest(ctx context.Context, plan %sResourceModel) map[string]interface{} {\n", sn, sn))
-	sb.WriteString("\tm := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)\n")
-	for _, f := range r.Fields {
-		writeFieldToRequest(&sb, f)
+	sb.WriteString(fmt.Sprintf("func build%sRequestMap(ctx context.Context, plan %sResourceModel) map[string]interface{} {\n", sn, sn))
+	sb.WriteString("\tm := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)\n")
+	if hasSpec {
+		sb.WriteString("\tspec := m[\"spec\"].(map[string]interface{})\n")
+		for _, f := range r.Fields {
+			writeSpecFieldToRequest(&sb, sn, f)
+		}
 	}
 	sb.WriteString("\treturn m\n}\n\n")
 
 	// Populate state
 	sb.WriteString(fmt.Sprintf("func populate%sState(ctx context.Context, data map[string]interface{}, state *%sResourceModel) error {\n", sn, sn))
-	sb.WriteString("\tif err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil { return err }\n")
-	for _, f := range r.Fields {
-		writeFieldFromResponse(&sb, f, "state")
+	sb.WriteString("\tif err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil { return err }\n")
+	sb.WriteString("\tstate.ID = state.Metadata.ID\n")
+	if hasSpec {
+		sb.WriteString("\tspec := getSpec(data)\n")
+		for _, f := range r.Fields {
+			writeSpecFieldFromResponse(&sb, sn, f)
+		}
 	}
-	for _, f := range r.InfoFields {
-		writeInfoFieldFromResponse(&sb, f, "state")
-	}
+	emitStatusAssign(&sb, r, "data")
 	sb.WriteString("\treturn nil\n}\n\n")
 
-	// CRUD methods
+	// Create
 	sb.WriteString(fmt.Sprintf("func (r *%sResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {\n", sn))
 	sb.WriteString(fmt.Sprintf("\tvar plan %sResourceModel\n", sn))
 	sb.WriteString("\tresp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)\n")
 	sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
-	sb.WriteString("\tplan.ID = types.StringValue(uuid.New().String())\n")
-	sb.WriteString(fmt.Sprintf("\tbody := build%sRequest(ctx, plan)\n", sn))
-	sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Put(ctx, \"%s\", body)\n", r.APIPath))
+	sb.WriteString("\tplan.ID = types.StringValue(newULID())\n")
+	sb.WriteString(fmt.Sprintf("\tbody := build%sRequestMap(ctx, plan)\n", sn))
+	sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Put(ctx, %q, body)\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Create Error\", err.Error()); return }\n")
-	sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, \"%s\", modResp.RequestId); err != nil { resp.Diagnostics.AddError(\"Create Poll Error\", err.Error()); return }\n", r.APIPath))
+	sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil { resp.Diagnostics.AddError(\"Create Poll Error\", err.Error()); return }\n", r.APIPath))
 	sb.WriteString("\tresourceId := modResp.ResourceId\n\tif resourceId == \"\" { resourceId = plan.ID.ValueString() }\n")
-	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, \"%s\", resourceId)\n", r.APIPath))
+	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, resourceId)\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read After Create Error\", err.Error()); return }\n")
 	sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Read After Create Error\", \"resource not found after creation\"); return }\n")
 	sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
 	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n}\n\n")
 
+	// Read
 	sb.WriteString(fmt.Sprintf("func (r *%sResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {\n", sn))
 	sb.WriteString(fmt.Sprintf("\tvar state %sResourceModel\n", sn))
 	sb.WriteString("\tresp.Diagnostics.Append(req.State.Get(ctx, &state)...)\n")
 	sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
-	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, \"%s\", state.ID.ValueString())\n", r.APIPath))
+	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, state.ID.ValueString())\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read Error\", err.Error()); return }\n")
 	sb.WriteString("\tif apiData == nil { resp.State.RemoveResource(ctx); return }\n")
 	sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &state); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
 	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, state)...)\n}\n\n")
 
+	// Update
 	sb.WriteString(fmt.Sprintf("func (r *%sResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {\n", sn))
 	sb.WriteString(fmt.Sprintf("\tvar plan, state %sResourceModel\n", sn))
 	sb.WriteString("\tresp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)\n")
 	sb.WriteString("\tresp.Diagnostics.Append(req.State.Get(ctx, &state)...)\n")
 	sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
 	sb.WriteString("\tplan.ID = state.ID\n")
-	sb.WriteString(fmt.Sprintf("\tbody := build%sRequest(ctx, plan)\n", sn))
-	sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Put(ctx, \"%s\", body)\n", r.APIPath))
+	sb.WriteString(fmt.Sprintf("\tbody := build%sRequestMap(ctx, plan)\n", sn))
+	sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Put(ctx, %q, body)\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Update Error\", err.Error()); return }\n")
-	sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, \"%s\", modResp.RequestId); err != nil { resp.Diagnostics.AddError(\"Update Poll Error\", err.Error()); return }\n", r.APIPath))
-	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, \"%s\", plan.ID.ValueString())\n", r.APIPath))
+	sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil { resp.Diagnostics.AddError(\"Update Poll Error\", err.Error()); return }\n", r.APIPath))
+	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, plan.ID.ValueString())\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read After Update Error\", err.Error()); return }\n")
 	sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Read After Update Error\", \"not found\"); return }\n")
 	sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
 	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n}\n\n")
 
+	// Delete
 	sb.WriteString(fmt.Sprintf("func (r *%sResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {\n", sn))
 	sb.WriteString(fmt.Sprintf("\tvar state %sResourceModel\n", sn))
 	sb.WriteString("\tresp.Diagnostics.Append(req.State.Get(ctx, &state)...)\n")
 	sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
-	sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Delete(ctx, \"%s\", state.ID.ValueString())\n", r.APIPath))
+	sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Delete(ctx, %q, state.ID.ValueString())\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Delete Error\", err.Error()); return }\n")
-	sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, \"%s\", modResp.RequestId); err != nil { resp.Diagnostics.AddError(\"Delete Poll Error\", err.Error()); return }\n}\n\n", r.APIPath))
+	sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil { resp.Diagnostics.AddError(\"Delete Poll Error\", err.Error()); return }\n}\n\n", r.APIPath))
 
+	// ImportState
 	sb.WriteString(fmt.Sprintf("func (r *%sResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {\n", sn))
 	sb.WriteString(fmt.Sprintf("\tvar state %sResourceModel\n", sn))
 	sb.WriteString("\tstate.ID = types.StringValue(req.ID)\n")
-	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, \"%s\", req.ID)\n", r.APIPath))
+	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, req.ID)\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Import Error\", err.Error()); return }\n")
 	sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Import Error\", \"not found\"); return }\n")
 	sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &state); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
 	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, state)...)\n}\n")
 
-	_ = needsAttr
 	return sb.String()
 }
 
+// resourceAttrDef returns the resource schema.Attribute literal for a spec field.
 func resourceAttrDef(f FieldDef) string {
+	sens := ""
+	if f.Sensitive {
+		sens = ", Sensitive: true"
+	}
 	switch f.FieldType {
 	case "string":
-		req := ""
 		if f.Required {
-			req = "Required: true,"
-		} else {
-			req = "Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},"
+			return fmt.Sprintf("schema.StringAttribute{Required: true%s}", sens)
 		}
-		sens := ""
-		if f.Sensitive {
-			sens = "Sensitive: true,"
+		if f.OptionalOnly {
+			return fmt.Sprintf("schema.StringAttribute{Optional: true%s}", sens)
 		}
-		return fmt.Sprintf("schema.StringAttribute{%s %s}", req, sens)
+		return fmt.Sprintf("schema.StringAttribute{Optional: true, Computed: true%s, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}", sens)
 	case "bool":
-		req := ""
 		if f.Required {
-			req = "Required: true,"
-		} else {
-			req = "Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},"
+			return "schema.BoolAttribute{Required: true}"
 		}
-		return fmt.Sprintf("schema.BoolAttribute{%s}", req)
+		if f.OptionalOnly {
+			return "schema.BoolAttribute{Optional: true}"
+		}
+		return "schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}}"
 	case "int64":
-		req := ""
 		if f.Required {
-			req = "Required: true,"
-		} else {
-			req = "Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},"
+			return "schema.Int64Attribute{Required: true}"
 		}
-		return fmt.Sprintf("schema.Int64Attribute{%s}", req)
+		if f.OptionalOnly {
+			return "schema.Int64Attribute{Optional: true}"
+		}
+		return "schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}}"
 	case "float64":
-		req := ""
 		if f.Required {
-			req = "Required: true,"
-		} else {
-			req = "Optional: true, Computed: true, PlanModifiers: []planmodifier.Float64{float64planmodifier.UseStateForUnknown()},"
+			return "schema.Float64Attribute{Required: true}"
 		}
-		return fmt.Sprintf("schema.Float64Attribute{%s}", req)
+		if f.OptionalOnly {
+			return "schema.Float64Attribute{Optional: true}"
+		}
+		return "schema.Float64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Float64{float64planmodifier.UseStateForUnknown()}}"
 	case "list_string":
-		req := ""
 		if f.Required {
-			req = "Required: true,"
-		} else {
-			req = "Optional: true, Computed: true,"
+			return "schema.ListAttribute{Required: true, ElementType: types.StringType}"
 		}
-		return fmt.Sprintf("schema.ListAttribute{%s ElementType: types.StringType}", req)
+		if f.OptionalOnly {
+			return "schema.ListAttribute{Optional: true, ElementType: types.StringType}"
+		}
+		return "schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType}"
 	case "map_string":
-		req := ""
 		if f.Required {
-			req = "Required: true,"
-		} else {
-			req = "Optional: true, Computed: true,"
+			return "schema.MapAttribute{Required: true, ElementType: types.StringType}"
 		}
-		return fmt.Sprintf("schema.MapAttribute{%s ElementType: types.StringType}", req)
+		if f.OptionalOnly {
+			return "schema.MapAttribute{Optional: true, ElementType: types.StringType}"
+		}
+		return "schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType}"
 	case "list_object":
-		var nested strings.Builder
-		nested.WriteString("schema.ListNestedAttribute{Optional: true, Computed: true, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{")
+		var b strings.Builder
+		b.WriteString("schema.ListNestedAttribute{Optional: true, Computed: true, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{")
 		for _, of := range f.ObjFields {
-			nested.WriteString(fmt.Sprintf("\"%s\": %s,", of.TFName, resourceAttrDef(of)))
+			b.WriteString(fmt.Sprintf("%q: %s,", of.TFName, resourceAttrDef(of)))
 		}
-		nested.WriteString("}}}")
-		return nested.String()
+		b.WriteString("}}}")
+		return b.String()
 	}
 	return "schema.StringAttribute{Optional: true, Computed: true}"
 }
 
+// resourceComputedAttrDef is retained for compatibility (status extras use it indirectly).
 func resourceComputedAttrDef(f FieldDef) string {
+	if f.Sensitive {
+		return "schema.StringAttribute{Computed: true, Sensitive: true}"
+	}
+	switch f.FieldType {
+	case "bool":
+		return "schema.BoolAttribute{Computed: true}"
+	case "int64":
+		return "schema.Int64Attribute{Computed: true}"
+	case "float64":
+		return "schema.Float64Attribute{Computed: true}"
+	}
+	return "schema.StringAttribute{Computed: true}"
+}
+
+// writeSpecFieldToRequest emits code writing a spec field from plan.Spec into the request spec map.
+func writeSpecFieldToRequest(sb *strings.Builder, sn string, f FieldDef) {
+	F := toTitle(f.TFName)
+	api := f.APIName
+	switch f.FieldType {
+	case "string":
+		sb.WriteString(fmt.Sprintf("\tif !plan.Spec.%s.IsNull() && !plan.Spec.%s.IsUnknown() { spec[%q] = plan.Spec.%s.ValueString() }\n", F, F, api, F))
+	case "bool":
+		sb.WriteString(fmt.Sprintf("\tif !plan.Spec.%s.IsNull() && !plan.Spec.%s.IsUnknown() { spec[%q] = plan.Spec.%s.ValueBool() }\n", F, F, api, F))
+	case "int64":
+		sb.WriteString(fmt.Sprintf("\tif !plan.Spec.%s.IsNull() && !plan.Spec.%s.IsUnknown() { spec[%q] = plan.Spec.%s.ValueInt64() }\n", F, F, api, F))
+	case "float64":
+		sb.WriteString(fmt.Sprintf("\tif !plan.Spec.%s.IsNull() && !plan.Spec.%s.IsUnknown() { spec[%q] = plan.Spec.%s.ValueFloat64() }\n", F, F, api, F))
+	case "list_string":
+		sb.WriteString(fmt.Sprintf("\tif !plan.Spec.%s.IsNull() && !plan.Spec.%s.IsUnknown() { spec[%q] = stringListToInterface(ctx, plan.Spec.%s) }\n", F, F, api, F))
+	case "map_string":
+		sb.WriteString(fmt.Sprintf("\tif !plan.Spec.%s.IsNull() && !plan.Spec.%s.IsUnknown() { spec[%q] = stringMapToInterface(ctx, plan.Spec.%s) }\n", F, F, api, F))
+	case "object":
+		sb.WriteString(fmt.Sprintf("\tif !plan.Spec.%s.IsNull() && !plan.Spec.%s.IsUnknown() { spec[%q] = objToAPI(plan.Spec.%s, %s) }\n", F, F, api, F, descVarName(sn, f)))
+	case "list_object":
+		sb.WriteString(fmt.Sprintf("\tif !plan.Spec.%s.IsNull() && !plan.Spec.%s.IsUnknown() { spec[%q] = listObjToAPI(plan.Spec.%s, %s) }\n", F, F, api, F, descVarName(sn, f)))
+	}
+}
+
+// writeSpecFieldFromResponse emits code reading a spec field from the response spec map into state.Spec.
+func writeSpecFieldFromResponse(sb *strings.Builder, sn string, f FieldDef) {
+	F := toTitle(f.TFName)
+	api := f.APIName
+	switch f.FieldType {
+	case "string":
+		sb.WriteString(fmt.Sprintf("\tstate.Spec.%s = getString(spec, %q)\n", F, api))
+	case "bool":
+		sb.WriteString(fmt.Sprintf("\tstate.Spec.%s = getBool(spec, %q)\n", F, api))
+	case "int64":
+		sb.WriteString(fmt.Sprintf("\tstate.Spec.%s = getInt64(spec, %q)\n", F, api))
+	case "float64":
+		sb.WriteString(fmt.Sprintf("\tstate.Spec.%s = getFloat64(spec, %q)\n", F, api))
+	case "list_string":
+		sb.WriteString(fmt.Sprintf("\tstate.Spec.%s = getStringList(ctx, spec, %q)\n", F, api))
+	case "map_string":
+		sb.WriteString(fmt.Sprintf("\tstate.Spec.%s = getStringMap(spec, %q)\n", F, api))
+	case "object":
+		sb.WriteString(fmt.Sprintf("\tstate.Spec.%s = objFromAPI(objMap(spec, %q), %s)\n", F, api, descVarName(sn, f)))
+	case "list_object":
+		sb.WriteString(fmt.Sprintf("\tstate.Spec.%s = listObjFromAPI(objList(spec, %q), %s)\n", F, api, descVarName(sn, f)))
+	}
+}
+
+func generateDatasourceFile(r ResourceDef) string {
+	sn := structName(r.Name)
+	hasSpec := len(r.Fields) > 0
+	var sb strings.Builder
+
+	// attr is only needed for the status-extras buildInfoObj literals.
+	needsAttr := len(r.StatusExtra) > 0
+
+	sb.WriteString("package provider\n\n")
+	sb.WriteString("import (\n")
+	sb.WriteString("\t\"context\"\n")
+	sb.WriteString("\t\"fmt\"\n\n")
+	if needsAttr {
+		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/attr\"\n")
+	}
+	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/datasource\"\n")
+	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/datasource/schema\"\n")
+	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/types\"\n")
+	sb.WriteString("\t\"github.com/kvindo/terraform-provider-kvindo/internal/client\"\n")
+	sb.WriteString(")\n\n")
+	sb.WriteString("var _ = fmt.Sprintf\n\n")
+
+	// Model (reuses the resource's spec struct)
+	sb.WriteString(fmt.Sprintf("type %sDataSourceModel struct {\n", sn))
+	sb.WriteString("\tID       types.String  `tfsdk:\"id\"`\n")
+	sb.WriteString("\tMetadata metadataModel `tfsdk:\"metadata\"`\n")
+	if hasSpec {
+		sb.WriteString(fmt.Sprintf("\tSpec     %sSpecModel `tfsdk:\"spec\"`\n", sn))
+	}
+	sb.WriteString("\tStatus   types.Object  `tfsdk:\"status\"`\n")
+	sb.WriteString("}\n\n")
+
+	sb.WriteString(fmt.Sprintf("type %sDataSource struct { client *client.Client }\n\n", sn))
+	sb.WriteString(fmt.Sprintf("func New%sDataSource() datasource.DataSource { return &%sDataSource{} }\n\n", sn, sn))
+
+	sb.WriteString(fmt.Sprintf("func (d *%sDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {\n", sn))
+	sb.WriteString(fmt.Sprintf("\tresp.TypeName = req.ProviderTypeName + \"_%s\"\n}\n\n", r.Name))
+
+	sb.WriteString(fmt.Sprintf("func (d *%sDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {\n", sn))
+	if hasSpec {
+		sb.WriteString("\tspecAttrs := map[string]schema.Attribute{\n")
+		for _, f := range r.Fields {
+			var expr string
+			switch f.FieldType {
+			case "object":
+				expr = fmt.Sprintf("objDatasourceSchema(%s)", descVarName(sn, f))
+			case "list_object":
+				expr = fmt.Sprintf("listObjDatasourceSchema(%s)", descVarName(sn, f))
+			default:
+				expr = datasourceAttrDef(f)
+			}
+			sb.WriteString(fmt.Sprintf("\t\t%q: %s,\n", f.TFName, expr))
+		}
+		sb.WriteString("\t}\n")
+	}
+	sb.WriteString("\tresp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{\n")
+	sb.WriteString("\t\t\"id\": schema.StringAttribute{Required: true},\n")
+	sb.WriteString("\t\t\"metadata\": metadataDatasourceSchema(),\n")
+	if hasSpec {
+		sb.WriteString("\t\t\"spec\": schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},\n")
+	}
+	sb.WriteString(fmt.Sprintf("\t\t\"status\": commonInfoDatasourceSchema(%s),\n", emitDatasourceStatusSchemaArg(r)))
+	sb.WriteString("\t}}\n}\n\n")
+
+	sb.WriteString(fmt.Sprintf("func (d *%sDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {\n", sn))
+	sb.WriteString("\tif req.ProviderData == nil { return }\n")
+	sb.WriteString("\tpd, ok := req.ProviderData.(*KvindoProviderData)\n")
+	sb.WriteString("\tif !ok { resp.Diagnostics.AddError(\"Unexpected Provider Data\", fmt.Sprintf(\"Expected *KvindoProviderData, got %T\", req.ProviderData)); return }\n")
+	sb.WriteString("\td.client = pd.Client\n}\n\n")
+
+	sb.WriteString(fmt.Sprintf("func (d *%sDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {\n", sn))
+	sb.WriteString(fmt.Sprintf("\tvar state %sDataSourceModel\n", sn))
+	sb.WriteString("\tresp.Diagnostics.Append(req.Config.Get(ctx, &state)...)\n")
+	sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
+	sb.WriteString(fmt.Sprintf("\tapiData, err := d.client.Get(ctx, %q, state.ID.ValueString())\n", r.APIPath))
+	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read Error\", err.Error()); return }\n")
+	sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Not Found\", \"resource not found\"); return }\n")
+	sb.WriteString("\tif err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n")
+	if hasSpec {
+		sb.WriteString("\tspec := getSpec(apiData)\n")
+		for _, f := range r.Fields {
+			writeSpecFieldFromResponse(&sb, sn, f)
+		}
+	}
+	emitStatusAssign(&sb, r, "apiData")
+	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, state)...)\n}\n")
+
+	return sb.String()
+}
+
+// datasourceAttrDef returns the datasource schema.Attribute literal for a spec field (all Computed).
+func datasourceAttrDef(f FieldDef) string {
 	switch f.FieldType {
 	case "string":
 		if f.Sensitive {
@@ -677,256 +1149,43 @@ func resourceComputedAttrDef(f FieldDef) string {
 		return "schema.ListAttribute{Computed: true, ElementType: types.StringType}"
 	case "map_string":
 		return "schema.MapAttribute{Computed: true, ElementType: types.StringType}"
+	case "list_object":
+		var b strings.Builder
+		b.WriteString("schema.ListNestedAttribute{Computed: true, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{")
+		for _, of := range f.ObjFields {
+			b.WriteString(fmt.Sprintf("%q: %s,", of.TFName, datasourceAttrDef(of)))
+		}
+		b.WriteString("}}}")
+		return b.String()
 	}
 	return "schema.StringAttribute{Computed: true}"
 }
 
-func writeFieldToRequest(sb *strings.Builder, f FieldDef) {
-	tfField := toTitle(f.TFName)
-	apiName := f.APIName
-
-	switch f.FieldType {
-	case "string":
-		sb.WriteString(fmt.Sprintf("\tif !plan.%s.IsNull() && !plan.%s.IsUnknown() { m[\"%s\"] = plan.%s.ValueString() }\n", tfField, tfField, apiName, tfField))
-	case "bool":
-		sb.WriteString(fmt.Sprintf("\tif !plan.%s.IsNull() && !plan.%s.IsUnknown() { m[\"%s\"] = plan.%s.ValueBool() }\n", tfField, tfField, apiName, tfField))
-	case "int64":
-		sb.WriteString(fmt.Sprintf("\tif !plan.%s.IsNull() && !plan.%s.IsUnknown() { m[\"%s\"] = plan.%s.ValueInt64() }\n", tfField, tfField, apiName, tfField))
-	case "float64":
-		sb.WriteString(fmt.Sprintf("\tif !plan.%s.IsNull() && !plan.%s.IsUnknown() { m[\"%s\"] = plan.%s.ValueFloat64() }\n", tfField, tfField, apiName, tfField))
-	case "list_string":
-		sb.WriteString(fmt.Sprintf("\tif !plan.%s.IsNull() && !plan.%s.IsUnknown() { m[\"%s\"] = stringListToInterface(ctx, plan.%s) }\n", tfField, tfField, apiName, tfField))
-	case "map_string":
-		sb.WriteString(fmt.Sprintf("\tif !plan.%s.IsNull() && !plan.%s.IsUnknown() { m[\"%s\"] = stringMapToInterface(ctx, plan.%s) }\n", tfField, tfField, apiName, tfField))
-	case "list_object":
-		sb.WriteString(fmt.Sprintf("\tif !plan.%s.IsNull() && !plan.%s.IsUnknown() {\n", tfField, tfField))
-		sb.WriteString("\t\tvar items []map[string]interface{}\n")
-		sb.WriteString(fmt.Sprintf("\t\tfor _, elem := range plan.%s.Elements() {\n", tfField))
-		sb.WriteString("\t\t\tif ov, ok := elem.(types.Object); ok {\n")
-		sb.WriteString("\t\t\t\titem := map[string]interface{}{}\n")
-		for _, of := range f.ObjFields {
-			switch of.FieldType {
-			case "string":
-				sb.WriteString(fmt.Sprintf("\t\t\t\tif v, ok := ov.Attributes()[\"%s\"]; ok { if sv, ok2 := v.(types.String); ok2 && !sv.IsNull() { item[\"%s\"] = sv.ValueString() } }\n", of.TFName, of.APIName))
-			case "int64":
-				sb.WriteString(fmt.Sprintf("\t\t\t\tif v, ok := ov.Attributes()[\"%s\"]; ok { if iv, ok2 := v.(types.Int64); ok2 && !iv.IsNull() { item[\"%s\"] = iv.ValueInt64() } }\n", of.TFName, of.APIName))
-			case "bool":
-				sb.WriteString(fmt.Sprintf("\t\t\t\tif v, ok := ov.Attributes()[\"%s\"]; ok { if bv, ok2 := v.(types.Bool); ok2 && !bv.IsNull() { item[\"%s\"] = bv.ValueBool() } }\n", of.TFName, of.APIName))
+// emitDatasourceStatusSchemaArg returns the arg for commonInfoDatasourceSchema.
+func emitDatasourceStatusSchemaArg(r ResourceDef) string {
+	if len(r.StatusExtra) == 0 {
+		return "nil"
+	}
+	var b strings.Builder
+	b.WriteString("map[string]schema.Attribute{")
+	for _, f := range r.StatusExtra {
+		var attrType string
+		switch f.FieldType {
+		case "int64":
+			attrType = "schema.Int64Attribute{Computed: true}"
+		case "bool":
+			attrType = "schema.BoolAttribute{Computed: true}"
+		default:
+			if f.Sensitive {
+				attrType = "schema.StringAttribute{Computed: true, Sensitive: true}"
+			} else {
+				attrType = "schema.StringAttribute{Computed: true}"
 			}
 		}
-		sb.WriteString("\t\t\t\titems = append(items, item)\n\t\t\t}\n\t\t}\n")
-		sb.WriteString(fmt.Sprintf("\t\tm[\"%s\"] = items\n\t}\n", apiName))
+		b.WriteString(fmt.Sprintf("%q: %s, ", f.TFName, attrType))
 	}
-}
-
-func writeFieldFromResponse(sb *strings.Builder, f FieldDef, stateVar string) {
-	tfField := toTitle(f.TFName)
-	apiName := f.APIName
-
-	switch f.FieldType {
-	case "string":
-		sb.WriteString(fmt.Sprintf("\t%s.%s = getString(data, \"%s\")\n", stateVar, tfField, apiName))
-	case "bool":
-		sb.WriteString(fmt.Sprintf("\t%s.%s = getBool(data, \"%s\")\n", stateVar, tfField, apiName))
-	case "int64":
-		sb.WriteString(fmt.Sprintf("\t%s.%s = getInt64(data, \"%s\")\n", stateVar, tfField, apiName))
-	case "float64":
-		sb.WriteString(fmt.Sprintf("\t%s.%s = getFloat64(data, \"%s\")\n", stateVar, tfField, apiName))
-	case "list_string":
-		sb.WriteString(fmt.Sprintf("\t%s.%s = getStringList(ctx, data, \"%s\")\n", stateVar, tfField, apiName))
-	case "map_string":
-		sb.WriteString(fmt.Sprintf("\t%s.%s = getStringMap(data, \"%s\")\n", stateVar, tfField, apiName))
-	case "list_object":
-		sb.WriteString(fmt.Sprintf("\t{\n\t\trawList, _ := data[\"%s\"].([]interface{})\n", apiName))
-		sb.WriteString("\t\tattrTypes := map[string]attr.Type{\n")
-		for _, of := range f.ObjFields {
-			switch of.FieldType {
-			case "string":
-				sb.WriteString(fmt.Sprintf("\t\t\t\"%s\": types.StringType,\n", of.TFName))
-			case "bool":
-				sb.WriteString(fmt.Sprintf("\t\t\t\"%s\": types.BoolType,\n", of.TFName))
-			case "int64":
-				sb.WriteString(fmt.Sprintf("\t\t\t\"%s\": types.Int64Type,\n", of.TFName))
-			}
-		}
-		sb.WriteString("\t\t}\n\t\tobjs := make([]attr.Value, 0, len(rawList))\n")
-		sb.WriteString("\t\tfor _, item := range rawList {\n\t\t\tif m, ok := item.(map[string]interface{}); ok {\n")
-		sb.WriteString("\t\t\t\tattrs := map[string]attr.Value{\n")
-		for _, of := range f.ObjFields {
-			switch of.FieldType {
-			case "string":
-				sb.WriteString(fmt.Sprintf("\t\t\t\t\t\"%s\": getString(m, \"%s\"),\n", of.TFName, of.APIName))
-			case "bool":
-				sb.WriteString(fmt.Sprintf("\t\t\t\t\t\"%s\": getBool(m, \"%s\"),\n", of.TFName, of.APIName))
-			case "int64":
-				sb.WriteString(fmt.Sprintf("\t\t\t\t\t\"%s\": getInt64(m, \"%s\"),\n", of.TFName, of.APIName))
-			}
-		}
-		sb.WriteString("\t\t\t\t}\n\t\t\t\tobj, _ := types.ObjectValue(attrTypes, attrs)\n")
-		sb.WriteString("\t\t\t\tobjs = append(objs, obj)\n\t\t\t}\n\t\t}\n")
-		sb.WriteString(fmt.Sprintf("\t\t%s.%s, _ = types.ListValue(types.ObjectType{AttrTypes: attrTypes}, objs)\n\t}\n", stateVar, tfField))
-	}
-}
-
-func writeInfoFieldFromResponse(sb *strings.Builder, f FieldDef, stateVar string) {
-	tfField := toTitle(f.TFName)
-	// Strip "info." prefix from APIName to get the info sub-key
-	infoKey := strings.TrimPrefix(f.APIName, "info.")
-
-	switch f.FieldType {
-	case "string":
-		sb.WriteString(fmt.Sprintf("\t%s.%s = getStringFromInfo(data, \"%s\")\n", stateVar, tfField, infoKey))
-	case "bool":
-		sb.WriteString(fmt.Sprintf("\t%s.%s = getBoolFromInfo(data, \"%s\")\n", stateVar, tfField, infoKey))
-	case "int64":
-		sb.WriteString(fmt.Sprintf("\t%s.%s = getInt64FromInfo(data, \"%s\")\n", stateVar, tfField, infoKey))
-	default:
-		sb.WriteString(fmt.Sprintf("\t%s.%s = getStringFromInfo(data, \"%s\")\n", stateVar, tfField, infoKey))
-	}
-}
-
-func generateDatasourceFile(r ResourceDef) string {
-	sn := structName(r.Name)
-	var sb strings.Builder
-
-	needsAttr := false
-	for _, f := range r.Fields {
-		if f.FieldType == "list_object" {
-			needsAttr = true
-		}
-	}
-
-	sb.WriteString("package provider\n\n")
-	sb.WriteString("import (\n")
-	sb.WriteString("\t\"context\"\n")
-	sb.WriteString("\t\"fmt\"\n\n")
-	if needsAttr {
-		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/attr\"\n")
-	}
-	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/datasource\"\n")
-	sb.WriteString("\tdschema \"github.com/hashicorp/terraform-plugin-framework/datasource/schema\"\n")
-	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/types\"\n")
-	sb.WriteString("\t\"github.com/kvindo/terraform-provider-kvindo/internal/client\"\n")
-	sb.WriteString(")\n\n")
-	sb.WriteString("var _ = fmt.Sprintf\n\n")
-
-	// Model
-	sb.WriteString(fmt.Sprintf("type %sDataSourceModel struct {\n", sn))
-	sb.WriteString("\tID               types.String `tfsdk:\"id\"`\n")
-	sb.WriteString("\tName             types.String `tfsdk:\"name\"`\n")
-	sb.WriteString("\tDescription      types.String `tfsdk:\"description\"`\n")
-	sb.WriteString("\tFolderID         types.String `tfsdk:\"folder_id\"`\n")
-	sb.WriteString("\tDeleteProtection types.Bool   `tfsdk:\"delete_protection\"`\n")
-	sb.WriteString("\tLabels           types.Map    `tfsdk:\"labels\"`\n")
-	for _, f := range r.Fields {
-		sb.WriteString(fmt.Sprintf("\t%s %s `tfsdk:\"%s\"`\n", toTitle(f.TFName), typeToGoType(f.FieldType), f.TFName))
-	}
-	for _, f := range r.InfoFields {
-		sb.WriteString(fmt.Sprintf("\t%s %s `tfsdk:\"%s\"`\n", toTitle(f.TFName), typeToGoType(f.FieldType), f.TFName))
-	}
-	sb.WriteString("}\n\n")
-
-	sb.WriteString(fmt.Sprintf("type %sDataSource struct { client *client.Client }\n\n", sn))
-	sb.WriteString(fmt.Sprintf("func New%sDataSource() datasource.DataSource { return &%sDataSource{} }\n\n", sn, sn))
-
-	sb.WriteString(fmt.Sprintf("func (d *%sDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {\n", sn))
-	sb.WriteString(fmt.Sprintf("\tresp.TypeName = req.ProviderTypeName + \"_%s\"\n}\n\n", r.Name))
-
-	sb.WriteString(fmt.Sprintf("func (d *%sDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {\n", sn))
-	sb.WriteString("\tattrs := commonDatasourceSchemaAttributes()\n")
-	for _, f := range r.Fields {
-		sb.WriteString(fmt.Sprintf("\tattrs[\"%s\"] = %s\n", f.TFName, datasourceAttrDef(f)))
-	}
-	for _, f := range r.InfoFields {
-		sb.WriteString(fmt.Sprintf("\tattrs[\"%s\"] = %s\n", f.TFName, datasourceComputedAttrDef(f)))
-	}
-	sb.WriteString("\tresp.Schema = datasource.Schema{Attributes: attrs}\n}\n\n")
-
-	sb.WriteString(fmt.Sprintf("func (d *%sDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {\n", sn))
-	sb.WriteString("\tif req.ProviderData == nil { return }\n")
-	sb.WriteString("\tpd, ok := req.ProviderData.(*KvindoProviderData)\n")
-	sb.WriteString("\tif !ok { resp.Diagnostics.AddError(\"Unexpected Provider Data\", fmt.Sprintf(\"Expected *KvindoProviderData, got %T\", req.ProviderData)); return }\n")
-	sb.WriteString("\td.client = pd.Client\n}\n\n")
-
-	sb.WriteString(fmt.Sprintf("func (d *%sDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {\n", sn))
-	sb.WriteString(fmt.Sprintf("\tvar state %sDataSourceModel\n", sn))
-	sb.WriteString("\tresp.Diagnostics.Append(req.Config.Get(ctx, &state)...)\n")
-	sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
-	sb.WriteString(fmt.Sprintf("\tapiData, err := d.client.Get(ctx, \"%s\", state.ID.ValueString())\n", r.APIPath))
-	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read Error\", err.Error()); return }\n")
-	sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Not Found\", \"resource not found\"); return }\n")
-	sb.WriteString("\tif err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {\n")
-	sb.WriteString("\t\tresp.Diagnostics.AddError(\"State Error\", err.Error()); return\n\t}\n")
-	for _, f := range r.Fields {
-		writeFieldFromResponse(&sb, f, "state")
-	}
-	// Fix: data -> apiData
-	// (writeFieldFromResponse uses "data" as the variable name - need to replace)
-	for _, f := range r.InfoFields {
-		writeInfoFieldFromResponse(&sb, f, "state")
-	}
-	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, state)...)\n}\n")
-
-	_ = needsAttr
-	content := sb.String()
-	// Fix data variable references: writeFieldFromResponse uses "data" not "apiData"
-	content = strings.ReplaceAll(content, "getString(data,", "getString(apiData,")
-	content = strings.ReplaceAll(content, "getBool(data,", "getBool(apiData,")
-	content = strings.ReplaceAll(content, "getInt64(data,", "getInt64(apiData,")
-	content = strings.ReplaceAll(content, "getFloat64(data,", "getFloat64(apiData,")
-	content = strings.ReplaceAll(content, "getStringList(ctx, data,", "getStringList(ctx, apiData,")
-	content = strings.ReplaceAll(content, "getStringMap(data,", "getStringMap(apiData,")
-	content = strings.ReplaceAll(content, "getStringFromInfo(data,", "getStringFromInfo(apiData,")
-	content = strings.ReplaceAll(content, "getInt64FromInfo(data,", "getInt64FromInfo(apiData,")
-	content = strings.ReplaceAll(content, "getBoolFromInfo(data,", "getBoolFromInfo(apiData,")
-	content = strings.ReplaceAll(content, `data["`, `apiData["`)
-	content = strings.ReplaceAll(content, "dschema.", "schema.")  // fix alias usage
-	return content
-}
-
-func datasourceAttrDef(f FieldDef) string {
-	switch f.FieldType {
-	case "string":
-		if f.Sensitive {
-			return "dschema.StringAttribute{Computed: true, Sensitive: true}"
-		}
-		return "dschema.StringAttribute{Computed: true}"
-	case "bool":
-		return "dschema.BoolAttribute{Computed: true}"
-	case "int64":
-		return "dschema.Int64Attribute{Computed: true}"
-	case "float64":
-		return "dschema.Float64Attribute{Computed: true}"
-	case "list_string":
-		return "dschema.ListAttribute{Computed: true, ElementType: types.StringType}"
-	case "map_string":
-		return "dschema.MapAttribute{Computed: true, ElementType: types.StringType}"
-	case "list_object":
-		var nested strings.Builder
-		nested.WriteString("dschema.ListNestedAttribute{Computed: true, NestedObject: dschema.NestedAttributeObject{Attributes: map[string]dschema.Attribute{")
-		for _, of := range f.ObjFields {
-			nested.WriteString(fmt.Sprintf("\"%s\": %s,", of.TFName, datasourceAttrDef(of)))
-		}
-		nested.WriteString("}}}")
-		return nested.String()
-	}
-	return "dschema.StringAttribute{Computed: true}"
-}
-
-func datasourceComputedAttrDef(f FieldDef) string {
-	switch f.FieldType {
-	case "string":
-		if f.Sensitive {
-			return "dschema.StringAttribute{Computed: true, Sensitive: true}"
-		}
-		return "dschema.StringAttribute{Computed: true}"
-	case "bool":
-		return "dschema.BoolAttribute{Computed: true}"
-	case "int64":
-		return "dschema.Int64Attribute{Computed: true}"
-	default:
-		return "dschema.StringAttribute{Computed: true}"
-	}
+	b.WriteString("}")
+	return b.String()
 }
 
 func generateProviderFile(resources []ResourceDef) string {
@@ -957,13 +1216,15 @@ func generateProviderFile(resources []ResourceDef) string {
 	sb.WriteString("\tendpoint := defaultEndpoint\n\tif !config.Endpoint.IsNull() && !config.Endpoint.IsUnknown() && config.Endpoint.ValueString() != \"\" {\n\t\tendpoint = config.Endpoint.ValueString()\n\t} else if v := os.Getenv(\"KVINDO_ENDPOINT\"); v != \"\" {\n\t\tendpoint = v\n\t}\n")
 	sb.WriteString("\ttoken := \"\"\n\tif !config.Token.IsNull() && !config.Token.IsUnknown() { token = config.Token.ValueString() }\n\tif token == \"\" { token = os.Getenv(\"KVINDO_TOKEN\") }\n")
 	sb.WriteString("\tif token == \"\" { resp.Diagnostics.AddError(\"Missing API Token\", \"Set token in provider config or KVINDO_TOKEN env var\"); return }\n")
-	sb.WriteString("\tpd := &KvindoProviderData{Client: client.New(endpoint, token)}\n\tresp.DataSourceData = pd\n\tresp.ResourceData = pd\n}\n\n")
+	sb.WriteString("\tpd := &KvindoProviderData{Client: client.New(endpoint, token, p.version)}\n\tresp.DataSourceData = pd\n\tresp.ResourceData = pd\n}\n\n")
 
 	// Resources
 	sb.WriteString("func (p *KvindoProvider) Resources(_ context.Context) []func() resource.Resource {\n\treturn []func() resource.Resource{\n")
 	for _, r := range resources {
 		sb.WriteString(fmt.Sprintf("\t\tNew%sResource,\n", structName(r.Name)))
 	}
+	// Transaction is hand-written (not generated) but must be registered.
+	sb.WriteString("\t\tNewTransactionResource,\n")
 	sb.WriteString("\t}\n}\n\n")
 
 	// DataSources

@@ -11,28 +11,15 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// LoadbalancerHttpListenerRuleDataSourceModel describes the data source data model.
 type LoadbalancerHttpListenerRuleDataSourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	HttpListenerId types.String `tfsdk:"http_listener_id"`
-	Order types.Int64 `tfsdk:"order"`
-	MatchPath types.String `tfsdk:"match_path"`
-	MatchPathMatchType types.String `tfsdk:"match_path_match_type"`
-	ActionType types.String `tfsdk:"action_type"`
-	ActionJson types.String `tfsdk:"action_json"`
-	InfoState types.String `tfsdk:"info_state"`
+	ID       types.String                          `tfsdk:"id"`
+	Metadata metadataModel                         `tfsdk:"metadata"`
+	Spec     LoadbalancerHttpListenerRuleSpecModel `tfsdk:"spec"`
+	Status   types.Object                          `tfsdk:"status"`
 }
 
-type LoadbalancerHttpListenerRuleDataSource struct {
-	client *client.Client
-}
+type LoadbalancerHttpListenerRuleDataSource struct{ client *client.Client }
 
 func NewLoadbalancerHttpListenerRuleDataSource() datasource.DataSource {
 	return &LoadbalancerHttpListenerRuleDataSource{}
@@ -43,17 +30,25 @@ func (d *LoadbalancerHttpListenerRuleDataSource) Metadata(_ context.Context, req
 }
 
 func (d *LoadbalancerHttpListenerRuleDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	attrs := commonDatasourceSchemaAttributes()
-
-	attrs["http_listener_id"] = schema.StringAttribute{Computed: true}
-	attrs["order"] = schema.Int64Attribute{Computed: true}
-	attrs["match_path"] = schema.StringAttribute{Computed: true}
-	attrs["match_path_match_type"] = schema.StringAttribute{Computed: true}
-	attrs["action_type"] = schema.StringAttribute{Computed: true}
-	attrs["action_json"] = schema.StringAttribute{Computed: true}
-	attrs["info_state"] = schema.StringAttribute{Computed: true}
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	specAttrs := map[string]schema.Attribute{
+		"delete_request_headers_action":    objDatasourceSchema(loadbalancerHttpListenerRuleDeleteRequestHeadersActionObjFields),
+		"delete_response_headers_action":   objDatasourceSchema(loadbalancerHttpListenerRuleDeleteResponseHeadersActionObjFields),
+		"forward_to_http_response_action":  objDatasourceSchema(loadbalancerHttpListenerRuleForwardToHttpResponseActionObjFields),
+		"forward_to_https_response_action": objDatasourceSchema(loadbalancerHttpListenerRuleForwardToHttpsResponseActionObjFields),
+		"http_listener_id":                 schema.StringAttribute{Computed: true},
+		"match":                            objDatasourceSchema(loadbalancerHttpListenerRuleMatchObjFields),
+		"order":                            schema.Int64Attribute{Computed: true},
+		"path_rewrite_action":              objDatasourceSchema(loadbalancerHttpListenerRulePathRewriteActionObjFields),
+		"set_request_headers_action":       objDatasourceSchema(loadbalancerHttpListenerRuleSetRequestHeadersActionObjFields),
+		"set_response_headers_action":      objDatasourceSchema(loadbalancerHttpListenerRuleSetResponseHeadersActionObjFields),
+		"static_response_action":           objDatasourceSchema(loadbalancerHttpListenerRuleStaticResponseActionObjFields),
+	}
+	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Required: true},
+		"metadata": metadataDatasourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
+		"status":   commonInfoDatasourceSchema(nil),
+	}}
 }
 
 func (d *LoadbalancerHttpListenerRuleDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -70,12 +65,10 @@ func (d *LoadbalancerHttpListenerRuleDataSource) Configure(_ context.Context, re
 
 func (d *LoadbalancerHttpListenerRuleDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var state LoadbalancerHttpListenerRuleDataSourceModel
-	diags := req.Config.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := d.client.Get(ctx, "/api/v1/loadbalancer-http-listener-rule", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -85,17 +78,22 @@ func (d *LoadbalancerHttpListenerRuleDataSource) Read(ctx context.Context, req d
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFields(ctx, apiData, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.HttpListenerId = getString(apiData, "httpListenerId")
-	state.Order = getInt64(apiData, "order")
-	state.MatchPath = getString(apiData, "matchPath")
-	state.MatchPathMatchType = getString(apiData, "matchPathMatchType")
-	state.ActionType = getString(apiData, "actionType")
-	state.ActionJson = getString(apiData, "actionJson")
-	state.InfoState = getStringFromInfo(apiData, "state")
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	spec := getSpec(apiData)
+	state.Spec.DeleteRequestHeadersAction = objFromAPI(objMap(spec, "deleteRequestHeadersAction"), loadbalancerHttpListenerRuleDeleteRequestHeadersActionObjFields)
+	state.Spec.DeleteResponseHeadersAction = objFromAPI(objMap(spec, "deleteResponseHeadersAction"), loadbalancerHttpListenerRuleDeleteResponseHeadersActionObjFields)
+	state.Spec.ForwardToHttpResponseAction = objFromAPI(objMap(spec, "forwardToHttpResponseAction"), loadbalancerHttpListenerRuleForwardToHttpResponseActionObjFields)
+	state.Spec.ForwardToHttpsResponseAction = objFromAPI(objMap(spec, "forwardToHttpsResponseAction"), loadbalancerHttpListenerRuleForwardToHttpsResponseActionObjFields)
+	state.Spec.HttpListenerId = getString(spec, "httpListenerId")
+	state.Spec.Match = objFromAPI(objMap(spec, "match"), loadbalancerHttpListenerRuleMatchObjFields)
+	state.Spec.Order = getInt64(spec, "order")
+	state.Spec.PathRewriteAction = objFromAPI(objMap(spec, "pathRewriteAction"), loadbalancerHttpListenerRulePathRewriteActionObjFields)
+	state.Spec.SetRequestHeadersAction = objFromAPI(objMap(spec, "setRequestHeadersAction"), loadbalancerHttpListenerRuleSetRequestHeadersActionObjFields)
+	state.Spec.SetResponseHeadersAction = objFromAPI(objMap(spec, "setResponseHeadersAction"), loadbalancerHttpListenerRuleSetResponseHeadersActionObjFields)
+	state.Spec.StaticResponseAction = objFromAPI(objMap(spec, "staticResponseAction"), loadbalancerHttpListenerRuleStaticResponseActionObjFields)
+	state.Status = simpleStateInfoObj(apiData)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

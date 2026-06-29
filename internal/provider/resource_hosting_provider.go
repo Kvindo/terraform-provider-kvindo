@@ -16,86 +16,54 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// HostingProviderResourceModel describes the resource data model.
+type HostingProviderSpecModel struct {
+	City            types.String  `tfsdk:"city"`
+	Cloud           types.String  `tfsdk:"cloud"`
+	Country         types.String  `tfsdk:"country"`
+	CountryIsoCode  types.String  `tfsdk:"country_iso_code"`
+	DataCenterIndex types.Int64   `tfsdk:"data_center_index"`
+	Disabled        types.Bool    `tfsdk:"disabled"`
+	KeyFeatures     types.List    `tfsdk:"key_features"`
+	Sla             types.Float64 `tfsdk:"sla"`
+}
+
 type HostingProviderResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Country types.String `tfsdk:"country"`
-	CountryIsoCode types.String `tfsdk:"country_iso_code"`
-	City types.String `tfsdk:"city"`
-	Cloud types.String `tfsdk:"cloud"`
-	Sla types.Float64 `tfsdk:"sla"`
-	DataCenterIndex types.Int64 `tfsdk:"data_center_index"`
-	KeyFeatures types.List `tfsdk:"key_features"`
-	Disabled types.Bool `tfsdk:"disabled"`
-	Info types.Object `tfsdk:"info"`
+	ID       types.String             `tfsdk:"id"`
+	Metadata metadataModel            `tfsdk:"metadata"`
+	Spec     HostingProviderSpecModel `tfsdk:"spec"`
+	Status   types.Object             `tfsdk:"status"`
 }
 
-// HostingProviderResource defines the resource implementation.
-type HostingProviderResource struct {
-	client *client.Client
-}
+type HostingProviderResource struct{ client *client.Client }
 
-func NewHostingProviderResource() resource.Resource {
-	return &HostingProviderResource{}
-}
+func NewHostingProviderResource() resource.Resource { return &HostingProviderResource{} }
 
 func (r *HostingProviderResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_hosting_provider"
 }
 
+func HostingProviderResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"city":              schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"cloud":             schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"country":           schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"country_iso_code":  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"data_center_index": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"disabled":          schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
+		"key_features":      schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"sla":               schema.Float64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Float64{float64planmodifier.UseStateForUnknown()}},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *HostingProviderResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["country"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["country_iso_code"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["city"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["cloud"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["sla"] = schema.Float64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Float64{float64planmodifier.UseStateForUnknown()},
-		}
-	attrs["data_center_index"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["key_features"] = schema.ListAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["disabled"] = schema.BoolAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: HostingProviderResourceSchemaAttrs()}
 }
 
 func (r *HostingProviderResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -111,58 +79,59 @@ func (r *HostingProviderResource) Configure(_ context.Context, req resource.Conf
 }
 
 func buildHostingProviderRequestMap(ctx context.Context, plan HostingProviderResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.Country.IsNull() && !plan.Country.IsUnknown() {
-		m["country"] = plan.Country.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.City.IsNull() && !plan.Spec.City.IsUnknown() {
+		spec["city"] = plan.Spec.City.ValueString()
 	}
-	if !plan.CountryIsoCode.IsNull() && !plan.CountryIsoCode.IsUnknown() {
-		m["countryIsoCode"] = plan.CountryIsoCode.ValueString()
+	if !plan.Spec.Cloud.IsNull() && !plan.Spec.Cloud.IsUnknown() {
+		spec["cloud"] = plan.Spec.Cloud.ValueString()
 	}
-	if !plan.City.IsNull() && !plan.City.IsUnknown() {
-		m["city"] = plan.City.ValueString()
+	if !plan.Spec.Country.IsNull() && !plan.Spec.Country.IsUnknown() {
+		spec["country"] = plan.Spec.Country.ValueString()
 	}
-	if !plan.Cloud.IsNull() && !plan.Cloud.IsUnknown() {
-		m["cloud"] = plan.Cloud.ValueString()
+	if !plan.Spec.CountryIsoCode.IsNull() && !plan.Spec.CountryIsoCode.IsUnknown() {
+		spec["countryIsoCode"] = plan.Spec.CountryIsoCode.ValueString()
 	}
-	if !plan.Sla.IsNull() && !plan.Sla.IsUnknown() {
-		m["sla"] = plan.Sla.ValueFloat64()
+	if !plan.Spec.DataCenterIndex.IsNull() && !plan.Spec.DataCenterIndex.IsUnknown() {
+		spec["dataCenterIndex"] = plan.Spec.DataCenterIndex.ValueInt64()
 	}
-	if !plan.DataCenterIndex.IsNull() && !plan.DataCenterIndex.IsUnknown() {
-		m["dataCenterIndex"] = plan.DataCenterIndex.ValueInt64()
+	if !plan.Spec.Disabled.IsNull() && !plan.Spec.Disabled.IsUnknown() {
+		spec["disabled"] = plan.Spec.Disabled.ValueBool()
 	}
-	if !plan.KeyFeatures.IsNull() && !plan.KeyFeatures.IsUnknown() {
-		m["keyFeatures"] = stringListToInterface(ctx, plan.KeyFeatures)
+	if !plan.Spec.KeyFeatures.IsNull() && !plan.Spec.KeyFeatures.IsUnknown() {
+		spec["keyFeatures"] = stringListToInterface(ctx, plan.Spec.KeyFeatures)
 	}
-	if !plan.Disabled.IsNull() && !plan.Disabled.IsUnknown() {
-		m["disabled"] = plan.Disabled.ValueBool()
+	if !plan.Spec.Sla.IsNull() && !plan.Spec.Sla.IsUnknown() {
+		spec["sla"] = plan.Spec.Sla.ValueFloat64()
 	}
 	return m
 }
 
 func populateHostingProviderState(ctx context.Context, data map[string]interface{}, state *HostingProviderResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.Country = getString(data, "country")
-	state.CountryIsoCode = getString(data, "countryIsoCode")
-	state.City = getString(data, "city")
-	state.Cloud = getString(data, "cloud")
-	state.Sla = getFloat64(data, "sla")
-	state.DataCenterIndex = getInt64(data, "dataCenterIndex")
-	state.KeyFeatures = getStringList(ctx, data, "keyFeatures")
-	state.Disabled = getBool(data, "disabled")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.City = getString(spec, "city")
+	state.Spec.Cloud = getString(spec, "cloud")
+	state.Spec.Country = getString(spec, "country")
+	state.Spec.CountryIsoCode = getString(spec, "countryIsoCode")
+	state.Spec.DataCenterIndex = getInt64(spec, "dataCenterIndex")
+	state.Spec.Disabled = getBool(spec, "disabled")
+	state.Spec.KeyFeatures = getStringList(ctx, spec, "keyFeatures")
+	state.Spec.Sla = getFloat64(spec, "sla")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *HostingProviderResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan HostingProviderResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildHostingProviderRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/hosting-provider", body)
@@ -174,7 +143,6 @@ func (r *HostingProviderResource) Create(ctx context.Context, req resource.Creat
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -189,21 +157,18 @@ func (r *HostingProviderResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 	if err := populateHostingProviderState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *HostingProviderResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state HostingProviderResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/hosting-provider", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -214,28 +179,20 @@ func (r *HostingProviderResource) Read(ctx context.Context, req resource.ReadReq
 		return
 	}
 	if err := populateHostingProviderState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *HostingProviderResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan HostingProviderResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state HostingProviderResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state HostingProviderResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildHostingProviderRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/hosting-provider", body)
 	if err != nil {
@@ -246,32 +203,28 @@ func (r *HostingProviderResource) Update(ctx context.Context, req resource.Updat
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/hosting-provider", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateHostingProviderState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *HostingProviderResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state HostingProviderResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/hosting-provider", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -284,7 +237,6 @@ func (r *HostingProviderResource) Delete(ctx context.Context, req resource.Delet
 }
 
 func (r *HostingProviderResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state HostingProviderResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/hosting-provider", req.ID)
@@ -293,13 +245,12 @@ func (r *HostingProviderResource) ImportState(ctx context.Context, req resource.
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateHostingProviderState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

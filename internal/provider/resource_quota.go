@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -15,62 +15,46 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// QuotaResourceModel describes the resource data model.
-type QuotaResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Product types.String `tfsdk:"product"`
-	Resource types.String `tfsdk:"resource"`
+type QuotaSpecModel struct {
+	Limit     types.Int64  `tfsdk:"limit"`
 	Parameter types.String `tfsdk:"parameter"`
-	Limit types.Int64 `tfsdk:"limit"`
-	Info types.Object `tfsdk:"info"`
+	Product   types.String `tfsdk:"product"`
+	Resource  types.String `tfsdk:"resource"`
 }
 
-// QuotaResource defines the resource implementation.
-type QuotaResource struct {
-	client *client.Client
+type QuotaResourceModel struct {
+	ID       types.String   `tfsdk:"id"`
+	Metadata metadataModel  `tfsdk:"metadata"`
+	Spec     QuotaSpecModel `tfsdk:"spec"`
+	Status   types.Object   `tfsdk:"status"`
 }
 
-func NewQuotaResource() resource.Resource {
-	return &QuotaResource{}
-}
+type QuotaResource struct{ client *client.Client }
+
+func NewQuotaResource() resource.Resource { return &QuotaResource{} }
 
 func (r *QuotaResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_quota"
 }
 
+func QuotaResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"limit":     schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"parameter": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"product":   schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"resource":  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(map[string]schema.Attribute{"current_value": schema.Int64Attribute{Computed: true}}),
+	}
+}
+
 func (r *QuotaResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["product"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["resource"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["parameter"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["limit"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}, "current_value": schema.Int64Attribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: QuotaResourceSchemaAttrs()}
 }
 
 func (r *QuotaResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -86,42 +70,49 @@ func (r *QuotaResource) Configure(_ context.Context, req resource.ConfigureReque
 }
 
 func buildQuotaRequestMap(ctx context.Context, plan QuotaResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.Product.IsNull() && !plan.Product.IsUnknown() {
-		m["product"] = plan.Product.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.Limit.IsNull() && !plan.Spec.Limit.IsUnknown() {
+		spec["limit"] = plan.Spec.Limit.ValueInt64()
 	}
-	if !plan.Resource.IsNull() && !plan.Resource.IsUnknown() {
-		m["resource"] = plan.Resource.ValueString()
+	if !plan.Spec.Parameter.IsNull() && !plan.Spec.Parameter.IsUnknown() {
+		spec["parameter"] = plan.Spec.Parameter.ValueString()
 	}
-	if !plan.Parameter.IsNull() && !plan.Parameter.IsUnknown() {
-		m["parameter"] = plan.Parameter.ValueString()
+	if !plan.Spec.Product.IsNull() && !plan.Spec.Product.IsUnknown() {
+		spec["product"] = plan.Spec.Product.ValueString()
 	}
-	if !plan.Limit.IsNull() && !plan.Limit.IsUnknown() {
-		m["limit"] = plan.Limit.ValueInt64()
+	if !plan.Spec.Resource.IsNull() && !plan.Spec.Resource.IsUnknown() {
+		spec["resource"] = plan.Spec.Resource.ValueString()
 	}
 	return m
 }
 
 func populateQuotaState(ctx context.Context, data map[string]interface{}, state *QuotaResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.Product = getString(data, "product")
-	state.Resource = getString(data, "resource")
-	state.Parameter = getString(data, "parameter")
-	state.Limit = getInt64(data, "limit")
-	state.Info, _ = types.ObjectValue(map[string]attr.Type{"state": types.StringType, "current_value": types.Int64Type}, map[string]attr.Value{"state": getStringFromInfo(data, "state"), "current_value": getInt64FromInfo(data, "currentValue")})
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.Limit = getInt64(spec, "limit")
+	state.Spec.Parameter = getString(spec, "parameter")
+	state.Spec.Product = getString(spec, "product")
+	state.Spec.Resource = getString(spec, "resource")
+	state.Status = buildInfoObj(data,
+		map[string]attr.Type{
+			"current_value": types.Int64Type,
+		},
+		map[string]attr.Value{
+			"current_value": getInt64FromInfo(data, "currentValue"),
+		})
 	return nil
 }
 
 func (r *QuotaResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan QuotaResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildQuotaRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/quota", body)
@@ -133,7 +124,6 @@ func (r *QuotaResource) Create(ctx context.Context, req resource.CreateRequest, 
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -148,21 +138,18 @@ func (r *QuotaResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 	if err := populateQuotaState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *QuotaResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state QuotaResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/quota", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -173,28 +160,20 @@ func (r *QuotaResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 	if err := populateQuotaState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *QuotaResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan QuotaResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state QuotaResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state QuotaResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildQuotaRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/quota", body)
 	if err != nil {
@@ -205,32 +184,28 @@ func (r *QuotaResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/quota", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateQuotaState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *QuotaResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state QuotaResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/quota", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -243,7 +218,6 @@ func (r *QuotaResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 }
 
 func (r *QuotaResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state QuotaResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/quota", req.ID)
@@ -252,13 +226,12 @@ func (r *QuotaResource) ImportState(ctx context.Context, req resource.ImportStat
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateQuotaState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

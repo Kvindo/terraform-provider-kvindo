@@ -14,54 +14,44 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// VolumeAttachmentResourceModel describes the resource data model.
+type VolumeAttachmentSpecModel struct {
+	VmDeviceIndex types.Int64  `tfsdk:"vm_device_index"`
+	VmId          types.String `tfsdk:"vm_id"`
+	VolumeId      types.String `tfsdk:"volume_id"`
+}
+
 type VolumeAttachmentResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	VolumeId types.String `tfsdk:"volume_id"`
-	VmId types.String `tfsdk:"vm_id"`
-	VmDeviceIndex types.Int64 `tfsdk:"vm_device_index"`
-	Info types.Object `tfsdk:"info"`
+	ID       types.String              `tfsdk:"id"`
+	Metadata metadataModel             `tfsdk:"metadata"`
+	Spec     VolumeAttachmentSpecModel `tfsdk:"spec"`
+	Status   types.Object              `tfsdk:"status"`
 }
 
-// VolumeAttachmentResource defines the resource implementation.
-type VolumeAttachmentResource struct {
-	client *client.Client
-}
+type VolumeAttachmentResource struct{ client *client.Client }
 
-func NewVolumeAttachmentResource() resource.Resource {
-	return &VolumeAttachmentResource{}
-}
+func NewVolumeAttachmentResource() resource.Resource { return &VolumeAttachmentResource{} }
 
 func (r *VolumeAttachmentResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_volume_attachment"
 }
 
+func VolumeAttachmentResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"vm_device_index": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"vm_id":           schema.StringAttribute{Required: true},
+		"volume_id":       schema.StringAttribute{Required: true},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Required: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *VolumeAttachmentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["volume_id"] = schema.StringAttribute{
-			Required: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["vm_id"] = schema.StringAttribute{
-			Required: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["vm_device_index"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: VolumeAttachmentResourceSchemaAttrs()}
 }
 
 func (r *VolumeAttachmentResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -77,38 +67,39 @@ func (r *VolumeAttachmentResource) Configure(_ context.Context, req resource.Con
 }
 
 func buildVolumeAttachmentRequestMap(ctx context.Context, plan VolumeAttachmentResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.VolumeId.IsNull() && !plan.VolumeId.IsUnknown() {
-		m["volumeId"] = plan.VolumeId.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.VmDeviceIndex.IsNull() && !plan.Spec.VmDeviceIndex.IsUnknown() {
+		spec["vmDeviceIndex"] = plan.Spec.VmDeviceIndex.ValueInt64()
 	}
-	if !plan.VmId.IsNull() && !plan.VmId.IsUnknown() {
-		m["vmId"] = plan.VmId.ValueString()
+	if !plan.Spec.VmId.IsNull() && !plan.Spec.VmId.IsUnknown() {
+		spec["vmId"] = plan.Spec.VmId.ValueString()
 	}
-	if !plan.VmDeviceIndex.IsNull() && !plan.VmDeviceIndex.IsUnknown() {
-		m["vmDeviceIndex"] = plan.VmDeviceIndex.ValueInt64()
+	if !plan.Spec.VolumeId.IsNull() && !plan.Spec.VolumeId.IsUnknown() {
+		spec["volumeId"] = plan.Spec.VolumeId.ValueString()
 	}
 	return m
 }
 
 func populateVolumeAttachmentState(ctx context.Context, data map[string]interface{}, state *VolumeAttachmentResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.VolumeId = getString(data, "volumeId")
-	state.VmId = getString(data, "vmId")
-	state.VmDeviceIndex = getInt64(data, "vmDeviceIndex")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.VmDeviceIndex = getInt64(spec, "vmDeviceIndex")
+	state.Spec.VmId = getString(spec, "vmId")
+	state.Spec.VolumeId = getString(spec, "volumeId")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *VolumeAttachmentResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan VolumeAttachmentResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildVolumeAttachmentRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/volume-attachment", body)
@@ -120,7 +111,6 @@ func (r *VolumeAttachmentResource) Create(ctx context.Context, req resource.Crea
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -135,21 +125,18 @@ func (r *VolumeAttachmentResource) Create(ctx context.Context, req resource.Crea
 		return
 	}
 	if err := populateVolumeAttachmentState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *VolumeAttachmentResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state VolumeAttachmentResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/volume-attachment", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -160,28 +147,20 @@ func (r *VolumeAttachmentResource) Read(ctx context.Context, req resource.ReadRe
 		return
 	}
 	if err := populateVolumeAttachmentState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *VolumeAttachmentResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan VolumeAttachmentResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state VolumeAttachmentResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state VolumeAttachmentResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildVolumeAttachmentRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/volume-attachment", body)
 	if err != nil {
@@ -192,32 +171,28 @@ func (r *VolumeAttachmentResource) Update(ctx context.Context, req resource.Upda
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/volume-attachment", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateVolumeAttachmentState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *VolumeAttachmentResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state VolumeAttachmentResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/volume-attachment", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -230,7 +205,6 @@ func (r *VolumeAttachmentResource) Delete(ctx context.Context, req resource.Dele
 }
 
 func (r *VolumeAttachmentResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state VolumeAttachmentResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/volume-attachment", req.ID)
@@ -239,13 +213,12 @@ func (r *VolumeAttachmentResource) ImportState(ctx context.Context, req resource
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateVolumeAttachmentState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

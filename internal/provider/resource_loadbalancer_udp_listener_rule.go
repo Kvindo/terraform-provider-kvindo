@@ -14,26 +14,23 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// LoadbalancerUdpListenerRuleResourceModel describes the resource data model.
+var loadbalancerUdpListenerRuleForwardToUdpResponseActionObjFields = []objField{{TF: "port_mapping_type", API: "portMappingType", Kind: "string"}, {TF: "target_group_id", API: "targetGroupId", Kind: "string"}, {TF: "to_ports", API: "toPorts", Kind: "list_string"}}
+
+type LoadbalancerUdpListenerRuleSpecModel struct {
+	ForwardToUdpResponseAction types.Object `tfsdk:"forward_to_udp_response_action"`
+	Order                      types.Int64  `tfsdk:"order"`
+	UdpListenerId              types.String `tfsdk:"udp_listener_id"`
+}
+
 type LoadbalancerUdpListenerRuleResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	UdpListenerId types.String `tfsdk:"udp_listener_id"`
-	Order types.Int64 `tfsdk:"order"`
-	ActionJson types.String `tfsdk:"action_json"`
-	Info types.Object `tfsdk:"info"`
+	ID       types.String                         `tfsdk:"id"`
+	Metadata metadataModel                        `tfsdk:"metadata"`
+	Spec     LoadbalancerUdpListenerRuleSpecModel `tfsdk:"spec"`
+	Status   types.Object                         `tfsdk:"status"`
 }
 
-// LoadbalancerUdpListenerRuleResource defines the resource implementation.
-type LoadbalancerUdpListenerRuleResource struct {
-	client *client.Client
-}
+type LoadbalancerUdpListenerRuleResource struct{ client *client.Client }
 
 func NewLoadbalancerUdpListenerRuleResource() resource.Resource {
 	return &LoadbalancerUdpListenerRuleResource{}
@@ -43,26 +40,22 @@ func (r *LoadbalancerUdpListenerRuleResource) Metadata(_ context.Context, req re
 	resp.TypeName = req.ProviderTypeName + "_loadbalancer_udp_listener_rule"
 }
 
+func LoadbalancerUdpListenerRuleResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"forward_to_udp_response_action": objResourceSchema(loadbalancerUdpListenerRuleForwardToUdpResponseActionObjFields),
+		"order":                          schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"udp_listener_id":                schema.StringAttribute{Required: true},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Required: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *LoadbalancerUdpListenerRuleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["udp_listener_id"] = schema.StringAttribute{
-			Required: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["order"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["action_json"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: LoadbalancerUdpListenerRuleResourceSchemaAttrs()}
 }
 
 func (r *LoadbalancerUdpListenerRuleResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -78,38 +71,39 @@ func (r *LoadbalancerUdpListenerRuleResource) Configure(_ context.Context, req r
 }
 
 func buildLoadbalancerUdpListenerRuleRequestMap(ctx context.Context, plan LoadbalancerUdpListenerRuleResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.UdpListenerId.IsNull() && !plan.UdpListenerId.IsUnknown() {
-		m["udpListenerId"] = plan.UdpListenerId.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.ForwardToUdpResponseAction.IsNull() && !plan.Spec.ForwardToUdpResponseAction.IsUnknown() {
+		spec["forwardToUdpResponseAction"] = objToAPI(plan.Spec.ForwardToUdpResponseAction, loadbalancerUdpListenerRuleForwardToUdpResponseActionObjFields)
 	}
-	if !plan.Order.IsNull() && !plan.Order.IsUnknown() {
-		m["order"] = plan.Order.ValueInt64()
+	if !plan.Spec.Order.IsNull() && !plan.Spec.Order.IsUnknown() {
+		spec["order"] = plan.Spec.Order.ValueInt64()
 	}
-	if !plan.ActionJson.IsNull() && !plan.ActionJson.IsUnknown() {
-		m["actionJson"] = plan.ActionJson.ValueString()
+	if !plan.Spec.UdpListenerId.IsNull() && !plan.Spec.UdpListenerId.IsUnknown() {
+		spec["udpListenerId"] = plan.Spec.UdpListenerId.ValueString()
 	}
 	return m
 }
 
 func populateLoadbalancerUdpListenerRuleState(ctx context.Context, data map[string]interface{}, state *LoadbalancerUdpListenerRuleResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.UdpListenerId = getString(data, "udpListenerId")
-	state.Order = getInt64(data, "order")
-	state.ActionJson = getString(data, "actionJson")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.ForwardToUdpResponseAction = objFromAPI(objMap(spec, "forwardToUdpResponseAction"), loadbalancerUdpListenerRuleForwardToUdpResponseActionObjFields)
+	state.Spec.Order = getInt64(spec, "order")
+	state.Spec.UdpListenerId = getString(spec, "udpListenerId")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *LoadbalancerUdpListenerRuleResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan LoadbalancerUdpListenerRuleResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildLoadbalancerUdpListenerRuleRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/loadbalancer-udp-listener-rule", body)
@@ -121,7 +115,6 @@ func (r *LoadbalancerUdpListenerRuleResource) Create(ctx context.Context, req re
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -136,21 +129,18 @@ func (r *LoadbalancerUdpListenerRuleResource) Create(ctx context.Context, req re
 		return
 	}
 	if err := populateLoadbalancerUdpListenerRuleState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *LoadbalancerUdpListenerRuleResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state LoadbalancerUdpListenerRuleResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/loadbalancer-udp-listener-rule", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -161,28 +151,20 @@ func (r *LoadbalancerUdpListenerRuleResource) Read(ctx context.Context, req reso
 		return
 	}
 	if err := populateLoadbalancerUdpListenerRuleState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *LoadbalancerUdpListenerRuleResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan LoadbalancerUdpListenerRuleResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state LoadbalancerUdpListenerRuleResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state LoadbalancerUdpListenerRuleResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildLoadbalancerUdpListenerRuleRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/loadbalancer-udp-listener-rule", body)
 	if err != nil {
@@ -193,32 +175,28 @@ func (r *LoadbalancerUdpListenerRuleResource) Update(ctx context.Context, req re
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/loadbalancer-udp-listener-rule", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateLoadbalancerUdpListenerRuleState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *LoadbalancerUdpListenerRuleResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state LoadbalancerUdpListenerRuleResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/loadbalancer-udp-listener-rule", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -231,7 +209,6 @@ func (r *LoadbalancerUdpListenerRuleResource) Delete(ctx context.Context, req re
 }
 
 func (r *LoadbalancerUdpListenerRuleResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state LoadbalancerUdpListenerRuleResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/loadbalancer-udp-listener-rule", req.ID)
@@ -240,13 +217,12 @@ func (r *LoadbalancerUdpListenerRuleResource) ImportState(ctx context.Context, r
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateLoadbalancerUdpListenerRuleState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

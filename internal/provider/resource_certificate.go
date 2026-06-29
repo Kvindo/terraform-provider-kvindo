@@ -13,55 +13,42 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// CertificateResourceModel describes the resource data model.
-type CertificateResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
+type CertificateSpecModel struct {
 	CertificatePem types.String `tfsdk:"certificate_pem"`
-	PrivateKeyPem types.String `tfsdk:"private_key_pem"`
-	ResourceName types.String `tfsdk:"resource_name"`
-	Info types.Object `tfsdk:"info"`
+	PrivateKeyPem  types.String `tfsdk:"private_key_pem"`
 }
 
-// CertificateResource defines the resource implementation.
-type CertificateResource struct {
-	client *client.Client
+type CertificateResourceModel struct {
+	ID       types.String         `tfsdk:"id"`
+	Metadata metadataModel        `tfsdk:"metadata"`
+	Spec     CertificateSpecModel `tfsdk:"spec"`
+	Status   types.Object         `tfsdk:"status"`
 }
 
-func NewCertificateResource() resource.Resource {
-	return &CertificateResource{}
-}
+type CertificateResource struct{ client *client.Client }
+
+func NewCertificateResource() resource.Resource { return &CertificateResource{} }
 
 func (r *CertificateResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_certificate"
 }
 
+func CertificateResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"certificate_pem": schema.StringAttribute{Required: true},
+		"private_key_pem": schema.StringAttribute{Required: true, Sensitive: true},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Required: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *CertificateResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["certificate_pem"] = schema.StringAttribute{
-			Required: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["private_key_pem"] = schema.StringAttribute{
-			Required: true,
-			Sensitive: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["resource_name"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: CertificateResourceSchemaAttrs()}
 }
 
 func (r *CertificateResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -77,38 +64,35 @@ func (r *CertificateResource) Configure(_ context.Context, req resource.Configur
 }
 
 func buildCertificateRequestMap(ctx context.Context, plan CertificateResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.CertificatePem.IsNull() && !plan.CertificatePem.IsUnknown() {
-		m["certificatePem"] = plan.CertificatePem.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.CertificatePem.IsNull() && !plan.Spec.CertificatePem.IsUnknown() {
+		spec["certificatePem"] = plan.Spec.CertificatePem.ValueString()
 	}
-	if !plan.PrivateKeyPem.IsNull() && !plan.PrivateKeyPem.IsUnknown() {
-		m["privateKeyPem"] = plan.PrivateKeyPem.ValueString()
-	}
-	if !plan.ResourceName.IsNull() && !plan.ResourceName.IsUnknown() {
-		m["resourceName"] = plan.ResourceName.ValueString()
+	if !plan.Spec.PrivateKeyPem.IsNull() && !plan.Spec.PrivateKeyPem.IsUnknown() {
+		spec["privateKeyPem"] = plan.Spec.PrivateKeyPem.ValueString()
 	}
 	return m
 }
 
 func populateCertificateState(ctx context.Context, data map[string]interface{}, state *CertificateResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.CertificatePem = getString(data, "certificatePem")
-	state.PrivateKeyPem = getString(data, "privateKeyPem")
-	state.ResourceName = getString(data, "resourceName")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.CertificatePem = getString(spec, "certificatePem")
+	state.Spec.PrivateKeyPem = getString(spec, "privateKeyPem")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *CertificateResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan CertificateResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildCertificateRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/certificate", body)
@@ -120,7 +104,6 @@ func (r *CertificateResource) Create(ctx context.Context, req resource.CreateReq
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -135,21 +118,18 @@ func (r *CertificateResource) Create(ctx context.Context, req resource.CreateReq
 		return
 	}
 	if err := populateCertificateState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *CertificateResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state CertificateResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/certificate", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -160,28 +140,20 @@ func (r *CertificateResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 	if err := populateCertificateState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *CertificateResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan CertificateResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state CertificateResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state CertificateResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildCertificateRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/certificate", body)
 	if err != nil {
@@ -192,32 +164,28 @@ func (r *CertificateResource) Update(ctx context.Context, req resource.UpdateReq
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/certificate", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateCertificateState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *CertificateResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state CertificateResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/certificate", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -230,7 +198,6 @@ func (r *CertificateResource) Delete(ctx context.Context, req resource.DeleteReq
 }
 
 func (r *CertificateResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state CertificateResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/certificate", req.ID)
@@ -239,13 +206,12 @@ func (r *CertificateResource) ImportState(ctx context.Context, req resource.Impo
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateCertificateState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

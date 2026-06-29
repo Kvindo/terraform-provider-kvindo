@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -15,48 +14,42 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// QuotaChangeRequestResourceModel describes the resource data model.
+type QuotaChangeRequestSpecModel struct {
+	NewQuotaLimit types.Int64  `tfsdk:"new_quota_limit"`
+	QuotaId       types.String `tfsdk:"quota_id"`
+}
+
 type QuotaChangeRequestResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	QuotaId types.String `tfsdk:"quota_id"`
-	NewQuotaLimit types.Int64 `tfsdk:"new_quota_limit"`
-	Info types.Object `tfsdk:"info"`
+	ID       types.String                `tfsdk:"id"`
+	Metadata metadataModel               `tfsdk:"metadata"`
+	Spec     QuotaChangeRequestSpecModel `tfsdk:"spec"`
+	Status   types.Object                `tfsdk:"status"`
 }
 
-// QuotaChangeRequestResource defines the resource implementation.
-type QuotaChangeRequestResource struct {
-	client *client.Client
-}
+type QuotaChangeRequestResource struct{ client *client.Client }
 
-func NewQuotaChangeRequestResource() resource.Resource {
-	return &QuotaChangeRequestResource{}
-}
+func NewQuotaChangeRequestResource() resource.Resource { return &QuotaChangeRequestResource{} }
 
 func (r *QuotaChangeRequestResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_quota_change_request"
 }
 
+func QuotaChangeRequestResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"new_quota_limit": schema.Int64Attribute{Required: true},
+		"quota_id":        schema.StringAttribute{Required: true},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Required: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(map[string]schema.Attribute{"ticket_id": schema.StringAttribute{Computed: true}}),
+	}
+}
+
 func (r *QuotaChangeRequestResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["quota_id"] = schema.StringAttribute{
-			Required: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["new_quota_limit"] = schema.Int64Attribute{
-			Required: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}, "ticket_id": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: QuotaChangeRequestResourceSchemaAttrs()}
 }
 
 func (r *QuotaChangeRequestResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -72,34 +65,41 @@ func (r *QuotaChangeRequestResource) Configure(_ context.Context, req resource.C
 }
 
 func buildQuotaChangeRequestRequestMap(ctx context.Context, plan QuotaChangeRequestResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.QuotaId.IsNull() && !plan.QuotaId.IsUnknown() {
-		m["quotaId"] = plan.QuotaId.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.NewQuotaLimit.IsNull() && !plan.Spec.NewQuotaLimit.IsUnknown() {
+		spec["newQuotaLimit"] = plan.Spec.NewQuotaLimit.ValueInt64()
 	}
-	if !plan.NewQuotaLimit.IsNull() && !plan.NewQuotaLimit.IsUnknown() {
-		m["newQuotaLimit"] = plan.NewQuotaLimit.ValueInt64()
+	if !plan.Spec.QuotaId.IsNull() && !plan.Spec.QuotaId.IsUnknown() {
+		spec["quotaId"] = plan.Spec.QuotaId.ValueString()
 	}
 	return m
 }
 
 func populateQuotaChangeRequestState(ctx context.Context, data map[string]interface{}, state *QuotaChangeRequestResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.QuotaId = getString(data, "quotaId")
-	state.NewQuotaLimit = getInt64(data, "newQuotaLimit")
-	state.Info, _ = types.ObjectValue(map[string]attr.Type{"state": types.StringType, "ticket_id": types.StringType}, map[string]attr.Value{"state": getStringFromInfo(data, "state"), "ticket_id": getStringFromInfo(data, "ticketId")})
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.NewQuotaLimit = getInt64(spec, "newQuotaLimit")
+	state.Spec.QuotaId = getString(spec, "quotaId")
+	state.Status = buildInfoObj(data,
+		map[string]attr.Type{
+			"ticket_id": types.StringType,
+		},
+		map[string]attr.Value{
+			"ticket_id": getStringFromInfo(data, "ticketId"),
+		})
 	return nil
 }
 
 func (r *QuotaChangeRequestResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan QuotaChangeRequestResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildQuotaChangeRequestRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/quota-change-request", body)
@@ -111,7 +111,6 @@ func (r *QuotaChangeRequestResource) Create(ctx context.Context, req resource.Cr
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -126,21 +125,18 @@ func (r *QuotaChangeRequestResource) Create(ctx context.Context, req resource.Cr
 		return
 	}
 	if err := populateQuotaChangeRequestState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *QuotaChangeRequestResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state QuotaChangeRequestResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/quota-change-request", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -151,28 +147,20 @@ func (r *QuotaChangeRequestResource) Read(ctx context.Context, req resource.Read
 		return
 	}
 	if err := populateQuotaChangeRequestState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *QuotaChangeRequestResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan QuotaChangeRequestResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state QuotaChangeRequestResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state QuotaChangeRequestResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildQuotaChangeRequestRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/quota-change-request", body)
 	if err != nil {
@@ -183,32 +171,28 @@ func (r *QuotaChangeRequestResource) Update(ctx context.Context, req resource.Up
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/quota-change-request", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateQuotaChangeRequestState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *QuotaChangeRequestResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state QuotaChangeRequestResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/quota-change-request", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -221,7 +205,6 @@ func (r *QuotaChangeRequestResource) Delete(ctx context.Context, req resource.De
 }
 
 func (r *QuotaChangeRequestResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state QuotaChangeRequestResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/quota-change-request", req.ID)
@@ -230,13 +213,12 @@ func (r *QuotaChangeRequestResource) ImportState(ctx context.Context, req resour
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateQuotaChangeRequestState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

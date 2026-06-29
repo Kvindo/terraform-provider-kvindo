@@ -1,7 +1,10 @@
 terraform {
+  required_version = ">= 1.0"
+
   required_providers {
     kvindo = {
-      source = "registry.terraform.io/kvindo/kvindo"
+      source  = "registry.terraform.io/kvindo/kvindo"
+      version = "~> 1.0"
     }
   }
 }
@@ -31,7 +34,7 @@ resource "kvindo_s3_bucket" "main" {
   folder_id = var.folder_id
 
   tier         = "standard"
-  region       = "ru-1"
+  region       = "ru-msk-1"
   is_public    = false
   is_versioned = true
   quota_gib    = 100
@@ -114,29 +117,29 @@ resource "kvindo_s3_user" "ci" {
 
 output "bucket_endpoint" {
   description = "S3 endpoint URL for the bucket"
-  value       = kvindo_s3_bucket.main.info_endpoint_url
+  value       = kvindo_s3_bucket.main.info.endpoint_url
 }
 
 output "app_user_access_key" {
   description = "Access key for the app S3 user"
-  value       = kvindo_s3_user.app.info_access_key
+  value       = kvindo_s3_user.app.info.access_key
   sensitive   = true
 }
 
 output "app_user_secret_key" {
   description = "Secret key for the app S3 user"
-  value       = kvindo_s3_user.app.info_secret_key
+  value       = kvindo_s3_user.app.info.secret_key
   sensitive   = true
 }
 
 output "ci_user_access_key" {
   description = "Access key for the CI S3 user (read-only)"
-  value       = kvindo_s3_user.ci.info_access_key
+  value       = kvindo_s3_user.ci.info.access_key
   sensitive   = true
 }
 
 output "ci_user_secret_key" {
   description = "Secret key for the CI S3 user (read-only)"
-  value       = kvindo_s3_user.ci.info_secret_key
+  value       = kvindo_s3_user.ci.info.secret_key
   sensitive   = true
 }

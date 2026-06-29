@@ -12,4 +12,8 @@ test:
 regenerate:
 	./scripts/regenerate.sh
 
-.PHONY: build install test regenerate
+docs: build
+	go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@latest
+	tfplugindocs generate --provider-name kvindo
+
+.PHONY: build install test regenerate docs

@@ -15,62 +15,46 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// ImageScheduleResourceModel describes the resource data model.
-type ImageScheduleResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	Enabled types.Bool `tfsdk:"enabled"`
+type ImageScheduleSpecModel struct {
+	Enabled        types.Bool   `tfsdk:"enabled"`
+	RetentionCount types.Int64  `tfsdk:"retention_count"`
+	Schedule       types.String `tfsdk:"schedule"`
 	ScheduleFormat types.String `tfsdk:"schedule_format"`
-	Schedule types.String `tfsdk:"schedule"`
-	RetentionCount types.Int64 `tfsdk:"retention_count"`
-	Info types.Object `tfsdk:"info"`
 }
 
-// ImageScheduleResource defines the resource implementation.
-type ImageScheduleResource struct {
-	client *client.Client
+type ImageScheduleResourceModel struct {
+	ID       types.String           `tfsdk:"id"`
+	Metadata metadataModel          `tfsdk:"metadata"`
+	Spec     ImageScheduleSpecModel `tfsdk:"spec"`
+	Status   types.Object           `tfsdk:"status"`
 }
 
-func NewImageScheduleResource() resource.Resource {
-	return &ImageScheduleResource{}
-}
+type ImageScheduleResource struct{ client *client.Client }
+
+func NewImageScheduleResource() resource.Resource { return &ImageScheduleResource{} }
 
 func (r *ImageScheduleResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_image_schedule"
 }
 
+func ImageScheduleResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"enabled":         schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
+		"retention_count": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"schedule":        schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"schedule_format": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *ImageScheduleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["enabled"] = schema.BoolAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
-		}
-	attrs["schedule_format"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["schedule"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["retention_count"] = schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: ImageScheduleResourceSchemaAttrs()}
 }
 
 func (r *ImageScheduleResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -86,42 +70,43 @@ func (r *ImageScheduleResource) Configure(_ context.Context, req resource.Config
 }
 
 func buildImageScheduleRequestMap(ctx context.Context, plan ImageScheduleResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.Enabled.IsNull() && !plan.Enabled.IsUnknown() {
-		m["enabled"] = plan.Enabled.ValueBool()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.Enabled.IsNull() && !plan.Spec.Enabled.IsUnknown() {
+		spec["enabled"] = plan.Spec.Enabled.ValueBool()
 	}
-	if !plan.ScheduleFormat.IsNull() && !plan.ScheduleFormat.IsUnknown() {
-		m["scheduleFormat"] = plan.ScheduleFormat.ValueString()
+	if !plan.Spec.RetentionCount.IsNull() && !plan.Spec.RetentionCount.IsUnknown() {
+		spec["retentionCount"] = plan.Spec.RetentionCount.ValueInt64()
 	}
-	if !plan.Schedule.IsNull() && !plan.Schedule.IsUnknown() {
-		m["schedule"] = plan.Schedule.ValueString()
+	if !plan.Spec.Schedule.IsNull() && !plan.Spec.Schedule.IsUnknown() {
+		spec["schedule"] = plan.Spec.Schedule.ValueString()
 	}
-	if !plan.RetentionCount.IsNull() && !plan.RetentionCount.IsUnknown() {
-		m["retentionCount"] = plan.RetentionCount.ValueInt64()
+	if !plan.Spec.ScheduleFormat.IsNull() && !plan.Spec.ScheduleFormat.IsUnknown() {
+		spec["scheduleFormat"] = plan.Spec.ScheduleFormat.ValueString()
 	}
 	return m
 }
 
 func populateImageScheduleState(ctx context.Context, data map[string]interface{}, state *ImageScheduleResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.Enabled = getBool(data, "enabled")
-	state.ScheduleFormat = getString(data, "scheduleFormat")
-	state.Schedule = getString(data, "schedule")
-	state.RetentionCount = getInt64(data, "retentionCount")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.Enabled = getBool(spec, "enabled")
+	state.Spec.RetentionCount = getInt64(spec, "retentionCount")
+	state.Spec.Schedule = getString(spec, "schedule")
+	state.Spec.ScheduleFormat = getString(spec, "scheduleFormat")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *ImageScheduleResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan ImageScheduleResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildImageScheduleRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/image-schedule", body)
@@ -133,7 +118,6 @@ func (r *ImageScheduleResource) Create(ctx context.Context, req resource.CreateR
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -148,21 +132,18 @@ func (r *ImageScheduleResource) Create(ctx context.Context, req resource.CreateR
 		return
 	}
 	if err := populateImageScheduleState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *ImageScheduleResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state ImageScheduleResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/image-schedule", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -173,28 +154,20 @@ func (r *ImageScheduleResource) Read(ctx context.Context, req resource.ReadReque
 		return
 	}
 	if err := populateImageScheduleState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *ImageScheduleResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan ImageScheduleResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state ImageScheduleResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state ImageScheduleResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildImageScheduleRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/image-schedule", body)
 	if err != nil {
@@ -205,32 +178,28 @@ func (r *ImageScheduleResource) Update(ctx context.Context, req resource.UpdateR
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/image-schedule", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateImageScheduleState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *ImageScheduleResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state ImageScheduleResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/image-schedule", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -243,7 +212,6 @@ func (r *ImageScheduleResource) Delete(ctx context.Context, req resource.DeleteR
 }
 
 func (r *ImageScheduleResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state ImageScheduleResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/image-schedule", req.ID)
@@ -252,13 +220,12 @@ func (r *ImageScheduleResource) ImportState(ctx context.Context, req resource.Im
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateImageScheduleState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

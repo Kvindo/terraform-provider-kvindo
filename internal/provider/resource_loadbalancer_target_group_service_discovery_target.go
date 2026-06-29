@@ -13,25 +13,20 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// LoadbalancerTargetGroupServiceDiscoveryTargetResourceModel describes the resource data model.
+type LoadbalancerTargetGroupServiceDiscoveryTargetSpecModel struct {
+	LabelSelectors types.Map    `tfsdk:"label_selectors"`
+	TargetGroupId  types.String `tfsdk:"target_group_id"`
+}
+
 type LoadbalancerTargetGroupServiceDiscoveryTargetResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	TargetGroupId types.String `tfsdk:"target_group_id"`
-	LabelSelectors types.Map `tfsdk:"label_selectors"`
-	Info types.Object `tfsdk:"info"`
+	ID       types.String                                           `tfsdk:"id"`
+	Metadata metadataModel                                          `tfsdk:"metadata"`
+	Spec     LoadbalancerTargetGroupServiceDiscoveryTargetSpecModel `tfsdk:"spec"`
+	Status   types.Object                                           `tfsdk:"status"`
 }
 
-// LoadbalancerTargetGroupServiceDiscoveryTargetResource defines the resource implementation.
-type LoadbalancerTargetGroupServiceDiscoveryTargetResource struct {
-	client *client.Client
-}
+type LoadbalancerTargetGroupServiceDiscoveryTargetResource struct{ client *client.Client }
 
 func NewLoadbalancerTargetGroupServiceDiscoveryTargetResource() resource.Resource {
 	return &LoadbalancerTargetGroupServiceDiscoveryTargetResource{}
@@ -41,21 +36,21 @@ func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Metadata(_ conte
 	resp.TypeName = req.ProviderTypeName + "_loadbalancer_target_group_service_discovery_target"
 }
 
+func LoadbalancerTargetGroupServiceDiscoveryTargetResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"label_selectors": schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"target_group_id": schema.StringAttribute{Required: true},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Required: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(nil),
+	}
+}
+
 func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["target_group_id"] = schema.StringAttribute{
-			Required: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["label_selectors"] = schema.MapAttribute{
-			Optional: true,
-				Computed: true,
-				ElementType: types.StringType,
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: LoadbalancerTargetGroupServiceDiscoveryTargetResourceSchemaAttrs()}
 }
 
 func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -71,34 +66,35 @@ func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Configure(_ cont
 }
 
 func buildLoadbalancerTargetGroupServiceDiscoveryTargetRequestMap(ctx context.Context, plan LoadbalancerTargetGroupServiceDiscoveryTargetResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.TargetGroupId.IsNull() && !plan.TargetGroupId.IsUnknown() {
-		m["targetGroupId"] = plan.TargetGroupId.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.LabelSelectors.IsNull() && !plan.Spec.LabelSelectors.IsUnknown() {
+		spec["labelSelectors"] = stringMapToInterface(ctx, plan.Spec.LabelSelectors)
 	}
-	if !plan.LabelSelectors.IsNull() && !plan.LabelSelectors.IsUnknown() {
-		m["labelSelectors"] = stringMapToInterface(ctx, plan.LabelSelectors)
+	if !plan.Spec.TargetGroupId.IsNull() && !plan.Spec.TargetGroupId.IsUnknown() {
+		spec["targetGroupId"] = plan.Spec.TargetGroupId.ValueString()
 	}
 	return m
 }
 
 func populateLoadbalancerTargetGroupServiceDiscoveryTargetState(ctx context.Context, data map[string]interface{}, state *LoadbalancerTargetGroupServiceDiscoveryTargetResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.TargetGroupId = getString(data, "targetGroupId")
-	state.LabelSelectors = getStringMap(data, "labelSelectors")
-	state.Info = simpleStateInfoObj(data)
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.LabelSelectors = getStringMap(spec, "labelSelectors")
+	state.Spec.TargetGroupId = getString(spec, "targetGroupId")
+	state.Status = simpleStateInfoObj(data)
 	return nil
 }
 
 func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan LoadbalancerTargetGroupServiceDiscoveryTargetResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildLoadbalancerTargetGroupServiceDiscoveryTargetRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/loadbalancer-target-group-service-discovery-target", body)
@@ -110,7 +106,6 @@ func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Create(ctx conte
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -125,21 +120,18 @@ func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Create(ctx conte
 		return
 	}
 	if err := populateLoadbalancerTargetGroupServiceDiscoveryTargetState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state LoadbalancerTargetGroupServiceDiscoveryTargetResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/loadbalancer-target-group-service-discovery-target", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -150,28 +142,20 @@ func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Read(ctx context
 		return
 	}
 	if err := populateLoadbalancerTargetGroupServiceDiscoveryTargetState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan LoadbalancerTargetGroupServiceDiscoveryTargetResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state LoadbalancerTargetGroupServiceDiscoveryTargetResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state LoadbalancerTargetGroupServiceDiscoveryTargetResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildLoadbalancerTargetGroupServiceDiscoveryTargetRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/loadbalancer-target-group-service-discovery-target", body)
 	if err != nil {
@@ -182,32 +166,28 @@ func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Update(ctx conte
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/loadbalancer-target-group-service-discovery-target", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateLoadbalancerTargetGroupServiceDiscoveryTargetState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state LoadbalancerTargetGroupServiceDiscoveryTargetResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/loadbalancer-target-group-service-discovery-target", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -220,7 +200,6 @@ func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Delete(ctx conte
 }
 
 func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state LoadbalancerTargetGroupServiceDiscoveryTargetResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/loadbalancer-target-group-service-discovery-target", req.ID)
@@ -229,13 +208,12 @@ func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) ImportState(ctx 
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateLoadbalancerTargetGroupServiceDiscoveryTargetState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

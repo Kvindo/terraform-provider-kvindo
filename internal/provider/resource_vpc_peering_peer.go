@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -14,55 +14,44 @@ import (
 )
 
 var _ = fmt.Sprintf
-// attr package used for list/object types
 
-// VpcPeeringPeerResourceModel describes the resource data model.
-type VpcPeeringPeerResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	FolderID         types.String `tfsdk:"folder_id"`
-	DeleteProtection types.Bool   `tfsdk:"delete_protection"`
-	Labels           types.Map    `tfsdk:"labels"`
-	VpcPeeringId types.String `tfsdk:"vpc_peering_id"`
-	VpcSubnetId types.String `tfsdk:"vpc_subnet_id"`
+type VpcPeeringPeerSpecModel struct {
 	FloatingIpId types.String `tfsdk:"floating_ip_id"`
-	Info types.Object `tfsdk:"info"`
+	VpcPeeringId types.String `tfsdk:"vpc_peering_id"`
+	VpcSubnetId  types.String `tfsdk:"vpc_subnet_id"`
 }
 
-// VpcPeeringPeerResource defines the resource implementation.
-type VpcPeeringPeerResource struct {
-	client *client.Client
+type VpcPeeringPeerResourceModel struct {
+	ID       types.String            `tfsdk:"id"`
+	Metadata metadataModel           `tfsdk:"metadata"`
+	Spec     VpcPeeringPeerSpecModel `tfsdk:"spec"`
+	Status   types.Object            `tfsdk:"status"`
 }
 
-func NewVpcPeeringPeerResource() resource.Resource {
-	return &VpcPeeringPeerResource{}
-}
+type VpcPeeringPeerResource struct{ client *client.Client }
+
+func NewVpcPeeringPeerResource() resource.Resource { return &VpcPeeringPeerResource{} }
 
 func (r *VpcPeeringPeerResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_vpc_peering_peer"
 }
 
+func VpcPeeringPeerResourceSchemaAttrs() map[string]schema.Attribute {
+	specAttrs := map[string]schema.Attribute{
+		"floating_ip_id": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"vpc_peering_id": schema.StringAttribute{Required: true},
+		"vpc_subnet_id":  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+	}
+	return map[string]schema.Attribute{
+		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"metadata": metadataResourceSchema(),
+		"spec":     schema.SingleNestedAttribute{Required: true, Attributes: specAttrs},
+		"status":   commonInfoSchema(map[string]schema.Attribute{"private_ip_v4": schema.StringAttribute{Computed: true}, "private_ip_v6": schema.StringAttribute{Computed: true}, "public_ip_v4": schema.StringAttribute{Computed: true}, "public_ip_v6": schema.StringAttribute{Computed: true}}),
+	}
+}
+
 func (r *VpcPeeringPeerResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	attrs := commonSchemaAttributes()
-
-	attrs["vpc_peering_id"] = schema.StringAttribute{
-			Required: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["vpc_subnet_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["floating_ip_id"] = schema.StringAttribute{
-			Optional: true,
-			Computed: true,
-			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-		}
-	attrs["info"] = commonInfoSchema(map[string]schema.Attribute{"state": schema.StringAttribute{Computed: true}, "public_ip_v4": schema.StringAttribute{Computed: true}, "public_ip_v6": schema.StringAttribute{Computed: true}, "private_ip_v4": schema.StringAttribute{Computed: true}, "private_ip_v6": schema.StringAttribute{Computed: true}})
-
-	resp.Schema = schema.Schema{Attributes: attrs}
+	resp.Schema = schema.Schema{Attributes: VpcPeeringPeerResourceSchemaAttrs()}
 }
 
 func (r *VpcPeeringPeerResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -78,38 +67,51 @@ func (r *VpcPeeringPeerResource) Configure(_ context.Context, req resource.Confi
 }
 
 func buildVpcPeeringPeerRequestMap(ctx context.Context, plan VpcPeeringPeerResourceModel) map[string]interface{} {
-	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Name.ValueString(), plan.Description, plan.FolderID, plan.DeleteProtection, plan.Labels, ctx)
-	if !plan.VpcPeeringId.IsNull() && !plan.VpcPeeringId.IsUnknown() {
-		m["vpcPeeringId"] = plan.VpcPeeringId.ValueString()
+	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
+	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.FloatingIpId.IsNull() && !plan.Spec.FloatingIpId.IsUnknown() {
+		spec["floatingIpId"] = plan.Spec.FloatingIpId.ValueString()
 	}
-	if !plan.VpcSubnetId.IsNull() && !plan.VpcSubnetId.IsUnknown() {
-		m["vpcSubnetId"] = plan.VpcSubnetId.ValueString()
+	if !plan.Spec.VpcPeeringId.IsNull() && !plan.Spec.VpcPeeringId.IsUnknown() {
+		spec["vpcPeeringId"] = plan.Spec.VpcPeeringId.ValueString()
 	}
-	if !plan.FloatingIpId.IsNull() && !plan.FloatingIpId.IsUnknown() {
-		m["floatingIpId"] = plan.FloatingIpId.ValueString()
+	if !plan.Spec.VpcSubnetId.IsNull() && !plan.Spec.VpcSubnetId.IsUnknown() {
+		spec["vpcSubnetId"] = plan.Spec.VpcSubnetId.ValueString()
 	}
 	return m
 }
 
 func populateVpcPeeringPeerState(ctx context.Context, data map[string]interface{}, state *VpcPeeringPeerResourceModel) error {
-	if err := setCommonFields(ctx, data, &state.ID, &state.Name, &state.Description, &state.FolderID, &state.DeleteProtection, &state.Labels); err != nil {
+	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
-	state.VpcPeeringId = getString(data, "vpcPeeringId")
-	state.VpcSubnetId = getString(data, "vpcSubnetId")
-	state.FloatingIpId = getString(data, "floatingIpId")
-	state.Info, _ = types.ObjectValue(map[string]attr.Type{"state": types.StringType, "public_ip_v4": types.StringType, "public_ip_v6": types.StringType, "private_ip_v4": types.StringType, "private_ip_v6": types.StringType}, map[string]attr.Value{"state": getStringFromInfo(data, "state"), "public_ip_v4": getStringFromInfo(data, "publicipv4"), "public_ip_v6": getStringFromInfo(data, "publicipv6"), "private_ip_v4": getStringFromInfo(data, "privateipv4"), "private_ip_v6": getStringFromInfo(data, "privateipv6")})
+	state.ID = state.Metadata.ID
+	spec := getSpec(data)
+	state.Spec.FloatingIpId = getString(spec, "floatingIpId")
+	state.Spec.VpcPeeringId = getString(spec, "vpcPeeringId")
+	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
+	state.Status = buildInfoObj(data,
+		map[string]attr.Type{
+			"private_ip_v4": types.StringType,
+			"private_ip_v6": types.StringType,
+			"public_ip_v4":  types.StringType,
+			"public_ip_v6":  types.StringType,
+		},
+		map[string]attr.Value{
+			"private_ip_v4": getStringFromInfo(data, "privateIpV4"),
+			"private_ip_v6": getStringFromInfo(data, "privateIpV6"),
+			"public_ip_v4":  getStringFromInfo(data, "publicIpV4"),
+			"public_ip_v6":  getStringFromInfo(data, "publicIpV6"),
+		})
 	return nil
 }
 
 func (r *VpcPeeringPeerResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan VpcPeeringPeerResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	plan.ID = types.StringValue(newULID())
 	body := buildVpcPeeringPeerRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/vpc-peering-peer", body)
@@ -121,7 +123,6 @@ func (r *VpcPeeringPeerResource) Create(ctx context.Context, req resource.Create
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
-
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
@@ -136,21 +137,18 @@ func (r *VpcPeeringPeerResource) Create(ctx context.Context, req resource.Create
 		return
 	}
 	if err := populateVpcPeeringPeerState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *VpcPeeringPeerResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state VpcPeeringPeerResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/vpc-peering-peer", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -161,28 +159,20 @@ func (r *VpcPeeringPeerResource) Read(ctx context.Context, req resource.ReadRequ
 		return
 	}
 	if err := populateVpcPeeringPeerState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *VpcPeeringPeerResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan VpcPeeringPeerResourceModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	var state VpcPeeringPeerResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	var plan, state VpcPeeringPeerResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.ID = state.ID
-
 	body := buildVpcPeeringPeerRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/vpc-peering-peer", body)
 	if err != nil {
@@ -193,32 +183,28 @@ func (r *VpcPeeringPeerResource) Update(ctx context.Context, req resource.Update
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-
 	apiData, err := r.client.Get(ctx, "/api/v1/vpc-peering-peer", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Read After Update Error", "resource not found after update")
+		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
 	if err := populateVpcPeeringPeerState(ctx, apiData, &plan); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags = resp.State.Set(ctx, plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *VpcPeeringPeerResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state VpcPeeringPeerResourceModel
-	diags := req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	modResp, err := r.client.Delete(ctx, "/api/v1/vpc-peering-peer", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
@@ -231,7 +217,6 @@ func (r *VpcPeeringPeerResource) Delete(ctx context.Context, req resource.Delete
 }
 
 func (r *VpcPeeringPeerResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import by ID
 	var state VpcPeeringPeerResourceModel
 	state.ID = types.StringValue(req.ID)
 	apiData, err := r.client.Get(ctx, "/api/v1/vpc-peering-peer", req.ID)
@@ -240,13 +225,12 @@ func (r *VpcPeeringPeerResource) ImportState(ctx context.Context, req resource.I
 		return
 	}
 	if apiData == nil {
-		resp.Diagnostics.AddError("Import Error", "resource not found")
+		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
 	if err := populateVpcPeeringPeerState(ctx, apiData, &state); err != nil {
-		resp.Diagnostics.AddError("State Population Error", err.Error())
+		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	diags := resp.State.Set(ctx, state)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
