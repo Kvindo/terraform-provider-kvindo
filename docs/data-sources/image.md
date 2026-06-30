@@ -27,11 +27,11 @@ output "info_size_bytes" {
 
 ### Optional
 
-- `name` (String)
+- `id` (String) ID of the resource to look up. Set exactly one of `id` or `name`.
+- `name` (String) Name of the resource to look up. Set exactly one of `id` or `name`.
 
 ### Read-Only
 
-- `id` (String) The ID of this resource.
 - `metadata` (Attributes) (see [below for nested schema](#nestedatt--metadata))
 - `spec` (Attributes) (see [below for nested schema](#nestedatt--spec))
 - `status` (Attributes) (see [below for nested schema](#nestedatt--status))

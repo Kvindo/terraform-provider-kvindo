@@ -34,8 +34,8 @@ func (d *FloatingIpDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 		"hosting_provider_id": schema.StringAttribute{Computed: true},
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
-		"id":       schema.StringAttribute{Optional: true, Computed: true},
-		"name":     schema.StringAttribute{Optional: true, Computed: true},
+		"id":       schema.StringAttribute{Optional: true, Computed: true, Description: "ID of the resource to look up. Set exactly one of `id` or `name`."},
+		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
 		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"public_ip_v4": schema.StringAttribute{Computed: true}}),

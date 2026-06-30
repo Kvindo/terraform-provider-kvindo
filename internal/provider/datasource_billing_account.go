@@ -30,8 +30,8 @@ func (d *BillingAccountDataSource) Metadata(_ context.Context, req datasource.Me
 
 func (d *BillingAccountDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
-		"id":       schema.StringAttribute{Optional: true, Computed: true},
-		"name":     schema.StringAttribute{Optional: true, Computed: true},
+		"id":       schema.StringAttribute{Optional: true, Computed: true, Description: "ID of the resource to look up. Set exactly one of `id` or `name`."},
+		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"rub_balance": schema.StringAttribute{Computed: true}}),
 	}}

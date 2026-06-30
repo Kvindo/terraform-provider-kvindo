@@ -45,8 +45,8 @@ func (d *LoadbalancerHttpListenerRuleDataSource) Schema(_ context.Context, _ dat
 		"static_response_action":           objDatasourceSchema(loadbalancerHttpListenerRuleStaticResponseActionObjFields),
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
-		"id":       schema.StringAttribute{Optional: true, Computed: true},
-		"name":     schema.StringAttribute{Optional: true, Computed: true},
+		"id":       schema.StringAttribute{Optional: true, Computed: true, Description: "ID of the resource to look up. Set exactly one of `id` or `name`."},
+		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
 		"status":   commonInfoDatasourceSchema(nil),

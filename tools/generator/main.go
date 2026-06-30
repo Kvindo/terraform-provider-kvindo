@@ -1099,8 +1099,12 @@ func generateDatasourceFile(r ResourceDef) string {
 	}
 	sb.WriteString("\tresp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{\n")
 	// Look the resource up by either id or name (exactly one); the other is computed.
-	sb.WriteString("\t\t\"id\": schema.StringAttribute{Optional: true, Computed: true},\n")
-	sb.WriteString("\t\t\"name\": schema.StringAttribute{Optional: true, Computed: true},\n")
+	// The explicit Description on `id` is required: tfplugindocs special-cases a description-less
+	// `id` attribute, forcing it into the "Read-Only" section with the canned "The ID of this
+	// resource." text — which hides that it's a valid (Optional) lookup key. Giving it a real
+	// description makes tfplugindocs categorize it by its actual schema flags (Optional).
+	sb.WriteString("\t\t\"id\": schema.StringAttribute{Optional: true, Computed: true, Description: \"ID of the resource to look up. Set exactly one of `id` or `name`.\"},\n")
+	sb.WriteString("\t\t\"name\": schema.StringAttribute{Optional: true, Computed: true, Description: \"Name of the resource to look up. Set exactly one of `id` or `name`.\"},\n")
 	sb.WriteString("\t\t\"metadata\": metadataDatasourceSchema(),\n")
 	if hasSpec {
 		sb.WriteString("\t\t\"spec\": schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},\n")

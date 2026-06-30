@@ -28,11 +28,11 @@ output "folder_id" {
 
 ### Optional
 
-- `name` (String)
+- `id` (String) ID of the resource to look up. Set exactly one of `id` or `name`.
+- `name` (String) Name of the resource to look up. Set exactly one of `id` or `name`.
 
 ### Read-Only
 
-- `id` (String) The ID of this resource.
 - `metadata` (Attributes) (see [below for nested schema](#nestedatt--metadata))
 - `status` (Attributes) (see [below for nested schema](#nestedatt--status))
 
