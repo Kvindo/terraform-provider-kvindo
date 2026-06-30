@@ -22,10 +22,10 @@ type ModificationResponse struct {
 }
 
 // RequestStatusResponse is returned from polling the async status endpoint.
-// NOTE: "Succeded" (single 'd') is a deliberate match to the API's misspelling;
-// changing it to "Succeeded" would silently break polling.
+// NOTE: the API previously misspelled this field as "succeded"; it was corrected
+// to "succeeded" API-wide. This json tag must match the current API field exactly.
 type RequestStatusResponse struct {
-	Succeded            bool   `json:"succeded"`
+	Succeeded            bool   `json:"succeeded"`
 	ScheduledResourceId string `json:"scheduledResourceId"`
 	ErrorCode           string `json:"errorCode"`
 	ErrorMessage        string `json:"errorMessage"`
@@ -303,7 +303,7 @@ func (c *Client) PollUntilDone(ctx context.Context, path string, requestId strin
 			return fmt.Errorf("async operation error %s: %s", status.ErrorCode, status.ErrorMessage)
 		}
 
-		if status.Succeded {
+		if status.Succeeded {
 			return nil
 		}
 
