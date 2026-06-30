@@ -15,6 +15,7 @@ var _ = fmt.Sprintf
 
 type PostgresqlStandaloneDataSourceModel struct {
 	ID       types.String                  `tfsdk:"id"`
+	Name     types.String                  `tfsdk:"name"`
 	Metadata metadataModel                 `tfsdk:"metadata"`
 	Spec     PostgresqlStandaloneSpecModel `tfsdk:"spec"`
 	Status   types.Object                  `tfsdk:"status"`
@@ -45,7 +46,8 @@ func (d *PostgresqlStandaloneDataSource) Schema(_ context.Context, _ datasource.
 		"vpc_subnet_id":         schema.StringAttribute{Computed: true},
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
-		"id":       schema.StringAttribute{Required: true},
+		"id":       schema.StringAttribute{Optional: true, Computed: true},
+		"name":     schema.StringAttribute{Optional: true, Computed: true},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
 		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"port": schema.Int64Attribute{Computed: true}, "private_ip_v4": schema.StringAttribute{Computed: true}, "public_ip_v4": schema.StringAttribute{Computed: true}, "root_user_name": schema.StringAttribute{Computed: true}}),
@@ -70,7 +72,19 @@ func (d *PostgresqlStandaloneDataSource) Read(ctx context.Context, req datasourc
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	apiData, err := d.client.Get(ctx, "/api/v1/postgresql-standalone", state.ID.ValueString())
+	var apiData map[string]interface{}
+	var err error
+	idSet := !state.ID.IsNull() && state.ID.ValueString() != ""
+	nameSet := !state.Name.IsNull() && state.Name.ValueString() != ""
+	if idSet == nameSet {
+		resp.Diagnostics.AddError("Invalid lookup", "exactly one of \"id\" or \"name\" must be set")
+		return
+	}
+	if idSet {
+		apiData, err = d.client.Get(ctx, "/api/v1/postgresql-standalone", state.ID.ValueString())
+	} else {
+		apiData, err = d.client.GetByName(ctx, "/api/v1/postgresql-standalone", state.Name.ValueString())
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
 		return
@@ -83,6 +97,8 @@ func (d *PostgresqlStandaloneDataSource) Read(ctx context.Context, req datasourc
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	state.ID = state.Metadata.ID
+	state.Name = state.Metadata.Name
 	spec := getSpec(apiData)
 	state.Spec.BackupRetentionDays = getInt64(spec, "backupRetentionDays")
 	state.Spec.FloatingIpId = getString(spec, "floatingIpId")

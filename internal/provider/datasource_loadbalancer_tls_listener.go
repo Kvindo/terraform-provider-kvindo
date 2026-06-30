@@ -14,6 +14,7 @@ var _ = fmt.Sprintf
 
 type LoadbalancerTlsListenerDataSourceModel struct {
 	ID       types.String                     `tfsdk:"id"`
+	Name     types.String                     `tfsdk:"name"`
 	Metadata metadataModel                    `tfsdk:"metadata"`
 	Spec     LoadbalancerTlsListenerSpecModel `tfsdk:"spec"`
 	Status   types.Object                     `tfsdk:"status"`
@@ -40,7 +41,8 @@ func (d *LoadbalancerTlsListenerDataSource) Schema(_ context.Context, _ datasour
 		"tls":             objDatasourceSchema(loadbalancerTlsListenerTlsObjFields),
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
-		"id":       schema.StringAttribute{Required: true},
+		"id":       schema.StringAttribute{Optional: true, Computed: true},
+		"name":     schema.StringAttribute{Optional: true, Computed: true},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
 		"status":   commonInfoDatasourceSchema(nil),
@@ -65,7 +67,19 @@ func (d *LoadbalancerTlsListenerDataSource) Read(ctx context.Context, req dataso
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	apiData, err := d.client.Get(ctx, "/api/v1/loadbalancer-tls-listener", state.ID.ValueString())
+	var apiData map[string]interface{}
+	var err error
+	idSet := !state.ID.IsNull() && state.ID.ValueString() != ""
+	nameSet := !state.Name.IsNull() && state.Name.ValueString() != ""
+	if idSet == nameSet {
+		resp.Diagnostics.AddError("Invalid lookup", "exactly one of \"id\" or \"name\" must be set")
+		return
+	}
+	if idSet {
+		apiData, err = d.client.Get(ctx, "/api/v1/loadbalancer-tls-listener", state.ID.ValueString())
+	} else {
+		apiData, err = d.client.GetByName(ctx, "/api/v1/loadbalancer-tls-listener", state.Name.ValueString())
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
 		return
@@ -78,6 +92,8 @@ func (d *LoadbalancerTlsListenerDataSource) Read(ctx context.Context, req dataso
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	state.ID = state.Metadata.ID
+	state.Name = state.Metadata.Name
 	spec := getSpec(apiData)
 	state.Spec.Hosts = getStringList(ctx, spec, "hosts")
 	state.Spec.Interface = getString(spec, "interface")

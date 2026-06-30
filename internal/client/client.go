@@ -42,9 +42,9 @@ type Client struct {
 // New creates a new Kvindo API client.
 func New(baseURL, token, version string) *Client {
 	return &Client{
-		BaseURL:    baseURL,
-		Token:      token,
-		Version:    version,
+		BaseURL: baseURL,
+		Token:   token,
+		Version: version,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -351,4 +351,35 @@ func (c *Client) GetByLabels(ctx context.Context, path string, labels map[string
 	}
 
 	return result, nil
+}
+
+// GetByName fetches a single resource by its metadata.name. It lists all resources of the type and
+// filters by name client-side. Errors if zero or more than one resource matches (names are not
+// guaranteed unique, so the caller should fall back to id in that case).
+func (c *Client) GetByName(ctx context.Context, path string, name string) (map[string]interface{}, error) {
+	items, err := c.GetByLabels(ctx, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var matches []map[string]interface{}
+	for _, it := range items {
+		res := it
+		if r, ok := it["resource"].(map[string]interface{}); ok {
+			res = r
+		}
+		meta, _ := res["metadata"].(map[string]interface{})
+		if meta == nil {
+			continue
+		}
+		if n, _ := meta["name"].(string); n == name {
+			matches = append(matches, res)
+		}
+	}
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("no resource found at %s with name %q", path, name)
+	}
+	if len(matches) > 1 {
+		return nil, fmt.Errorf("multiple resources at %s named %q — use id instead", path, name)
+	}
+	return matches[0], nil
 }

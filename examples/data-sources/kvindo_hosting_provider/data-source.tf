@@ -1,7 +1,8 @@
+# Look up a hosting provider by name (or by id instead — exactly one is required).
 data "kvindo_hosting_provider" "example" {
-  id = "01abc123def456gh789012345"
+  name = "ru-msk-1"
 }
 
-output "info_state" {
-  value = data.kvindo_hosting_provider.example.status.state
+output "hosting_provider_id" {
+  value = data.kvindo_hosting_provider.example.metadata.id
 }

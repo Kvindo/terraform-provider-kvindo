@@ -14,6 +14,7 @@ var _ = fmt.Sprintf
 
 type FolderDataSourceModel struct {
 	ID       types.String  `tfsdk:"id"`
+	Name     types.String  `tfsdk:"name"`
 	Metadata metadataModel `tfsdk:"metadata"`
 	Status   types.Object  `tfsdk:"status"`
 }
@@ -28,7 +29,8 @@ func (d *FolderDataSource) Metadata(_ context.Context, req datasource.MetadataRe
 
 func (d *FolderDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
-		"id":       schema.StringAttribute{Required: true},
+		"id":       schema.StringAttribute{Optional: true, Computed: true},
+		"name":     schema.StringAttribute{Optional: true, Computed: true},
 		"metadata": metadataDatasourceSchema(),
 		"status":   commonInfoDatasourceSchema(nil),
 	}}
@@ -52,7 +54,19 @@ func (d *FolderDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	apiData, err := d.client.Get(ctx, "/api/v1/folder", state.ID.ValueString())
+	var apiData map[string]interface{}
+	var err error
+	idSet := !state.ID.IsNull() && state.ID.ValueString() != ""
+	nameSet := !state.Name.IsNull() && state.Name.ValueString() != ""
+	if idSet == nameSet {
+		resp.Diagnostics.AddError("Invalid lookup", "exactly one of \"id\" or \"name\" must be set")
+		return
+	}
+	if idSet {
+		apiData, err = d.client.Get(ctx, "/api/v1/folder", state.ID.ValueString())
+	} else {
+		apiData, err = d.client.GetByName(ctx, "/api/v1/folder", state.Name.ValueString())
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
 		return
@@ -65,6 +79,8 @@ func (d *FolderDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	state.ID = state.Metadata.ID
+	state.Name = state.Metadata.Name
 	state.Status = simpleStateInfoObj(apiData)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

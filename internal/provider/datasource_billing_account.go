@@ -15,6 +15,7 @@ var _ = fmt.Sprintf
 
 type BillingAccountDataSourceModel struct {
 	ID       types.String  `tfsdk:"id"`
+	Name     types.String  `tfsdk:"name"`
 	Metadata metadataModel `tfsdk:"metadata"`
 	Status   types.Object  `tfsdk:"status"`
 }
@@ -29,7 +30,8 @@ func (d *BillingAccountDataSource) Metadata(_ context.Context, req datasource.Me
 
 func (d *BillingAccountDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
-		"id":       schema.StringAttribute{Required: true},
+		"id":       schema.StringAttribute{Optional: true, Computed: true},
+		"name":     schema.StringAttribute{Optional: true, Computed: true},
 		"metadata": metadataDatasourceSchema(),
 		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"rub_balance": schema.StringAttribute{Computed: true}}),
 	}}
@@ -53,7 +55,19 @@ func (d *BillingAccountDataSource) Read(ctx context.Context, req datasource.Read
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	apiData, err := d.client.Get(ctx, "/api/v1/billing-account", state.ID.ValueString())
+	var apiData map[string]interface{}
+	var err error
+	idSet := !state.ID.IsNull() && state.ID.ValueString() != ""
+	nameSet := !state.Name.IsNull() && state.Name.ValueString() != ""
+	if idSet == nameSet {
+		resp.Diagnostics.AddError("Invalid lookup", "exactly one of \"id\" or \"name\" must be set")
+		return
+	}
+	if idSet {
+		apiData, err = d.client.Get(ctx, "/api/v1/billing-account", state.ID.ValueString())
+	} else {
+		apiData, err = d.client.GetByName(ctx, "/api/v1/billing-account", state.Name.ValueString())
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
 		return
@@ -66,6 +80,8 @@ func (d *BillingAccountDataSource) Read(ctx context.Context, req datasource.Read
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	state.ID = state.Metadata.ID
+	state.Name = state.Metadata.Name
 	state.Status = buildInfoObj(apiData,
 		map[string]attr.Type{
 			"rub_balance": types.StringType,

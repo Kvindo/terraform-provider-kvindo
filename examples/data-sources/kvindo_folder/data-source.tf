@@ -1,7 +1,8 @@
+# Look up a folder by name (or by id instead — exactly one is required).
 data "kvindo_folder" "example" {
-  id = "01abc123def456gh789012345"
+  name = "default"
 }
 
-output "info_state" {
-  value = data.kvindo_folder.example.status.state
+output "folder_id" {
+  value = data.kvindo_folder.example.metadata.id
 }

@@ -15,6 +15,7 @@ var _ = fmt.Sprintf
 
 type SupportTicketCommentAttachmentDataSourceModel struct {
 	ID       types.String                            `tfsdk:"id"`
+	Name     types.String                            `tfsdk:"name"`
 	Metadata metadataModel                           `tfsdk:"metadata"`
 	Spec     SupportTicketCommentAttachmentSpecModel `tfsdk:"spec"`
 	Status   types.Object                            `tfsdk:"status"`
@@ -37,7 +38,8 @@ func (d *SupportTicketCommentAttachmentDataSource) Schema(_ context.Context, _ d
 		"file_type":           schema.StringAttribute{Computed: true},
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
-		"id":       schema.StringAttribute{Required: true},
+		"id":       schema.StringAttribute{Optional: true, Computed: true},
+		"name":     schema.StringAttribute{Optional: true, Computed: true},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
 		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"download_url": schema.StringAttribute{Computed: true}}),
@@ -62,7 +64,19 @@ func (d *SupportTicketCommentAttachmentDataSource) Read(ctx context.Context, req
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	apiData, err := d.client.Get(ctx, "/api/v1/support-ticket-comment-attachment", state.ID.ValueString())
+	var apiData map[string]interface{}
+	var err error
+	idSet := !state.ID.IsNull() && state.ID.ValueString() != ""
+	nameSet := !state.Name.IsNull() && state.Name.ValueString() != ""
+	if idSet == nameSet {
+		resp.Diagnostics.AddError("Invalid lookup", "exactly one of \"id\" or \"name\" must be set")
+		return
+	}
+	if idSet {
+		apiData, err = d.client.Get(ctx, "/api/v1/support-ticket-comment-attachment", state.ID.ValueString())
+	} else {
+		apiData, err = d.client.GetByName(ctx, "/api/v1/support-ticket-comment-attachment", state.Name.ValueString())
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
 		return
@@ -75,6 +89,8 @@ func (d *SupportTicketCommentAttachmentDataSource) Read(ctx context.Context, req
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	state.ID = state.Metadata.ID
+	state.Name = state.Metadata.Name
 	spec := getSpec(apiData)
 	state.Spec.FileContentBase64 = getString(spec, "fileContentBase64")
 	state.Spec.FileName = getString(spec, "fileName")

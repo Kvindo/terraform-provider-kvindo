@@ -1066,6 +1066,7 @@ func generateDatasourceFile(r ResourceDef) string {
 	// Model (reuses the resource's spec struct)
 	sb.WriteString(fmt.Sprintf("type %sDataSourceModel struct {\n", sn))
 	sb.WriteString("\tID       types.String  `tfsdk:\"id\"`\n")
+	sb.WriteString("\tName     types.String  `tfsdk:\"name\"`\n")
 	sb.WriteString("\tMetadata metadataModel `tfsdk:\"metadata\"`\n")
 	if hasSpec {
 		sb.WriteString(fmt.Sprintf("\tSpec     %sSpecModel `tfsdk:\"spec\"`\n", sn))
@@ -1097,7 +1098,9 @@ func generateDatasourceFile(r ResourceDef) string {
 		sb.WriteString("\t}\n")
 	}
 	sb.WriteString("\tresp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{\n")
-	sb.WriteString("\t\t\"id\": schema.StringAttribute{Required: true},\n")
+	// Look the resource up by either id or name (exactly one); the other is computed.
+	sb.WriteString("\t\t\"id\": schema.StringAttribute{Optional: true, Computed: true},\n")
+	sb.WriteString("\t\t\"name\": schema.StringAttribute{Optional: true, Computed: true},\n")
 	sb.WriteString("\t\t\"metadata\": metadataDatasourceSchema(),\n")
 	if hasSpec {
 		sb.WriteString("\t\t\"spec\": schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},\n")
@@ -1115,10 +1118,21 @@ func generateDatasourceFile(r ResourceDef) string {
 	sb.WriteString(fmt.Sprintf("\tvar state %sDataSourceModel\n", sn))
 	sb.WriteString("\tresp.Diagnostics.Append(req.Config.Get(ctx, &state)...)\n")
 	sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
-	sb.WriteString(fmt.Sprintf("\tapiData, err := d.client.Get(ctx, %q, state.ID.ValueString())\n", r.APIPath))
+	sb.WriteString("\tvar apiData map[string]interface{}\n\tvar err error\n")
+	sb.WriteString("\tidSet := !state.ID.IsNull() && state.ID.ValueString() != \"\"\n")
+	sb.WriteString("\tnameSet := !state.Name.IsNull() && state.Name.ValueString() != \"\"\n")
+	sb.WriteString("\tif idSet == nameSet {\n")
+	sb.WriteString("\t\tresp.Diagnostics.AddError(\"Invalid lookup\", \"exactly one of \\\"id\\\" or \\\"name\\\" must be set\"); return\n\t}\n")
+	sb.WriteString("\tif idSet {\n")
+	sb.WriteString(fmt.Sprintf("\t\tapiData, err = d.client.Get(ctx, %q, state.ID.ValueString())\n", r.APIPath))
+	sb.WriteString("\t} else {\n")
+	sb.WriteString(fmt.Sprintf("\t\tapiData, err = d.client.GetByName(ctx, %q, state.Name.ValueString())\n", r.APIPath))
+	sb.WriteString("\t}\n")
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read Error\", err.Error()); return }\n")
 	sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Not Found\", \"resource not found\"); return }\n")
 	sb.WriteString("\tif err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n")
+	sb.WriteString("\tstate.ID = state.Metadata.ID\n")
+	sb.WriteString("\tstate.Name = state.Metadata.Name\n")
 	if hasSpec {
 		sb.WriteString("\tspec := getSpec(apiData)\n")
 		for _, f := range r.Fields {

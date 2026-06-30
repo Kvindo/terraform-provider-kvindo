@@ -14,6 +14,7 @@ var _ = fmt.Sprintf
 
 type KubernetesUserRoleDataSourceModel struct {
 	ID       types.String                `tfsdk:"id"`
+	Name     types.String                `tfsdk:"name"`
 	Metadata metadataModel               `tfsdk:"metadata"`
 	Spec     KubernetesUserRoleSpecModel `tfsdk:"spec"`
 	Status   types.Object                `tfsdk:"status"`
@@ -35,7 +36,8 @@ func (d *KubernetesUserRoleDataSource) Schema(_ context.Context, _ datasource.Sc
 		"verbs":      schema.ListAttribute{Computed: true, ElementType: types.StringType},
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
-		"id":       schema.StringAttribute{Required: true},
+		"id":       schema.StringAttribute{Optional: true, Computed: true},
+		"name":     schema.StringAttribute{Optional: true, Computed: true},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
 		"status":   commonInfoDatasourceSchema(nil),
@@ -60,7 +62,19 @@ func (d *KubernetesUserRoleDataSource) Read(ctx context.Context, req datasource.
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	apiData, err := d.client.Get(ctx, "/api/v1/kubernetes-user-role", state.ID.ValueString())
+	var apiData map[string]interface{}
+	var err error
+	idSet := !state.ID.IsNull() && state.ID.ValueString() != ""
+	nameSet := !state.Name.IsNull() && state.Name.ValueString() != ""
+	if idSet == nameSet {
+		resp.Diagnostics.AddError("Invalid lookup", "exactly one of \"id\" or \"name\" must be set")
+		return
+	}
+	if idSet {
+		apiData, err = d.client.Get(ctx, "/api/v1/kubernetes-user-role", state.ID.ValueString())
+	} else {
+		apiData, err = d.client.GetByName(ctx, "/api/v1/kubernetes-user-role", state.Name.ValueString())
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
 		return
@@ -73,6 +87,8 @@ func (d *KubernetesUserRoleDataSource) Read(ctx context.Context, req datasource.
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	state.ID = state.Metadata.ID
+	state.Name = state.Metadata.Name
 	spec := getSpec(apiData)
 	state.Spec.ApiGroups = getStringList(ctx, spec, "apiGroups")
 	state.Spec.Namespaces = getStringList(ctx, spec, "namespaces")
