@@ -20,6 +20,19 @@ func TestProviderSchema_HasTokenAndEndpoint(t *testing.T) {
 	}
 }
 
+// Guards the Registry/tooling description: tfplugindocs and `terraform providers schema`
+// surface this text, so an empty provider description regresses discoverability (the
+// Registry landing page once shipped blank because this was missing).
+func TestProviderSchema_HasDescription(t *testing.T) {
+	p := &KvindoProvider{version: "test"}
+	var resp provider.SchemaResponse
+	p.Schema(context.Background(), provider.SchemaRequest{}, &resp)
+
+	if resp.Schema.MarkdownDescription == "" {
+		t.Error("expected provider schema to have a non-empty MarkdownDescription")
+	}
+}
+
 func TestProviderSchema_TokenIsSensitive(t *testing.T) {
 	p := &KvindoProvider{version: "test"}
 	var resp provider.SchemaResponse

@@ -32,10 +32,12 @@ func (p *KvindoProvider) Metadata(_ context.Context, _ provider.MetadataRequest,
 }
 
 func (p *KvindoProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
-	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
-		"endpoint": schema.StringAttribute{Optional: true, Description: "API endpoint, defaults to https://cloud-api.kvindo.com"},
-		"token":    schema.StringAttribute{Optional: true, Sensitive: true, Description: "API bearer token"},
-	}}
+	resp.Schema = schema.Schema{
+		MarkdownDescription: "The Kvindo Cloud provider manages [Kvindo Cloud](https://cloud.kvindo.com) infrastructure as code: VMs, S3 object storage, Kubernetes clusters, load balancers, VPCs, VPNs, managed PostgreSQL, networking, and IAM.",
+		Attributes: map[string]schema.Attribute{
+			"endpoint": schema.StringAttribute{Optional: true, Description: "API endpoint, defaults to https://cloud-api.kvindo.com"},
+			"token":    schema.StringAttribute{Optional: true, Sensitive: true, Description: "API bearer token"},
+		}}
 }
 
 func (p *KvindoProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {

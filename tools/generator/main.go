@@ -1225,7 +1225,12 @@ func generateProviderFile(resources []ResourceDef) string {
 	sb.WriteString("func New(version string) func() provider.Provider {\n\treturn func() provider.Provider { return &KvindoProvider{version: version} }\n}\n\n")
 	sb.WriteString("func (p *KvindoProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {\n\tresp.TypeName = \"kvindo\"\n\tresp.Version = p.version\n}\n\n")
 	sb.WriteString("func (p *KvindoProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {\n")
-	sb.WriteString("\tresp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{\n")
+	// MarkdownDescription feeds `terraform providers schema` and IDE tooling; the Registry
+	// landing page itself is driven by templates/index.md.tmpl. Keep this text in sync with
+	// the committed provider.go (we don't run the swagger-dependent full regen on every edit).
+	sb.WriteString("\tresp.Schema = schema.Schema{\n")
+	sb.WriteString("\t\tMarkdownDescription: \"The Kvindo Cloud provider manages [Kvindo Cloud](https://cloud.kvindo.com) infrastructure as code: VMs, S3 object storage, Kubernetes clusters, load balancers, VPCs, VPNs, managed PostgreSQL, networking, and IAM.\",\n")
+	sb.WriteString("\t\tAttributes: map[string]schema.Attribute{\n")
 	sb.WriteString("\t\t\"endpoint\": schema.StringAttribute{Optional: true, Description: \"API endpoint, defaults to https://cloud-api.kvindo.com\"},\n")
 	sb.WriteString("\t\t\"token\":    schema.StringAttribute{Optional: true, Sensitive: true, Description: \"API bearer token\"},\n")
 	sb.WriteString("\t}}\n}\n\n")

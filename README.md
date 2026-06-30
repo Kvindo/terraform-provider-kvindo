@@ -1,6 +1,13 @@
 # Terraform Provider for Kvindo Cloud
 
-Manages resources on [Kvindo Cloud](https://cloud.kvindo.com) — a multi-tenant cloud platform for VMs, object storage, Kubernetes, load balancers, VPNs, and managed services.
+[![Terraform Registry](https://img.shields.io/badge/Terraform%20Registry-kvindo%2Fkvindo-7B42BC?logo=terraform)](https://registry.terraform.io/providers/kvindo/kvindo/latest)
+[![GitHub release](https://img.shields.io/github/v/release/Kvindo/terraform-provider-kvindo?sort=semver)](https://github.com/Kvindo/terraform-provider-kvindo/releases)
+[![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE)
+
+The official **Terraform provider for [Kvindo Cloud](https://cloud.kvindo.com)** — manage Kvindo
+Cloud infrastructure as code (IaC): VMs, S3 object storage, Kubernetes clusters, load balancers,
+VPCs, VPNs, managed PostgreSQL, networking, and IAM. Talks to the same API as the web console and
+the [`kc` CLI](https://github.com/Kvindo/kc-cli).
 
 ## Requirements
 
@@ -394,3 +401,11 @@ apply recovers cleanly on the next run.
 - All IDs are ULIDs (lowercase 26-char Crockford base32), not UUIDs.
 - S3 bucket names are globally unique — always use a `random_id` suffix.
 - Transaction sub-resource map keys are stable across `terraform apply` — the key you choose in config (e.g. `"app"`) is preserved in state.
+
+## Related projects
+
+Part of the Kvindo Cloud developer toolchain:
+
+- **[kc CLI](https://github.com/Kvindo/kc-cli)** — kubectl-style command-line client for Kvindo Cloud.
+- **[kc-sdk-python](https://github.com/Kvindo/kc-sdk-python)** — Python SDK for the Kvindo Cloud API ([PyPI](https://pypi.org/project/kc-sdk-python/)).
+- **[Kvindo Cloud console](https://cloud.kvindo.com)** — web UI and API ([docs](https://cloud.kvindo.com)).
