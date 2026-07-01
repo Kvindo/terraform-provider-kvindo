@@ -8,5 +8,5 @@ resource "kvindo_floating_ip" "example" {
 }
 
 output "public_ip" {
-  value = kvindo_floating_ip.example.status.public_ip_v4
+  value = kvindo_floating_ip.example.status.public_ipv4
 }

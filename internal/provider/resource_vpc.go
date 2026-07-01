@@ -51,7 +51,7 @@ func VpcResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(map[string]schema.Attribute{"nat_public_ip_v4": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"nat_public_ipv4": schema.StringAttribute{Computed: true}}),
 	}
 }
 
@@ -105,10 +105,10 @@ func populateVpcState(ctx context.Context, data map[string]interface{}, state *V
 	state.Spec.SecurityGroupIds = getStringList(ctx, spec, "securityGroupIds")
 	state.Status = buildInfoObj(data,
 		map[string]attr.Type{
-			"nat_public_ip_v4": types.StringType,
+			"nat_public_ipv4": types.StringType,
 		},
 		map[string]attr.Value{
-			"nat_public_ip_v4": getStringFromInfo(data, "natPublicIpV4"),
+			"nat_public_ipv4": getStringFromInfo(data, "natPublicIpV4"),
 		})
 	return nil
 }

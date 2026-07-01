@@ -12,7 +12,7 @@ resource "kvindo_loadbalancer_udp_listener" "example" {
       {
         order        = 1
         action       = "allow"
-        ip_v4_blocks = ["0.0.0.0/0"]
+        ipv4_blocks = ["0.0.0.0/0"]
       }
     ]
   }

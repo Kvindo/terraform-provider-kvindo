@@ -44,7 +44,7 @@ func (d *VictoriaMetricsDataSource) Schema(_ context.Context, _ datasource.Schem
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"discovered_scrap_targets": schema.StringAttribute{Computed: true}, "fqdn": schema.StringAttribute{Computed: true}, "private_ip_v4": schema.StringAttribute{Computed: true}, "private_ip_v6": schema.StringAttribute{Computed: true}, "public_ip_v4": schema.StringAttribute{Computed: true}, "public_ip_v6": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"discovered_scrap_targets": schema.StringAttribute{Computed: true}, "fqdn": schema.StringAttribute{Computed: true}, "private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}}),
 	}}
 }
 
@@ -105,18 +105,18 @@ func (d *VictoriaMetricsDataSource) Read(ctx context.Context, req datasource.Rea
 		map[string]attr.Type{
 			"discovered_scrap_targets": types.StringType,
 			"fqdn":                     types.StringType,
-			"private_ip_v4":            types.StringType,
-			"private_ip_v6":            types.StringType,
-			"public_ip_v4":             types.StringType,
-			"public_ip_v6":             types.StringType,
+			"private_ipv4":             types.StringType,
+			"private_ipv6":             types.StringType,
+			"public_ipv4":              types.StringType,
+			"public_ipv6":              types.StringType,
 		},
 		map[string]attr.Value{
 			"discovered_scrap_targets": getStringFromInfo(apiData, "discoveredScrapTargets"),
 			"fqdn":                     getStringFromInfo(apiData, "fqdn"),
-			"private_ip_v4":            getStringFromInfo(apiData, "privateIpV4"),
-			"private_ip_v6":            getStringFromInfo(apiData, "privateIpV6"),
-			"public_ip_v4":             getStringFromInfo(apiData, "publicIpV4"),
-			"public_ip_v6":             getStringFromInfo(apiData, "publicIpV6"),
+			"private_ipv4":             getStringFromInfo(apiData, "privateIpV4"),
+			"private_ipv6":             getStringFromInfo(apiData, "privateIpV6"),
+			"public_ipv4":              getStringFromInfo(apiData, "publicIpV4"),
+			"public_ipv6":              getStringFromInfo(apiData, "publicIpV6"),
 		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

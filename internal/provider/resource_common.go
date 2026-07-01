@@ -287,7 +287,7 @@ func baseInfoSchemaAttrs() map[string]schema.Attribute {
 // commonInfoSchema returns a Computed SingleNestedAttribute for the "info" block.
 // The base ResourceInfo fields (state, create_time, created_by_user, last_change_request, pricing)
 // are included automatically. Pass extra resource-specific attrs to merge in.
-// Access in HCL: resource.foo.info.state, resource.foo.info.public_ip_v4, etc.
+// Access in HCL: resource.foo.info.state, resource.foo.info.public_ipv4, etc.
 func commonInfoSchema(extraAttrs map[string]schema.Attribute) schema.Attribute {
 	attrs := baseInfoSchemaAttrs()
 	for k, v := range extraAttrs {

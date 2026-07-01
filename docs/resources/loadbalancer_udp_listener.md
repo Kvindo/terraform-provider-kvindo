@@ -27,7 +27,7 @@ resource "kvindo_loadbalancer_udp_listener" "example" {
       {
         order        = 1
         action       = "allow"
-        ip_v4_blocks = ["0.0.0.0/0"]
+        ipv4_blocks = ["0.0.0.0/0"]
       }
     ]
   }
@@ -87,8 +87,8 @@ Optional:
 
 - `action` (String)
 - `description` (String)
-- `ip_v4_blocks` (List of String)
-- `ip_v6_blocks` (List of String)
+- `ipv4_blocks` (List of String)
+- `ipv6_blocks` (List of String)
 - `order` (Number)
 
 

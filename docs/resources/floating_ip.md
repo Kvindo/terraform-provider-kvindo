@@ -23,7 +23,7 @@ resource "kvindo_floating_ip" "example" {
 }
 
 output "public_ip" {
-  value = kvindo_floating_ip.example.status.public_ip_v4
+  value = kvindo_floating_ip.example.status.public_ipv4
 }
 ```
 
@@ -79,7 +79,7 @@ Read-Only:
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--status--pricing))
-- `public_ip_v4` (String)
+- `public_ipv4` (String)
 - `state` (String)
 
 <a id="nestedatt--status--created_by_user"></a>

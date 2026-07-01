@@ -63,7 +63,7 @@ func PostgresqlStandaloneResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(map[string]schema.Attribute{"port": schema.Int64Attribute{Computed: true}, "private_ip_v4": schema.StringAttribute{Computed: true}, "public_ip_v4": schema.StringAttribute{Computed: true}, "root_user_name": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"port": schema.Int64Attribute{Computed: true}, "private_ipv4": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "root_user_name": schema.StringAttribute{Computed: true}}),
 	}
 }
 
@@ -142,14 +142,14 @@ func populatePostgresqlStandaloneState(ctx context.Context, data map[string]inte
 	state.Status = buildInfoObj(data,
 		map[string]attr.Type{
 			"port":           types.Int64Type,
-			"private_ip_v4":  types.StringType,
-			"public_ip_v4":   types.StringType,
+			"private_ipv4":   types.StringType,
+			"public_ipv4":    types.StringType,
 			"root_user_name": types.StringType,
 		},
 		map[string]attr.Value{
 			"port":           getInt64FromInfo(data, "port"),
-			"private_ip_v4":  getStringFromInfo(data, "privateIpV4"),
-			"public_ip_v4":   getStringFromInfo(data, "publicIpV4"),
+			"private_ipv4":   getStringFromInfo(data, "privateIpV4"),
+			"public_ipv4":    getStringFromInfo(data, "publicIpV4"),
 			"root_user_name": getStringFromInfo(data, "rootUserName"),
 		})
 	return nil

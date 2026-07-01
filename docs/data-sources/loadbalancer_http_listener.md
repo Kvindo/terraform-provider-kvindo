@@ -68,8 +68,8 @@ Read-Only:
 
 - `action` (String)
 - `description` (String)
-- `ip_v4_blocks` (List of String)
-- `ip_v6_blocks` (List of String)
+- `ipv4_blocks` (List of String)
+- `ipv6_blocks` (List of String)
 - `order` (Number)
 
 

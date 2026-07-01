@@ -17,8 +17,8 @@ data "kvindo_loadbalancer" "example" {
   id = "01abc123def456gh789012345"
 }
 
-output "info_public_ip_v4" {
-  value = data.kvindo_loadbalancer.example.status.public_ip_v4
+output "info_public_ipv4" {
+  value = data.kvindo_loadbalancer.example.status.public_ipv4
 }
 ```
 
@@ -68,10 +68,10 @@ Read-Only:
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--status--pricing))
-- `private_ip_v4` (String)
-- `private_ip_v6` (String)
-- `public_ip_v4` (String)
-- `public_ip_v6` (String)
+- `private_ipv4` (String)
+- `private_ipv6` (String)
+- `public_ipv4` (String)
+- `public_ipv6` (String)
 - `state` (String)
 
 <a id="nestedatt--status--created_by_user"></a>

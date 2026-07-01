@@ -54,9 +54,9 @@ Read-Only:
 
 Read-Only:
 
-- `ip_v4_cidrs` (List of String)
-- `private_ip_v4` (String)
-- `ssh_ip_v4` (String)
+- `ipv4_cidrs` (List of String)
+- `private_ipv4` (String)
+- `ssh_ipv4` (String)
 - `ssh_port` (Number)
 - `ssh_private_key_id` (String)
 - `ssh_user` (String)

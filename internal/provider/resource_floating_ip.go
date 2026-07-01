@@ -42,7 +42,7 @@ func FloatingIpResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(map[string]schema.Attribute{"public_ip_v4": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"public_ipv4": schema.StringAttribute{Computed: true}}),
 	}
 }
 
@@ -80,10 +80,10 @@ func populateFloatingIpState(ctx context.Context, data map[string]interface{}, s
 	state.Spec.HostingProviderId = getString(spec, "hostingProviderId")
 	state.Status = buildInfoObj(data,
 		map[string]attr.Type{
-			"public_ip_v4": types.StringType,
+			"public_ipv4": types.StringType,
 		},
 		map[string]attr.Value{
-			"public_ip_v4": getStringFromInfo(data, "publicIpV4"),
+			"public_ipv4": getStringFromInfo(data, "publicIpV4"),
 		})
 	return nil
 }

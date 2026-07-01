@@ -520,8 +520,18 @@ var binaryUnitAcronyms = strings.NewReplacer(
 	"PiB", "Pib",
 )
 
+// ipVersionAcronyms keeps IP-version suffixes as a single snake segment: publicIpV4 → public_ipv4
+// (not public_ip_v4), matching the platform-wide convention. Applied before camelToSnake so the
+// capital V is not treated as a new word boundary. Covers both PascalCase (IpV4) and the
+// swagger camelCase leading form (ipV4Cidrs).
+var ipVersionAcronyms = strings.NewReplacer(
+	"IpV4", "Ipv4", "ipV4", "ipv4",
+	"IpV6", "Ipv6", "ipV6", "ipv6",
+)
+
 func camelToSnake(s string) string {
 	s = binaryUnitAcronyms.Replace(s)
+	s = ipVersionAcronyms.Replace(s)
 	var result []rune
 	runes := []rune(s)
 	for i, r := range runes {

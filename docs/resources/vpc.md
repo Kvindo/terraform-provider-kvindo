@@ -79,7 +79,7 @@ Read-Only:
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--status--last_change_request))
-- `nat_public_ip_v4` (String)
+- `nat_public_ipv4` (String)
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--status--pricing))
 - `state` (String)
 

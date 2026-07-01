@@ -15,7 +15,7 @@ import (
 
 var _ = fmt.Sprintf
 
-var loadbalancerHttpListenerSecurityRulesObjFields = []objField{{TF: "action", API: "action", Kind: "string"}, {TF: "description", API: "description", Kind: "string"}, {TF: "ip_v4_blocks", API: "ipV4Blocks", Kind: "list_string"}, {TF: "ip_v6_blocks", API: "ipV6Blocks", Kind: "list_string"}, {TF: "order", API: "order", Kind: "int64"}}
+var loadbalancerHttpListenerSecurityRulesObjFields = []objField{{TF: "action", API: "action", Kind: "string"}, {TF: "description", API: "description", Kind: "string"}, {TF: "ipv4_blocks", API: "ipV4Blocks", Kind: "list_string"}, {TF: "ipv6_blocks", API: "ipV6Blocks", Kind: "list_string"}, {TF: "order", API: "order", Kind: "int64"}}
 
 type LoadbalancerHttpListenerSpecModel struct {
 	Hosts          types.List   `tfsdk:"hosts"`

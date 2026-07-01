@@ -54,7 +54,7 @@ Read-Only:
 
 Read-Only:
 
-- `assign_public_ip_v4` (Boolean)
+- `assign_public_ipv4` (Boolean)
 - `control_plane_locations` (Attributes List) (see [below for nested schema](#nestedatt--spec--control_plane_locations))
 - `tier` (String)
 - `version` (String)

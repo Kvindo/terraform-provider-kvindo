@@ -59,7 +59,7 @@ func VictoriaMetricsResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(map[string]schema.Attribute{"discovered_scrap_targets": schema.StringAttribute{Computed: true}, "fqdn": schema.StringAttribute{Computed: true}, "private_ip_v4": schema.StringAttribute{Computed: true}, "private_ip_v6": schema.StringAttribute{Computed: true}, "public_ip_v4": schema.StringAttribute{Computed: true}, "public_ip_v6": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"discovered_scrap_targets": schema.StringAttribute{Computed: true}, "fqdn": schema.StringAttribute{Computed: true}, "private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}}),
 	}
 }
 
@@ -123,18 +123,18 @@ func populateVictoriaMetricsState(ctx context.Context, data map[string]interface
 		map[string]attr.Type{
 			"discovered_scrap_targets": types.StringType,
 			"fqdn":                     types.StringType,
-			"private_ip_v4":            types.StringType,
-			"private_ip_v6":            types.StringType,
-			"public_ip_v4":             types.StringType,
-			"public_ip_v6":             types.StringType,
+			"private_ipv4":             types.StringType,
+			"private_ipv6":             types.StringType,
+			"public_ipv4":              types.StringType,
+			"public_ipv6":              types.StringType,
 		},
 		map[string]attr.Value{
 			"discovered_scrap_targets": getStringFromInfo(data, "discoveredScrapTargets"),
 			"fqdn":                     getStringFromInfo(data, "fqdn"),
-			"private_ip_v4":            getStringFromInfo(data, "privateIpV4"),
-			"private_ip_v6":            getStringFromInfo(data, "privateIpV6"),
-			"public_ip_v4":             getStringFromInfo(data, "publicIpV4"),
-			"public_ip_v6":             getStringFromInfo(data, "publicIpV6"),
+			"private_ipv4":             getStringFromInfo(data, "privateIpV4"),
+			"private_ipv6":             getStringFromInfo(data, "privateIpV6"),
+			"public_ipv4":              getStringFromInfo(data, "publicIpV4"),
+			"public_ipv6":              getStringFromInfo(data, "publicIpV6"),
 		})
 	return nil
 }

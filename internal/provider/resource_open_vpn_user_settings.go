@@ -16,11 +16,11 @@ var _ = fmt.Sprintf
 
 type OpenVpnUserSettingsSpecModel struct {
 	AllowedDomains   types.List `tfsdk:"allowed_domains"`
-	AllowedIpV4Cidrs types.List `tfsdk:"allowed_ip_v4_cidrs"`
-	AllowedIpV6Cidrs types.List `tfsdk:"allowed_ip_v6_cidrs"`
+	AllowedIpV4Cidrs types.List `tfsdk:"allowed_ipv4_cidrs"`
+	AllowedIpV6Cidrs types.List `tfsdk:"allowed_ipv6_cidrs"`
 	DeniedDomains    types.List `tfsdk:"denied_domains"`
-	DeniedIpV4Cidrs  types.List `tfsdk:"denied_ip_v4_cidrs"`
-	DeniedIpV6Cidrs  types.List `tfsdk:"denied_ip_v6_cidrs"`
+	DeniedIpV4Cidrs  types.List `tfsdk:"denied_ipv4_cidrs"`
+	DeniedIpV6Cidrs  types.List `tfsdk:"denied_ipv6_cidrs"`
 }
 
 type OpenVpnUserSettingsResourceModel struct {
@@ -40,12 +40,12 @@ func (r *OpenVpnUserSettingsResource) Metadata(_ context.Context, req resource.M
 
 func OpenVpnUserSettingsResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"allowed_domains":     schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"allowed_ip_v4_cidrs": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"allowed_ip_v6_cidrs": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"denied_domains":      schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"denied_ip_v4_cidrs":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"denied_ip_v6_cidrs":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"allowed_domains":    schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"allowed_ipv4_cidrs": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"allowed_ipv6_cidrs": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"denied_domains":     schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"denied_ipv4_cidrs":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"denied_ipv6_cidrs":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},

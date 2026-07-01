@@ -38,7 +38,7 @@ func (d *FloatingIpDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"public_ip_v4": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"public_ipv4": schema.StringAttribute{Computed: true}}),
 	}}
 }
 
@@ -91,10 +91,10 @@ func (d *FloatingIpDataSource) Read(ctx context.Context, req datasource.ReadRequ
 	state.Spec.HostingProviderId = getString(spec, "hostingProviderId")
 	state.Status = buildInfoObj(apiData,
 		map[string]attr.Type{
-			"public_ip_v4": types.StringType,
+			"public_ipv4": types.StringType,
 		},
 		map[string]attr.Value{
-			"public_ip_v4": getStringFromInfo(apiData, "publicIpV4"),
+			"public_ipv4": getStringFromInfo(apiData, "publicIpV4"),
 		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

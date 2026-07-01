@@ -77,8 +77,8 @@ Read-Only:
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--status--last_change_request))
 - `port` (Number)
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--status--pricing))
-- `private_ip_v4` (String)
-- `public_ip_v4` (String)
+- `private_ipv4` (String)
+- `public_ipv4` (String)
 - `root_user_name` (String)
 - `state` (String)
 

@@ -25,7 +25,7 @@ resource "kvindo_open_vpn_user_settings" "example" {
   }
   spec = {
     open_vpn_id         = kvindo_open_vpn.main.id
-    allowed_ip_v4_cidrs = ["10.0.0.0/8", "192.168.0.0/16"]
+    allowed_ipv4_cidrs = ["10.0.0.0/8", "192.168.0.0/16"]
     denied_domains      = ["social-media.example.com"]
   }
 }
@@ -72,11 +72,11 @@ Read-Only:
 Optional:
 
 - `allowed_domains` (List of String)
-- `allowed_ip_v4_cidrs` (List of String)
-- `allowed_ip_v6_cidrs` (List of String)
+- `allowed_ipv4_cidrs` (List of String)
+- `allowed_ipv6_cidrs` (List of String)
 - `denied_domains` (List of String)
-- `denied_ip_v4_cidrs` (List of String)
-- `denied_ip_v6_cidrs` (List of String)
+- `denied_ipv4_cidrs` (List of String)
+- `denied_ipv6_cidrs` (List of String)
 
 
 <a id="nestedatt--status"></a>

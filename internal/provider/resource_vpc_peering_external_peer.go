@@ -16,9 +16,9 @@ import (
 var _ = fmt.Sprintf
 
 type VpcPeeringExternalPeerSpecModel struct {
-	IpV4Cidrs       types.List   `tfsdk:"ip_v4_cidrs"`
-	PrivateIpV4     types.String `tfsdk:"private_ip_v4"`
-	SshIpV4         types.String `tfsdk:"ssh_ip_v4"`
+	IpV4Cidrs       types.List   `tfsdk:"ipv4_cidrs"`
+	PrivateIpV4     types.String `tfsdk:"private_ipv4"`
+	SshIpV4         types.String `tfsdk:"ssh_ipv4"`
 	SshPort         types.Int64  `tfsdk:"ssh_port"`
 	SshPrivateKeyId types.String `tfsdk:"ssh_private_key_id"`
 	SshUser         types.String `tfsdk:"ssh_user"`
@@ -42,9 +42,9 @@ func (r *VpcPeeringExternalPeerResource) Metadata(_ context.Context, req resourc
 
 func VpcPeeringExternalPeerResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"ip_v4_cidrs":        schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"private_ip_v4":      schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"ssh_ip_v4":          schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"ipv4_cidrs":         schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"private_ipv4":       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"ssh_ipv4":           schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"ssh_port":           schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
 		"ssh_private_key_id": schema.StringAttribute{Optional: true},
 		"ssh_user":           schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},

@@ -16,7 +16,7 @@ import (
 
 var _ = fmt.Sprintf
 
-var loadbalancerHttpsListenerSecurityRulesObjFields = []objField{{TF: "action", API: "action", Kind: "string"}, {TF: "description", API: "description", Kind: "string"}, {TF: "ip_v4_blocks", API: "ipV4Blocks", Kind: "list_string"}, {TF: "ip_v6_blocks", API: "ipV6Blocks", Kind: "list_string"}, {TF: "order", API: "order", Kind: "int64"}}
+var loadbalancerHttpsListenerSecurityRulesObjFields = []objField{{TF: "action", API: "action", Kind: "string"}, {TF: "description", API: "description", Kind: "string"}, {TF: "ipv4_blocks", API: "ipV4Blocks", Kind: "list_string"}, {TF: "ipv6_blocks", API: "ipV6Blocks", Kind: "list_string"}, {TF: "order", API: "order", Kind: "int64"}}
 
 var loadbalancerHttpsListenerTlsObjFields = []objField{{TF: "autogenerate_certificate", API: "autogenerateCertificate", Kind: "bool"}, {TF: "certificate_id", API: "certificateId", Kind: "string"}, {TF: "protocols", API: "protocols", Kind: "list_string"}}
 

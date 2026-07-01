@@ -32,12 +32,12 @@ func (d *OpenVpnUserSettingsDataSource) Metadata(_ context.Context, req datasour
 
 func (d *OpenVpnUserSettingsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	specAttrs := map[string]schema.Attribute{
-		"allowed_domains":     schema.ListAttribute{Computed: true, ElementType: types.StringType},
-		"allowed_ip_v4_cidrs": schema.ListAttribute{Computed: true, ElementType: types.StringType},
-		"allowed_ip_v6_cidrs": schema.ListAttribute{Computed: true, ElementType: types.StringType},
-		"denied_domains":      schema.ListAttribute{Computed: true, ElementType: types.StringType},
-		"denied_ip_v4_cidrs":  schema.ListAttribute{Computed: true, ElementType: types.StringType},
-		"denied_ip_v6_cidrs":  schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"allowed_domains":    schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"allowed_ipv4_cidrs": schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"allowed_ipv6_cidrs": schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"denied_domains":     schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"denied_ipv4_cidrs":  schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"denied_ipv6_cidrs":  schema.ListAttribute{Computed: true, ElementType: types.StringType},
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Optional: true, Computed: true, Description: "ID of the resource to look up. Set exactly one of `id` or `name`."},

@@ -44,7 +44,7 @@ resource "kvindo_kubernetes" "example" {
         vpc_subnet_id = kvindo_vpc_subnet.main.id
       }
     ]
-    assign_public_ip_v4 = true
+    assign_public_ipv4 = true
   }
 }
 
@@ -93,7 +93,7 @@ Read-Only:
 
 Optional:
 
-- `assign_public_ip_v4` (Boolean)
+- `assign_public_ipv4` (Boolean)
 - `control_plane_locations` (Attributes List) (see [below for nested schema](#nestedatt--spec--control_plane_locations))
 - `tier` (String)
 - `version` (String)

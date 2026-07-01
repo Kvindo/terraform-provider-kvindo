@@ -17,8 +17,8 @@ data "kvindo_vpc" "example" {
   id = "01abc123def456gh789012345"
 }
 
-output "info_nat_public_ip_v4" {
-  value = data.kvindo_vpc.example.status.nat_public_ip_v4
+output "info_nat_public_ipv4" {
+  value = data.kvindo_vpc.example.status.nat_public_ipv4
 }
 ```
 
@@ -69,7 +69,7 @@ Read-Only:
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--status--last_change_request))
-- `nat_public_ip_v4` (String)
+- `nat_public_ipv4` (String)
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--status--pricing))
 - `state` (String)
 

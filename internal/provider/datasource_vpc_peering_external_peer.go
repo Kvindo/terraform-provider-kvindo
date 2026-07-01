@@ -32,9 +32,9 @@ func (d *VpcPeeringExternalPeerDataSource) Metadata(_ context.Context, req datas
 
 func (d *VpcPeeringExternalPeerDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	specAttrs := map[string]schema.Attribute{
-		"ip_v4_cidrs":        schema.ListAttribute{Computed: true, ElementType: types.StringType},
-		"private_ip_v4":      schema.StringAttribute{Computed: true},
-		"ssh_ip_v4":          schema.StringAttribute{Computed: true},
+		"ipv4_cidrs":         schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"private_ipv4":       schema.StringAttribute{Computed: true},
+		"ssh_ipv4":           schema.StringAttribute{Computed: true},
 		"ssh_port":           schema.Int64Attribute{Computed: true},
 		"ssh_private_key_id": schema.StringAttribute{Computed: true},
 		"ssh_user":           schema.StringAttribute{Computed: true},

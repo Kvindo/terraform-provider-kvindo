@@ -42,7 +42,7 @@ func (d *VpcDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, re
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"nat_public_ip_v4": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"nat_public_ipv4": schema.StringAttribute{Computed: true}}),
 	}}
 }
 
@@ -99,10 +99,10 @@ func (d *VpcDataSource) Read(ctx context.Context, req datasource.ReadRequest, re
 	state.Spec.SecurityGroupIds = getStringList(ctx, spec, "securityGroupIds")
 	state.Status = buildInfoObj(apiData,
 		map[string]attr.Type{
-			"nat_public_ip_v4": types.StringType,
+			"nat_public_ipv4": types.StringType,
 		},
 		map[string]attr.Value{
-			"nat_public_ip_v4": getStringFromInfo(apiData, "natPublicIpV4"),
+			"nat_public_ipv4": getStringFromInfo(apiData, "natPublicIpV4"),
 		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

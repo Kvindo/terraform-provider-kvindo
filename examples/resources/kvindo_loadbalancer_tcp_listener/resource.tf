@@ -12,7 +12,7 @@ resource "kvindo_loadbalancer_tcp_listener" "example" {
       {
         order        = 1
         action       = "allow"
-        ip_v4_blocks = ["10.0.0.0/8"]
+        ipv4_blocks = ["10.0.0.0/8"]
       }
     ]
   }

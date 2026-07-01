@@ -14,7 +14,7 @@ resource "kvindo_loadbalancer_http_listener" "example" {
         order        = 1
         action       = "allow"
         description  = "office network"
-        ip_v4_blocks = ["203.0.113.0/24"]
+        ipv4_blocks = ["203.0.113.0/24"]
       }
     ]
   }

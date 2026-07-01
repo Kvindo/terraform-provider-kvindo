@@ -19,7 +19,7 @@ var _ = fmt.Sprintf
 var kubernetesControlPlaneLocationsObjFields = []objField{{TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string"}}
 
 type KubernetesSpecModel struct {
-	AssignPublicIpV4      types.Bool   `tfsdk:"assign_public_ip_v4"`
+	AssignPublicIpV4      types.Bool   `tfsdk:"assign_public_ipv4"`
 	ControlPlaneLocations types.List   `tfsdk:"control_plane_locations"`
 	Tier                  types.String `tfsdk:"tier"`
 	Version               types.String `tfsdk:"version"`
@@ -42,7 +42,7 @@ func (r *KubernetesResource) Metadata(_ context.Context, req resource.MetadataRe
 
 func KubernetesResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"assign_public_ip_v4":     schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
+		"assign_public_ipv4":      schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
 		"control_plane_locations": listObjResourceSchema(kubernetesControlPlaneLocationsObjFields),
 		"tier":                    schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"version":                 schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},

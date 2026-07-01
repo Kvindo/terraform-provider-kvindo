@@ -476,7 +476,7 @@ Optional:
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--floating_ips--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--floating_ips--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--floating_ips--status--pricing))
-- `public_ip_v4` (String)
+- `public_ipv4` (String)
 - `state` (String)
 
 <a id="nestedatt--spec--floating_ips--status--created_by_user"></a>
@@ -778,10 +778,10 @@ Optional:
 - `fqdn` (String)
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--gitlabs--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--gitlabs--status--pricing))
-- `private_ip_v4` (String)
-- `private_ip_v6` (String)
-- `public_ip_v4` (String)
-- `public_ip_v6` (String)
+- `private_ipv4` (String)
+- `private_ipv6` (String)
+- `public_ipv4` (String)
+- `public_ipv6` (String)
 - `state` (String)
 
 <a id="nestedatt--spec--gitlabs--status--created_by_user"></a>
@@ -1126,7 +1126,7 @@ Optional:
 
 Optional:
 
-- `assign_public_ip_v4` (Boolean)
+- `assign_public_ipv4` (Boolean)
 - `control_plane_locations` (Attributes List) (see [below for nested schema](#nestedatt--spec--kubernetes--spec--control_plane_locations))
 - `tier` (String)
 - `version` (String)
@@ -1699,8 +1699,8 @@ Optional:
 
 - `action` (String)
 - `description` (String)
-- `ip_v4_blocks` (List of String)
-- `ip_v6_blocks` (List of String)
+- `ipv4_blocks` (List of String)
+- `ipv6_blocks` (List of String)
 - `order` (Number)
 
 
@@ -1995,8 +1995,8 @@ Optional:
 
 - `action` (String)
 - `description` (String)
-- `ip_v4_blocks` (List of String)
-- `ip_v6_blocks` (List of String)
+- `ipv4_blocks` (List of String)
+- `ipv6_blocks` (List of String)
 - `order` (Number)
 
 
@@ -2479,8 +2479,8 @@ Optional:
 
 - `action` (String)
 - `description` (String)
-- `ip_v4_blocks` (List of String)
-- `ip_v6_blocks` (List of String)
+- `ipv4_blocks` (List of String)
+- `ipv6_blocks` (List of String)
 - `order` (Number)
 
 
@@ -2704,8 +2704,8 @@ Optional:
 
 - `action` (String)
 - `description` (String)
-- `ip_v4_blocks` (List of String)
-- `ip_v6_blocks` (List of String)
+- `ipv4_blocks` (List of String)
+- `ipv6_blocks` (List of String)
 - `order` (Number)
 
 
@@ -2914,8 +2914,8 @@ Optional:
 
 - `action` (String)
 - `description` (String)
-- `ip_v4_blocks` (List of String)
-- `ip_v6_blocks` (List of String)
+- `ipv4_blocks` (List of String)
+- `ipv6_blocks` (List of String)
 - `order` (Number)
 
 
@@ -3017,10 +3017,10 @@ Optional:
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--loadbalancers--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--loadbalancers--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--loadbalancers--status--pricing))
-- `private_ip_v4` (String)
-- `private_ip_v6` (String)
-- `public_ip_v4` (String)
-- `public_ip_v6` (String)
+- `private_ipv4` (String)
+- `private_ipv6` (String)
+- `public_ipv4` (String)
+- `public_ipv6` (String)
 - `state` (String)
 
 <a id="nestedatt--spec--loadbalancers--status--created_by_user"></a>
@@ -3096,11 +3096,11 @@ Optional:
 Optional:
 
 - `allowed_domains` (List of String)
-- `allowed_ip_v4_cidrs` (List of String)
-- `allowed_ip_v6_cidrs` (List of String)
+- `allowed_ipv4_cidrs` (List of String)
+- `allowed_ipv6_cidrs` (List of String)
 - `denied_domains` (List of String)
-- `denied_ip_v4_cidrs` (List of String)
-- `denied_ip_v6_cidrs` (List of String)
+- `denied_ipv4_cidrs` (List of String)
+- `denied_ipv6_cidrs` (List of String)
 
 
 <a id="nestedatt--spec--open_vpn_user_settings--status"></a>
@@ -3471,8 +3471,8 @@ Optional:
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_standalones--status--last_change_request))
 - `port` (Number)
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_standalones--status--pricing))
-- `private_ip_v4` (String)
-- `public_ip_v4` (String)
+- `private_ipv4` (String)
+- `public_ipv4` (String)
 - `root_user_name` (String)
 - `state` (String)
 
@@ -5132,10 +5132,10 @@ Optional:
 - `fqdn` (String)
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--victoria_metrics--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--victoria_metrics--status--pricing))
-- `private_ip_v4` (String)
-- `private_ip_v6` (String)
-- `public_ip_v4` (String)
-- `public_ip_v6` (String)
+- `private_ipv4` (String)
+- `private_ipv6` (String)
+- `public_ipv4` (String)
+- `public_ipv6` (String)
 - `state` (String)
 
 <a id="nestedatt--spec--victoria_metrics--status--created_by_user"></a>
@@ -5500,9 +5500,9 @@ Optional:
 
 Optional:
 
-- `ip_v4_cidrs` (List of String)
-- `private_ip_v4` (String)
-- `ssh_ip_v4` (String)
+- `ipv4_cidrs` (List of String)
+- `private_ipv4` (String)
+- `ssh_ipv4` (String)
 - `ssh_port` (Number)
 - `ssh_private_key_id` (String)
 - `ssh_user` (String)
@@ -5606,10 +5606,10 @@ Optional:
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--vpc_peering_peers--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--vpc_peering_peers--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--vpc_peering_peers--status--pricing))
-- `private_ip_v4` (String)
-- `private_ip_v6` (String)
-- `public_ip_v4` (String)
-- `public_ip_v6` (String)
+- `private_ipv4` (String)
+- `private_ipv6` (String)
+- `public_ipv4` (String)
+- `public_ipv6` (String)
 - `state` (String)
 
 <a id="nestedatt--spec--vpc_peering_peers--status--created_by_user"></a>
@@ -5863,7 +5863,7 @@ Optional:
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--vpcs--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--vpcs--status--last_change_request))
-- `nat_public_ip_v4` (String)
+- `nat_public_ipv4` (String)
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--vpcs--status--pricing))
 - `state` (String)
 

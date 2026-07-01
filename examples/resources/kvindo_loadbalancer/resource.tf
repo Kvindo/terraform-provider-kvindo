@@ -28,5 +28,5 @@ resource "kvindo_loadbalancer" "example" {
 }
 
 output "public_ip" {
-  value = kvindo_loadbalancer.example.status.public_ip_v4
+  value = kvindo_loadbalancer.example.status.public_ipv4
 }

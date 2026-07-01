@@ -55,11 +55,11 @@ Read-Only:
 Read-Only:
 
 - `allowed_domains` (List of String)
-- `allowed_ip_v4_cidrs` (List of String)
-- `allowed_ip_v6_cidrs` (List of String)
+- `allowed_ipv4_cidrs` (List of String)
+- `allowed_ipv6_cidrs` (List of String)
 - `denied_domains` (List of String)
-- `denied_ip_v4_cidrs` (List of String)
-- `denied_ip_v6_cidrs` (List of String)
+- `denied_ipv4_cidrs` (List of String)
+- `denied_ipv6_cidrs` (List of String)
 
 
 <a id="nestedatt--status"></a>

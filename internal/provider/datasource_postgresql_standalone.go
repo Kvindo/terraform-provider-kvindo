@@ -50,7 +50,7 @@ func (d *PostgresqlStandaloneDataSource) Schema(_ context.Context, _ datasource.
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"port": schema.Int64Attribute{Computed: true}, "private_ip_v4": schema.StringAttribute{Computed: true}, "public_ip_v4": schema.StringAttribute{Computed: true}, "root_user_name": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"port": schema.Int64Attribute{Computed: true}, "private_ipv4": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "root_user_name": schema.StringAttribute{Computed: true}}),
 	}}
 }
 
@@ -114,14 +114,14 @@ func (d *PostgresqlStandaloneDataSource) Read(ctx context.Context, req datasourc
 	state.Status = buildInfoObj(apiData,
 		map[string]attr.Type{
 			"port":           types.Int64Type,
-			"private_ip_v4":  types.StringType,
-			"public_ip_v4":   types.StringType,
+			"private_ipv4":   types.StringType,
+			"public_ipv4":    types.StringType,
 			"root_user_name": types.StringType,
 		},
 		map[string]attr.Value{
 			"port":           getInt64FromInfo(apiData, "port"),
-			"private_ip_v4":  getStringFromInfo(apiData, "privateIpV4"),
-			"public_ip_v4":   getStringFromInfo(apiData, "publicIpV4"),
+			"private_ipv4":   getStringFromInfo(apiData, "privateIpV4"),
+			"public_ipv4":    getStringFromInfo(apiData, "publicIpV4"),
 			"root_user_name": getStringFromInfo(apiData, "rootUserName"),
 		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)

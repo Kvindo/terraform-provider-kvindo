@@ -31,7 +31,7 @@ func (d *KubernetesDataSource) Metadata(_ context.Context, req datasource.Metada
 
 func (d *KubernetesDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	specAttrs := map[string]schema.Attribute{
-		"assign_public_ip_v4":     schema.BoolAttribute{Computed: true},
+		"assign_public_ipv4":      schema.BoolAttribute{Computed: true},
 		"control_plane_locations": listObjDatasourceSchema(kubernetesControlPlaneLocationsObjFields),
 		"tier":                    schema.StringAttribute{Computed: true},
 		"version":                 schema.StringAttribute{Computed: true},
