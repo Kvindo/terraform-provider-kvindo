@@ -25,8 +25,8 @@ resource "kvindo_loadbalancer_udp_listener" "example" {
 
     security_rules = [
       {
-        order        = 1
-        action       = "allow"
+        order       = 1
+        action      = "allow"
         ipv4_blocks = ["0.0.0.0/0"]
       }
     ]

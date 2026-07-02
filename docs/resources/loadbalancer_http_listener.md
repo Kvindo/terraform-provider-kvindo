@@ -26,9 +26,9 @@ resource "kvindo_loadbalancer_http_listener" "example" {
     # Optional ordered allow/deny rules for inbound traffic.
     security_rules = [
       {
-        order        = 1
-        action       = "allow"
-        description  = "office network"
+        order       = 1
+        action      = "allow"
+        description = "office network"
         ipv4_blocks = ["203.0.113.0/24"]
       }
     ]

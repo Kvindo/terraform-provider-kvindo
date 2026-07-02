@@ -19,9 +19,9 @@ resource "kvindo_vpc_peering_external_peer" "example" {
   }
   spec = {
     vpc_peering_id     = kvindo_vpc_peering.main.id
-    ssh_ipv4          = "203.0.113.10"
+    ssh_ipv4           = "203.0.113.10"
     ssh_user           = "ubuntu"
     ssh_private_key_id = kvindo_ssh_private_key.deploy.id
-    ipv4_cidrs        = ["192.168.0.0/24"]
+    ipv4_cidrs         = ["192.168.0.0/24"]
   }
 }
