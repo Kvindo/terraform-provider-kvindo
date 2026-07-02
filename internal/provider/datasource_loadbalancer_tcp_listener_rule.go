@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type LoadbalancerTcpListenerRuleDataSourceModel struct {
-	ID       types.String                         `tfsdk:"id"`
-	Name     types.String                         `tfsdk:"name"`
-	Metadata metadataModel                        `tfsdk:"metadata"`
-	Spec     LoadbalancerTcpListenerRuleSpecModel `tfsdk:"spec"`
-	Status   types.Object                         `tfsdk:"status"`
+	ID       types.String                          `tfsdk:"id"`
+	Name     types.String                          `tfsdk:"name"`
+	Metadata *metadataModel                        `tfsdk:"metadata"`
+	Spec     *LoadbalancerTcpListenerRuleSpecModel `tfsdk:"spec"`
+	Status   types.Object                          `tfsdk:"status"`
 }
 
 type LoadbalancerTcpListenerRuleDataSource struct{ client *client.Client }
@@ -85,12 +85,14 @@ func (d *LoadbalancerTcpListenerRuleDataSource) Read(ctx context.Context, req da
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &LoadbalancerTcpListenerRuleSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.ForwardToTcpResponseAction = objFromAPI(objMap(spec, "forwardToTcpResponseAction"), loadbalancerTcpListenerRuleForwardToTcpResponseActionObjFields)
 	state.Spec.ForwardToTlsResponseAction = objFromAPI(objMap(spec, "forwardToTlsResponseAction"), loadbalancerTcpListenerRuleForwardToTlsResponseActionObjFields)

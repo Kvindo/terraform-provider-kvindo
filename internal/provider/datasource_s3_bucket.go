@@ -14,11 +14,11 @@ import (
 var _ = fmt.Sprintf
 
 type S3BucketDataSourceModel struct {
-	ID       types.String      `tfsdk:"id"`
-	Name     types.String      `tfsdk:"name"`
-	Metadata metadataModel     `tfsdk:"metadata"`
-	Spec     S3BucketSpecModel `tfsdk:"spec"`
-	Status   types.Object      `tfsdk:"status"`
+	ID       types.String       `tfsdk:"id"`
+	Name     types.String       `tfsdk:"name"`
+	Metadata *metadataModel     `tfsdk:"metadata"`
+	Spec     *S3BucketSpecModel `tfsdk:"spec"`
+	Status   types.Object       `tfsdk:"status"`
 }
 
 type S3BucketDataSource struct{ client *client.Client }
@@ -88,12 +88,14 @@ func (d *S3BucketDataSource) Read(ctx context.Context, req datasource.ReadReques
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &S3BucketSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.ComplianceRetentionDays = getInt64(spec, "complianceRetentionDays")
 	state.Spec.IsLockEnabled = getBool(spec, "isLockEnabled")

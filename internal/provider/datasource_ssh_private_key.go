@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type SshPrivateKeyDataSourceModel struct {
-	ID       types.String           `tfsdk:"id"`
-	Name     types.String           `tfsdk:"name"`
-	Metadata metadataModel          `tfsdk:"metadata"`
-	Spec     SshPrivateKeySpecModel `tfsdk:"spec"`
-	Status   types.Object           `tfsdk:"status"`
+	ID       types.String            `tfsdk:"id"`
+	Name     types.String            `tfsdk:"name"`
+	Metadata *metadataModel          `tfsdk:"metadata"`
+	Spec     *SshPrivateKeySpecModel `tfsdk:"spec"`
+	Status   types.Object            `tfsdk:"status"`
 }
 
 type SshPrivateKeyDataSource struct{ client *client.Client }
@@ -80,12 +80,14 @@ func (d *SshPrivateKeyDataSource) Read(ctx context.Context, req datasource.ReadR
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &SshPrivateKeySpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.PrivateKey = getString(spec, "privateKey")
 	state.Status = simpleStateInfoObj(apiData)

@@ -14,11 +14,11 @@ import (
 var _ = fmt.Sprintf
 
 type QuotaDataSourceModel struct {
-	ID       types.String   `tfsdk:"id"`
-	Name     types.String   `tfsdk:"name"`
-	Metadata metadataModel  `tfsdk:"metadata"`
-	Spec     QuotaSpecModel `tfsdk:"spec"`
-	Status   types.Object   `tfsdk:"status"`
+	ID       types.String    `tfsdk:"id"`
+	Name     types.String    `tfsdk:"name"`
+	Metadata *metadataModel  `tfsdk:"metadata"`
+	Spec     *QuotaSpecModel `tfsdk:"spec"`
+	Status   types.Object    `tfsdk:"status"`
 }
 
 type QuotaDataSource struct{ client *client.Client }
@@ -84,12 +84,14 @@ func (d *QuotaDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &QuotaSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.Limit = getInt64(spec, "limit")
 	state.Spec.Parameter = getString(spec, "parameter")

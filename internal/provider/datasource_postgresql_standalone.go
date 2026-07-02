@@ -14,11 +14,11 @@ import (
 var _ = fmt.Sprintf
 
 type PostgresqlStandaloneDataSourceModel struct {
-	ID       types.String                  `tfsdk:"id"`
-	Name     types.String                  `tfsdk:"name"`
-	Metadata metadataModel                 `tfsdk:"metadata"`
-	Spec     PostgresqlStandaloneSpecModel `tfsdk:"spec"`
-	Status   types.Object                  `tfsdk:"status"`
+	ID       types.String                   `tfsdk:"id"`
+	Name     types.String                   `tfsdk:"name"`
+	Metadata *metadataModel                 `tfsdk:"metadata"`
+	Spec     *PostgresqlStandaloneSpecModel `tfsdk:"spec"`
+	Status   types.Object                   `tfsdk:"status"`
 }
 
 type PostgresqlStandaloneDataSource struct{ client *client.Client }
@@ -93,12 +93,14 @@ func (d *PostgresqlStandaloneDataSource) Read(ctx context.Context, req datasourc
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &PostgresqlStandaloneSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.BackupRetentionDays = getInt64(spec, "backupRetentionDays")
 	state.Spec.FloatingIpId = getString(spec, "floatingIpId")

@@ -102,6 +102,12 @@ var resourceNameOverride = map[string]string{
 	"route_table_attachments": "route_table_attachment",
 }
 
+// NOTE: resource_vm.go's spec.boot_volume_attachment is entirely Terraform-side (no backend/
+// swagger field to derive it from — the Kvindo API has no such concept). A full regen of
+// resource_vm.go from this generator will NOT reproduce it; re-apply that hand-edit (schema attr,
+// Create/Delete orchestration) after regenerating, the same way resource_transaction.go is
+// hand-migrated after touching the shared nested-object helpers.
+
 // requiredSpecFields[resource][tf_field] = true marks a spec field Required.
 var requiredSpecFields = map[string]map[string]bool{
 	"access_policy":                                      {"content": true},
@@ -1073,15 +1079,19 @@ func generateDatasourceFile(r ResourceDef) string {
 	sb.WriteString(")\n\n")
 	sb.WriteString("var _ = fmt.Sprintf\n\n")
 
-	// Model (reuses the resource's spec struct)
+	// Model (reuses the resource's spec struct). Metadata/Spec are POINTERS here (unlike the
+	// resource model, where they're plain values): datasource `metadata`/`spec` are Computed-only,
+	// so Terraform Core hands Read() a null value for them before it's populated — a plain struct
+	// can't represent that null and req.Config.Get panics with a "Value Conversion Error". A nil
+	// pointer can. Allocated in Read() below before being populated from the API response.
 	sb.WriteString(fmt.Sprintf("type %sDataSourceModel struct {\n", sn))
-	sb.WriteString("\tID       types.String  `tfsdk:\"id\"`\n")
-	sb.WriteString("\tName     types.String  `tfsdk:\"name\"`\n")
-	sb.WriteString("\tMetadata metadataModel `tfsdk:\"metadata\"`\n")
+	sb.WriteString("\tID       types.String   `tfsdk:\"id\"`\n")
+	sb.WriteString("\tName     types.String   `tfsdk:\"name\"`\n")
+	sb.WriteString("\tMetadata *metadataModel `tfsdk:\"metadata\"`\n")
 	if hasSpec {
-		sb.WriteString(fmt.Sprintf("\tSpec     %sSpecModel `tfsdk:\"spec\"`\n", sn))
+		sb.WriteString(fmt.Sprintf("\tSpec     *%sSpecModel `tfsdk:\"spec\"`\n", sn))
 	}
-	sb.WriteString("\tStatus   types.Object  `tfsdk:\"status\"`\n")
+	sb.WriteString("\tStatus   types.Object   `tfsdk:\"status\"`\n")
 	sb.WriteString("}\n\n")
 
 	sb.WriteString(fmt.Sprintf("type %sDataSource struct { client *client.Client }\n\n", sn))
@@ -1144,10 +1154,12 @@ func generateDatasourceFile(r ResourceDef) string {
 	sb.WriteString("\t}\n")
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read Error\", err.Error()); return }\n")
 	sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Not Found\", \"resource not found\"); return }\n")
-	sb.WriteString("\tif err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n")
+	sb.WriteString("\tstate.Metadata = &metadataModel{}\n")
+	sb.WriteString("\tif err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n")
 	sb.WriteString("\tstate.ID = state.Metadata.ID\n")
 	sb.WriteString("\tstate.Name = state.Metadata.Name\n")
 	if hasSpec {
+		sb.WriteString(fmt.Sprintf("\tstate.Spec = &%sSpecModel{}\n", sn))
 		sb.WriteString("\tspec := getSpec(apiData)\n")
 		for _, f := range r.Fields {
 			writeSpecFieldFromResponse(&sb, sn, f)

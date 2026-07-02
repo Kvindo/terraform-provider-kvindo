@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type RouteTableRouteDataSourceModel struct {
-	ID       types.String             `tfsdk:"id"`
-	Name     types.String             `tfsdk:"name"`
-	Metadata metadataModel            `tfsdk:"metadata"`
-	Spec     RouteTableRouteSpecModel `tfsdk:"spec"`
-	Status   types.Object             `tfsdk:"status"`
+	ID       types.String              `tfsdk:"id"`
+	Name     types.String              `tfsdk:"name"`
+	Metadata *metadataModel            `tfsdk:"metadata"`
+	Spec     *RouteTableRouteSpecModel `tfsdk:"spec"`
+	Status   types.Object              `tfsdk:"status"`
 }
 
 type RouteTableRouteDataSource struct{ client *client.Client }
@@ -82,12 +82,14 @@ func (d *RouteTableRouteDataSource) Read(ctx context.Context, req datasource.Rea
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &RouteTableRouteSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.DestinationCidr = getString(spec, "destinationCidr")
 	state.Spec.RouteTableId = getString(spec, "routeTableId")

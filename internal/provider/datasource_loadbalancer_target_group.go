@@ -13,10 +13,10 @@ import (
 var _ = fmt.Sprintf
 
 type LoadbalancerTargetGroupDataSourceModel struct {
-	ID       types.String  `tfsdk:"id"`
-	Name     types.String  `tfsdk:"name"`
-	Metadata metadataModel `tfsdk:"metadata"`
-	Status   types.Object  `tfsdk:"status"`
+	ID       types.String   `tfsdk:"id"`
+	Name     types.String   `tfsdk:"name"`
+	Metadata *metadataModel `tfsdk:"metadata"`
+	Status   types.Object   `tfsdk:"status"`
 }
 
 type LoadbalancerTargetGroupDataSource struct{ client *client.Client }
@@ -77,7 +77,8 @@ func (d *LoadbalancerTargetGroupDataSource) Read(ctx context.Context, req dataso
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}

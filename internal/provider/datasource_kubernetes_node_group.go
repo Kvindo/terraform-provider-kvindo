@@ -14,11 +14,11 @@ import (
 var _ = fmt.Sprintf
 
 type KubernetesNodeGroupDataSourceModel struct {
-	ID       types.String                 `tfsdk:"id"`
-	Name     types.String                 `tfsdk:"name"`
-	Metadata metadataModel                `tfsdk:"metadata"`
-	Spec     KubernetesNodeGroupSpecModel `tfsdk:"spec"`
-	Status   types.Object                 `tfsdk:"status"`
+	ID       types.String                  `tfsdk:"id"`
+	Name     types.String                  `tfsdk:"name"`
+	Metadata *metadataModel                `tfsdk:"metadata"`
+	Spec     *KubernetesNodeGroupSpecModel `tfsdk:"spec"`
+	Status   types.Object                  `tfsdk:"status"`
 }
 
 type KubernetesNodeGroupDataSource struct{ client *client.Client }
@@ -90,12 +90,14 @@ func (d *KubernetesNodeGroupDataSource) Read(ctx context.Context, req datasource
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &KubernetesNodeGroupSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.CreatePublicIpv4 = getBool(spec, "createPublicIpv4")
 	state.Spec.DesiredNodeCount = getInt64(spec, "desiredNodeCount")

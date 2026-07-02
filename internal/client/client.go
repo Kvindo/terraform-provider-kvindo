@@ -345,12 +345,18 @@ func (c *Client) GetByLabels(ctx context.Context, path string, labels map[string
 		return nil, fmt.Errorf("GET %s/get-by-labels returned status %d: %s", path, statusCode, string(data))
 	}
 
-	var result []map[string]interface{}
-	if err := json.Unmarshal(data, &result); err != nil {
+	// get-by-labels returns the same {"resources": [...], "pagination": {...}} envelope as every
+	// other list endpoint, not a bare JSON array — this was never caught because a separate
+	// datasource-side bug (metadata null-conversion) always crashed before any list response ever
+	// reached this unmarshal.
+	var envelope struct {
+		Resources []map[string]interface{} `json:"resources"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
 		return nil, fmt.Errorf("unmarshaling list response: %w (body: %s)", err, string(data))
 	}
 
-	return result, nil
+	return envelope.Resources, nil
 }
 
 // GetByName fetches a single resource by its metadata.name. It lists all resources of the type and

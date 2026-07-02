@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type ImageScheduleDataSourceModel struct {
-	ID       types.String           `tfsdk:"id"`
-	Name     types.String           `tfsdk:"name"`
-	Metadata metadataModel          `tfsdk:"metadata"`
-	Spec     ImageScheduleSpecModel `tfsdk:"spec"`
-	Status   types.Object           `tfsdk:"status"`
+	ID       types.String            `tfsdk:"id"`
+	Name     types.String            `tfsdk:"name"`
+	Metadata *metadataModel          `tfsdk:"metadata"`
+	Spec     *ImageScheduleSpecModel `tfsdk:"spec"`
+	Status   types.Object            `tfsdk:"status"`
 }
 
 type ImageScheduleDataSource struct{ client *client.Client }
@@ -83,12 +83,14 @@ func (d *ImageScheduleDataSource) Read(ctx context.Context, req datasource.ReadR
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &ImageScheduleSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.Enabled = getBool(spec, "enabled")
 	state.Spec.RetentionCount = getInt64(spec, "retentionCount")

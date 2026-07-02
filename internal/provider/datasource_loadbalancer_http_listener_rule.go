@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type LoadbalancerHttpListenerRuleDataSourceModel struct {
-	ID       types.String                          `tfsdk:"id"`
-	Name     types.String                          `tfsdk:"name"`
-	Metadata metadataModel                         `tfsdk:"metadata"`
-	Spec     LoadbalancerHttpListenerRuleSpecModel `tfsdk:"spec"`
-	Status   types.Object                          `tfsdk:"status"`
+	ID       types.String                           `tfsdk:"id"`
+	Name     types.String                           `tfsdk:"name"`
+	Metadata *metadataModel                         `tfsdk:"metadata"`
+	Spec     *LoadbalancerHttpListenerRuleSpecModel `tfsdk:"spec"`
+	Status   types.Object                           `tfsdk:"status"`
 }
 
 type LoadbalancerHttpListenerRuleDataSource struct{ client *client.Client }
@@ -92,12 +92,14 @@ func (d *LoadbalancerHttpListenerRuleDataSource) Read(ctx context.Context, req d
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &LoadbalancerHttpListenerRuleSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.DeleteRequestHeadersAction = objFromAPI(objMap(spec, "deleteRequestHeadersAction"), loadbalancerHttpListenerRuleDeleteRequestHeadersActionObjFields)
 	state.Spec.DeleteResponseHeadersAction = objFromAPI(objMap(spec, "deleteResponseHeadersAction"), loadbalancerHttpListenerRuleDeleteResponseHeadersActionObjFields)

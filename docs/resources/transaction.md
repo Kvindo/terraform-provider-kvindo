@@ -5210,6 +5210,7 @@ Optional:
 
 Optional:
 
+- `boot_volume_attachment` (Attributes) (see [below for nested schema](#nestedatt--spec--vms--spec--boot_volume_attachment))
 - `bootstrap_command` (Attributes) (see [below for nested schema](#nestedatt--spec--vms--spec--bootstrap_command))
 - `floating_ip_id` (String)
 - `image_boot_volume_device_index` (Number)
@@ -5223,6 +5224,15 @@ Optional:
 - `ssh_key_ids` (List of String)
 - `vm_state` (String)
 - `vpc_subnet_id` (String)
+
+<a id="nestedatt--spec--vms--spec--boot_volume_attachment"></a>
+### Nested Schema for `spec.vms.spec.boot_volume_attachment`
+
+Optional:
+
+- `attachment_id` (String)
+- `volume_id` (String)
+
 
 <a id="nestedatt--spec--vms--spec--bootstrap_command"></a>
 ### Nested Schema for `spec.vms.spec.bootstrap_command`

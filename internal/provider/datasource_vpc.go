@@ -14,11 +14,11 @@ import (
 var _ = fmt.Sprintf
 
 type VpcDataSourceModel struct {
-	ID       types.String  `tfsdk:"id"`
-	Name     types.String  `tfsdk:"name"`
-	Metadata metadataModel `tfsdk:"metadata"`
-	Spec     VpcSpecModel  `tfsdk:"spec"`
-	Status   types.Object  `tfsdk:"status"`
+	ID       types.String   `tfsdk:"id"`
+	Name     types.String   `tfsdk:"name"`
+	Metadata *metadataModel `tfsdk:"metadata"`
+	Spec     *VpcSpecModel  `tfsdk:"spec"`
+	Status   types.Object   `tfsdk:"status"`
 }
 
 type VpcDataSource struct{ client *client.Client }
@@ -85,12 +85,14 @@ func (d *VpcDataSource) Read(ctx context.Context, req datasource.ReadRequest, re
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &VpcSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.ExternallyManaged = getBool(spec, "externallyManaged")
 	state.Spec.HostingProviderId = getString(spec, "hostingProviderId")

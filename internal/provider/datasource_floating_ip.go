@@ -14,11 +14,11 @@ import (
 var _ = fmt.Sprintf
 
 type FloatingIpDataSourceModel struct {
-	ID       types.String        `tfsdk:"id"`
-	Name     types.String        `tfsdk:"name"`
-	Metadata metadataModel       `tfsdk:"metadata"`
-	Spec     FloatingIpSpecModel `tfsdk:"spec"`
-	Status   types.Object        `tfsdk:"status"`
+	ID       types.String         `tfsdk:"id"`
+	Name     types.String         `tfsdk:"name"`
+	Metadata *metadataModel       `tfsdk:"metadata"`
+	Spec     *FloatingIpSpecModel `tfsdk:"spec"`
+	Status   types.Object         `tfsdk:"status"`
 }
 
 type FloatingIpDataSource struct{ client *client.Client }
@@ -81,12 +81,14 @@ func (d *FloatingIpDataSource) Read(ctx context.Context, req datasource.ReadRequ
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &FloatingIpSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.HostingProviderId = getString(spec, "hostingProviderId")
 	state.Status = buildInfoObj(apiData,

@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type LoadbalancerTargetGroupServiceDiscoveryTargetDataSourceModel struct {
-	ID       types.String                                           `tfsdk:"id"`
-	Name     types.String                                           `tfsdk:"name"`
-	Metadata metadataModel                                          `tfsdk:"metadata"`
-	Spec     LoadbalancerTargetGroupServiceDiscoveryTargetSpecModel `tfsdk:"spec"`
-	Status   types.Object                                           `tfsdk:"status"`
+	ID       types.String                                            `tfsdk:"id"`
+	Name     types.String                                            `tfsdk:"name"`
+	Metadata *metadataModel                                          `tfsdk:"metadata"`
+	Spec     *LoadbalancerTargetGroupServiceDiscoveryTargetSpecModel `tfsdk:"spec"`
+	Status   types.Object                                            `tfsdk:"status"`
 }
 
 type LoadbalancerTargetGroupServiceDiscoveryTargetDataSource struct{ client *client.Client }
@@ -83,12 +83,14 @@ func (d *LoadbalancerTargetGroupServiceDiscoveryTargetDataSource) Read(ctx conte
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &LoadbalancerTargetGroupServiceDiscoveryTargetSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.LabelSelectors = getStringMap(spec, "labelSelectors")
 	state.Spec.TargetGroupId = getString(spec, "targetGroupId")

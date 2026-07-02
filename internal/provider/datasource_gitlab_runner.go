@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type GitlabRunnerDataSourceModel struct {
-	ID       types.String          `tfsdk:"id"`
-	Name     types.String          `tfsdk:"name"`
-	Metadata metadataModel         `tfsdk:"metadata"`
-	Spec     GitlabRunnerSpecModel `tfsdk:"spec"`
-	Status   types.Object          `tfsdk:"status"`
+	ID       types.String           `tfsdk:"id"`
+	Name     types.String           `tfsdk:"name"`
+	Metadata *metadataModel         `tfsdk:"metadata"`
+	Spec     *GitlabRunnerSpecModel `tfsdk:"spec"`
+	Status   types.Object           `tfsdk:"status"`
 }
 
 type GitlabRunnerDataSource struct{ client *client.Client }
@@ -90,12 +90,14 @@ func (d *GitlabRunnerDataSource) Read(ctx context.Context, req datasource.ReadRe
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &GitlabRunnerSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.Concurrency = getInt64(spec, "concurrency")
 	state.Spec.DockerOptionsJsonString = getString(spec, "dockerOptionsJsonString")

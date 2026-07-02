@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type SupportPlanDataSourceModel struct {
-	ID       types.String         `tfsdk:"id"`
-	Name     types.String         `tfsdk:"name"`
-	Metadata metadataModel        `tfsdk:"metadata"`
-	Spec     SupportPlanSpecModel `tfsdk:"spec"`
-	Status   types.Object         `tfsdk:"status"`
+	ID       types.String          `tfsdk:"id"`
+	Name     types.String          `tfsdk:"name"`
+	Metadata *metadataModel        `tfsdk:"metadata"`
+	Spec     *SupportPlanSpecModel `tfsdk:"spec"`
+	Status   types.Object          `tfsdk:"status"`
 }
 
 type SupportPlanDataSource struct{ client *client.Client }
@@ -81,12 +81,14 @@ func (d *SupportPlanDataSource) Read(ctx context.Context, req datasource.ReadReq
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &SupportPlanSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.State = getString(spec, "state")
 	state.Spec.Tier = getString(spec, "tier")

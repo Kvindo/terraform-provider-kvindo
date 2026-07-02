@@ -46,6 +46,7 @@ func TestVmSpec_HasExpectedFields(t *testing.T) {
 	for _, attr := range []string{
 		"vm_state", "vpc_subnet_id", "floating_ip_id", "image_id", "offer_id",
 		"ssh_key_ids", "bootstrap_command", "security_group_ids", "os_type",
+		"boot_volume_attachment",
 	} {
 		if _, ok := spec[attr]; !ok {
 			t.Errorf("expected spec attribute %q in vm schema", attr)
@@ -53,6 +54,76 @@ func TestVmSpec_HasExpectedFields(t *testing.T) {
 	}
 	if _, ok := spec["resource_name"]; ok {
 		t.Error("resource_name was removed and must not appear in spec")
+	}
+}
+
+func TestVmSpec_BootVolumeAttachmentFields(t *testing.T) {
+	spec := vmSpecSchema(t)
+	bva, ok := spec["boot_volume_attachment"].(schema.SingleNestedAttribute)
+	if !ok {
+		t.Fatal("boot_volume_attachment is not a SingleNestedAttribute")
+	}
+	volumeId, ok := bva.Attributes["volume_id"].(schema.StringAttribute)
+	if !ok || !volumeId.Required {
+		t.Error("boot_volume_attachment.volume_id should be Required")
+	}
+	attachmentId, ok := bva.Attributes["attachment_id"].(schema.StringAttribute)
+	if !ok || !attachmentId.Computed || attachmentId.Required {
+		t.Error("boot_volume_attachment.attachment_id should be Computed-only (internal bookkeeping)")
+	}
+}
+
+// ---- boot_volume_attachment orchestration (behind-the-scenes volume_attachment) ----
+
+func TestResolvedVmState_DefaultsToRunning(t *testing.T) {
+	if got := resolvedVmState(VmSpecModel{VmState: types.StringNull()}); got != "running" {
+		t.Errorf("expected default \"running\", got %q", got)
+	}
+	if got := resolvedVmState(VmSpecModel{VmState: types.StringValue("stopped")}); got != "stopped" {
+		t.Errorf("expected \"stopped\", got %q", got)
+	}
+}
+
+func TestVmCreateRequiresBootVolumeAttachment(t *testing.T) {
+	running := VmSpecModel{VmState: types.StringValue("running"), BootVolumeAttachment: types.ObjectNull(bootVolumeAttachmentAttrTypes)}
+	if !vmCreateRequiresBootVolumeAttachment(running) {
+		t.Error("running VM with no boot_volume_attachment should require it")
+	}
+
+	stopped := VmSpecModel{VmState: types.StringValue("stopped"), BootVolumeAttachment: types.ObjectNull(bootVolumeAttachmentAttrTypes)}
+	if vmCreateRequiresBootVolumeAttachment(stopped) {
+		t.Error("stopped VM should not require boot_volume_attachment")
+	}
+
+	obj, _ := types.ObjectValue(bootVolumeAttachmentAttrTypes, map[string]attr.Value{
+		"volume_id": types.StringValue("01vol"), "attachment_id": types.StringValue("01att"),
+	})
+	runningWithAttachment := VmSpecModel{VmState: types.StringValue("running"), BootVolumeAttachment: obj}
+	if vmCreateRequiresBootVolumeAttachment(runningWithAttachment) {
+		t.Error("running VM with boot_volume_attachment set should not require it again")
+	}
+}
+
+func TestBuildBootVolumeAttachmentPlan(t *testing.T) {
+	vmPlan := VmResourceModel{
+		Metadata: metadataModel{Name: types.StringValue("web-1"), FolderID: types.StringValue("01folder")},
+	}
+	att := buildBootVolumeAttachmentPlan(vmPlan, "01vm", "01att", "01vol")
+
+	if att.ID.ValueString() != "01att" {
+		t.Errorf("attachment id: got %q", att.ID.ValueString())
+	}
+	if att.Metadata.Name.ValueString() != "web-1-boot" {
+		t.Errorf("attachment name: got %q", att.Metadata.Name.ValueString())
+	}
+	if att.Metadata.FolderID.ValueString() != "01folder" {
+		t.Errorf("attachment folder_id should match the vm's: got %q", att.Metadata.FolderID.ValueString())
+	}
+	if att.Spec.VmId.ValueString() != "01vm" || att.Spec.VolumeId.ValueString() != "01vol" {
+		t.Errorf("attachment vm_id/volume_id: got %q/%q", att.Spec.VmId.ValueString(), att.Spec.VolumeId.ValueString())
+	}
+	if att.Spec.VmDeviceIndex.ValueInt64() != 0 {
+		t.Errorf("boot volume must be device index 0, got %d", att.Spec.VmDeviceIndex.ValueInt64())
 	}
 }
 

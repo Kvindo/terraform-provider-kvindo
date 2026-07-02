@@ -14,11 +14,11 @@ import (
 var _ = fmt.Sprintf
 
 type ImageDataSourceModel struct {
-	ID       types.String   `tfsdk:"id"`
-	Name     types.String   `tfsdk:"name"`
-	Metadata metadataModel  `tfsdk:"metadata"`
-	Spec     ImageSpecModel `tfsdk:"spec"`
-	Status   types.Object   `tfsdk:"status"`
+	ID       types.String    `tfsdk:"id"`
+	Name     types.String    `tfsdk:"name"`
+	Metadata *metadataModel  `tfsdk:"metadata"`
+	Spec     *ImageSpecModel `tfsdk:"spec"`
+	Status   types.Object    `tfsdk:"status"`
 }
 
 type ImageDataSource struct{ client *client.Client }
@@ -81,12 +81,14 @@ func (d *ImageDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &ImageSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.VmId = getString(spec, "vmId")
 	state.Status = buildInfoObj(apiData,

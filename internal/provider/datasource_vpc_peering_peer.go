@@ -14,11 +14,11 @@ import (
 var _ = fmt.Sprintf
 
 type VpcPeeringPeerDataSourceModel struct {
-	ID       types.String            `tfsdk:"id"`
-	Name     types.String            `tfsdk:"name"`
-	Metadata metadataModel           `tfsdk:"metadata"`
-	Spec     VpcPeeringPeerSpecModel `tfsdk:"spec"`
-	Status   types.Object            `tfsdk:"status"`
+	ID       types.String             `tfsdk:"id"`
+	Name     types.String             `tfsdk:"name"`
+	Metadata *metadataModel           `tfsdk:"metadata"`
+	Spec     *VpcPeeringPeerSpecModel `tfsdk:"spec"`
+	Status   types.Object             `tfsdk:"status"`
 }
 
 type VpcPeeringPeerDataSource struct{ client *client.Client }
@@ -83,12 +83,14 @@ func (d *VpcPeeringPeerDataSource) Read(ctx context.Context, req datasource.Read
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &VpcPeeringPeerSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.FloatingIpId = getString(spec, "floatingIpId")
 	state.Spec.VpcPeeringId = getString(spec, "vpcPeeringId")

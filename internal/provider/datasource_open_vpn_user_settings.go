@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type OpenVpnUserSettingsDataSourceModel struct {
-	ID       types.String                 `tfsdk:"id"`
-	Name     types.String                 `tfsdk:"name"`
-	Metadata metadataModel                `tfsdk:"metadata"`
-	Spec     OpenVpnUserSettingsSpecModel `tfsdk:"spec"`
-	Status   types.Object                 `tfsdk:"status"`
+	ID       types.String                  `tfsdk:"id"`
+	Name     types.String                  `tfsdk:"name"`
+	Metadata *metadataModel                `tfsdk:"metadata"`
+	Spec     *OpenVpnUserSettingsSpecModel `tfsdk:"spec"`
+	Status   types.Object                  `tfsdk:"status"`
 }
 
 type OpenVpnUserSettingsDataSource struct{ client *client.Client }
@@ -87,19 +87,21 @@ func (d *OpenVpnUserSettingsDataSource) Read(ctx context.Context, req datasource
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &OpenVpnUserSettingsSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.AllowedDomains = getStringList(ctx, spec, "allowedDomains")
-	state.Spec.AllowedIpV4Cidrs = getStringList(ctx, spec, "allowedIpV4Cidrs")
-	state.Spec.AllowedIpV6Cidrs = getStringList(ctx, spec, "allowedIpV6Cidrs")
+	state.Spec.AllowedIpv4Cidrs = getStringList(ctx, spec, "allowedIpV4Cidrs")
+	state.Spec.AllowedIpv6Cidrs = getStringList(ctx, spec, "allowedIpV6Cidrs")
 	state.Spec.DeniedDomains = getStringList(ctx, spec, "deniedDomains")
-	state.Spec.DeniedIpV4Cidrs = getStringList(ctx, spec, "deniedIpV4Cidrs")
-	state.Spec.DeniedIpV6Cidrs = getStringList(ctx, spec, "deniedIpV6Cidrs")
+	state.Spec.DeniedIpv4Cidrs = getStringList(ctx, spec, "deniedIpV4Cidrs")
+	state.Spec.DeniedIpv6Cidrs = getStringList(ctx, spec, "deniedIpV6Cidrs")
 	state.Status = simpleStateInfoObj(apiData)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

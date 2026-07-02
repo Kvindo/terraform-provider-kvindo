@@ -16,9 +16,9 @@ import (
 var _ = fmt.Sprintf
 
 type VpcPeeringExternalPeerSpecModel struct {
-	IpV4Cidrs       types.List   `tfsdk:"ipv4_cidrs"`
-	PrivateIpV4     types.String `tfsdk:"private_ipv4"`
-	SshIpV4         types.String `tfsdk:"ssh_ipv4"`
+	Ipv4Cidrs       types.List   `tfsdk:"ipv4_cidrs"`
+	PrivateIpv4     types.String `tfsdk:"private_ipv4"`
+	SshIpv4         types.String `tfsdk:"ssh_ipv4"`
 	SshPort         types.Int64  `tfsdk:"ssh_port"`
 	SshPrivateKeyId types.String `tfsdk:"ssh_private_key_id"`
 	SshUser         types.String `tfsdk:"ssh_user"`
@@ -77,14 +77,14 @@ func (r *VpcPeeringExternalPeerResource) Configure(_ context.Context, req resour
 func buildVpcPeeringExternalPeerRequestMap(ctx context.Context, plan VpcPeeringExternalPeerResourceModel) map[string]interface{} {
 	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
 	spec := m["spec"].(map[string]interface{})
-	if !plan.Spec.IpV4Cidrs.IsNull() && !plan.Spec.IpV4Cidrs.IsUnknown() {
-		spec["ipV4Cidrs"] = stringListToInterface(ctx, plan.Spec.IpV4Cidrs)
+	if !plan.Spec.Ipv4Cidrs.IsNull() && !plan.Spec.Ipv4Cidrs.IsUnknown() {
+		spec["ipV4Cidrs"] = stringListToInterface(ctx, plan.Spec.Ipv4Cidrs)
 	}
-	if !plan.Spec.PrivateIpV4.IsNull() && !plan.Spec.PrivateIpV4.IsUnknown() {
-		spec["privateIpV4"] = plan.Spec.PrivateIpV4.ValueString()
+	if !plan.Spec.PrivateIpv4.IsNull() && !plan.Spec.PrivateIpv4.IsUnknown() {
+		spec["privateIpV4"] = plan.Spec.PrivateIpv4.ValueString()
 	}
-	if !plan.Spec.SshIpV4.IsNull() && !plan.Spec.SshIpV4.IsUnknown() {
-		spec["sshIpV4"] = plan.Spec.SshIpV4.ValueString()
+	if !plan.Spec.SshIpv4.IsNull() && !plan.Spec.SshIpv4.IsUnknown() {
+		spec["sshIpV4"] = plan.Spec.SshIpv4.ValueString()
 	}
 	if !plan.Spec.SshPort.IsNull() && !plan.Spec.SshPort.IsUnknown() {
 		spec["sshPort"] = plan.Spec.SshPort.ValueInt64()
@@ -107,9 +107,9 @@ func populateVpcPeeringExternalPeerState(ctx context.Context, data map[string]in
 	}
 	state.ID = state.Metadata.ID
 	spec := getSpec(data)
-	state.Spec.IpV4Cidrs = getStringList(ctx, spec, "ipV4Cidrs")
-	state.Spec.PrivateIpV4 = getString(spec, "privateIpV4")
-	state.Spec.SshIpV4 = getString(spec, "sshIpV4")
+	state.Spec.Ipv4Cidrs = getStringList(ctx, spec, "ipV4Cidrs")
+	state.Spec.PrivateIpv4 = getString(spec, "privateIpV4")
+	state.Spec.SshIpv4 = getString(spec, "sshIpV4")
 	state.Spec.SshPort = getInt64(spec, "sshPort")
 	state.Spec.SshPrivateKeyId = getString(spec, "sshPrivateKeyId")
 	state.Spec.SshUser = getString(spec, "sshUser")

@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type VolumeAttachmentDataSourceModel struct {
-	ID       types.String              `tfsdk:"id"`
-	Name     types.String              `tfsdk:"name"`
-	Metadata metadataModel             `tfsdk:"metadata"`
-	Spec     VolumeAttachmentSpecModel `tfsdk:"spec"`
-	Status   types.Object              `tfsdk:"status"`
+	ID       types.String               `tfsdk:"id"`
+	Name     types.String               `tfsdk:"name"`
+	Metadata *metadataModel             `tfsdk:"metadata"`
+	Spec     *VolumeAttachmentSpecModel `tfsdk:"spec"`
+	Status   types.Object               `tfsdk:"status"`
 }
 
 type VolumeAttachmentDataSource struct{ client *client.Client }
@@ -82,12 +82,14 @@ func (d *VolumeAttachmentDataSource) Read(ctx context.Context, req datasource.Re
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &VolumeAttachmentSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.VmDeviceIndex = getInt64(spec, "vmDeviceIndex")
 	state.Spec.VmId = getString(spec, "vmId")

@@ -19,7 +19,7 @@ var _ = fmt.Sprintf
 var kubernetesControlPlaneLocationsObjFields = []objField{{TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string"}}
 
 type KubernetesSpecModel struct {
-	AssignPublicIpV4      types.Bool   `tfsdk:"assign_public_ipv4"`
+	AssignPublicIpv4      types.Bool   `tfsdk:"assign_public_ipv4"`
 	ControlPlaneLocations types.List   `tfsdk:"control_plane_locations"`
 	Tier                  types.String `tfsdk:"tier"`
 	Version               types.String `tfsdk:"version"`
@@ -74,8 +74,8 @@ func (r *KubernetesResource) Configure(_ context.Context, req resource.Configure
 func buildKubernetesRequestMap(ctx context.Context, plan KubernetesResourceModel) map[string]interface{} {
 	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
 	spec := m["spec"].(map[string]interface{})
-	if !plan.Spec.AssignPublicIpV4.IsNull() && !plan.Spec.AssignPublicIpV4.IsUnknown() {
-		spec["assignPublicIpV4"] = plan.Spec.AssignPublicIpV4.ValueBool()
+	if !plan.Spec.AssignPublicIpv4.IsNull() && !plan.Spec.AssignPublicIpv4.IsUnknown() {
+		spec["assignPublicIpV4"] = plan.Spec.AssignPublicIpv4.ValueBool()
 	}
 	if !plan.Spec.ControlPlaneLocations.IsNull() && !plan.Spec.ControlPlaneLocations.IsUnknown() {
 		spec["controlPlaneLocations"] = listObjToAPI(plan.Spec.ControlPlaneLocations, kubernetesControlPlaneLocationsObjFields)
@@ -95,7 +95,7 @@ func populateKubernetesState(ctx context.Context, data map[string]interface{}, s
 	}
 	state.ID = state.Metadata.ID
 	spec := getSpec(data)
-	state.Spec.AssignPublicIpV4 = getBool(spec, "assignPublicIpV4")
+	state.Spec.AssignPublicIpv4 = getBool(spec, "assignPublicIpV4")
 	state.Spec.ControlPlaneLocations = listObjFromAPI(objList(spec, "controlPlaneLocations"), kubernetesControlPlaneLocationsObjFields)
 	state.Spec.Tier = getString(spec, "tier")
 	state.Spec.Version = getString(spec, "version")

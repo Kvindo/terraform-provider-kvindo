@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type LoadbalancerTlsListenerDataSourceModel struct {
-	ID       types.String                     `tfsdk:"id"`
-	Name     types.String                     `tfsdk:"name"`
-	Metadata metadataModel                    `tfsdk:"metadata"`
-	Spec     LoadbalancerTlsListenerSpecModel `tfsdk:"spec"`
-	Status   types.Object                     `tfsdk:"status"`
+	ID       types.String                      `tfsdk:"id"`
+	Name     types.String                      `tfsdk:"name"`
+	Metadata *metadataModel                    `tfsdk:"metadata"`
+	Spec     *LoadbalancerTlsListenerSpecModel `tfsdk:"spec"`
+	Status   types.Object                      `tfsdk:"status"`
 }
 
 type LoadbalancerTlsListenerDataSource struct{ client *client.Client }
@@ -88,12 +88,14 @@ func (d *LoadbalancerTlsListenerDataSource) Read(ctx context.Context, req dataso
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &LoadbalancerTlsListenerSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.Hosts = getStringList(ctx, spec, "hosts")
 	state.Spec.Interface = getString(spec, "interface")

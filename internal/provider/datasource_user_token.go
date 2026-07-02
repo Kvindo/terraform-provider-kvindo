@@ -14,11 +14,11 @@ import (
 var _ = fmt.Sprintf
 
 type UserTokenDataSourceModel struct {
-	ID       types.String       `tfsdk:"id"`
-	Name     types.String       `tfsdk:"name"`
-	Metadata metadataModel      `tfsdk:"metadata"`
-	Spec     UserTokenSpecModel `tfsdk:"spec"`
-	Status   types.Object       `tfsdk:"status"`
+	ID       types.String        `tfsdk:"id"`
+	Name     types.String        `tfsdk:"name"`
+	Metadata *metadataModel      `tfsdk:"metadata"`
+	Spec     *UserTokenSpecModel `tfsdk:"spec"`
+	Status   types.Object        `tfsdk:"status"`
 }
 
 type UserTokenDataSource struct{ client *client.Client }
@@ -82,12 +82,14 @@ func (d *UserTokenDataSource) Read(ctx context.Context, req datasource.ReadReque
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &UserTokenSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.SendToEmail = getBool(spec, "sendToEmail")
 	state.Spec.UserId = getString(spec, "userId")

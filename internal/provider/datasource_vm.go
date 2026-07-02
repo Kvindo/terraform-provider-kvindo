@@ -14,11 +14,11 @@ import (
 var _ = fmt.Sprintf
 
 type VmDataSourceModel struct {
-	ID       types.String  `tfsdk:"id"`
-	Name     types.String  `tfsdk:"name"`
-	Metadata metadataModel `tfsdk:"metadata"`
-	Spec     VmSpecModel   `tfsdk:"spec"`
-	Status   types.Object  `tfsdk:"status"`
+	ID       types.String   `tfsdk:"id"`
+	Name     types.String   `tfsdk:"name"`
+	Metadata *metadataModel `tfsdk:"metadata"`
+	Spec     *VmSpecModel   `tfsdk:"spec"`
+	Status   types.Object   `tfsdk:"status"`
 }
 
 type VmDataSource struct{ client *client.Client }
@@ -31,14 +31,16 @@ func (d *VmDataSource) Metadata(_ context.Context, req datasource.MetadataReques
 
 func (d *VmDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	specAttrs := map[string]schema.Attribute{
-		"bootstrap_command":                        objDatasourceSchema(vmBootstrapCommandObjFields),
-		"floating_ip_id":                           schema.StringAttribute{Computed: true},
-		"image_boot_volume_device_index":           schema.Int64Attribute{Computed: true},
-		"image_id":                                 schema.StringAttribute{Computed: true},
-		"image_schedule_ids":                       schema.ListAttribute{Computed: true, ElementType: types.StringType},
-		"offer_id":                                 schema.StringAttribute{Computed: true},
-		"on_off_maintenance_action_ids":            schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"bootstrap_command":              objDatasourceSchema(vmBootstrapCommandObjFields),
+		"floating_ip_id":                 schema.StringAttribute{Computed: true},
+		"image_boot_volume_device_index": schema.Int64Attribute{Computed: true},
+		"image_id":                       schema.StringAttribute{Computed: true},
+		"image_schedule_ids":             schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"offer_id":                       schema.StringAttribute{Computed: true},
+		"on_off_maintenance_action_ids":  schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"os_type":                        schema.StringAttribute{Computed: true},
 		"recurrent_command_maintenance_action_ids": schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"security_group_ids":                       schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"ssh_key_ids":                              schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"vm_state":                                 schema.StringAttribute{Computed: true},
 		"vpc_subnet_id":                            schema.StringAttribute{Computed: true},
@@ -48,7 +50,7 @@ func (d *VmDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, res
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}, "windows_administrator_password": schema.StringAttribute{Computed: true, Sensitive: true}}),
 	}}
 }
 
@@ -91,12 +93,14 @@ func (d *VmDataSource) Read(ctx context.Context, req datasource.ReadRequest, res
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &VmSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.BootstrapCommand = objFromAPI(objMap(spec, "bootstrapCommand"), vmBootstrapCommandObjFields)
 	state.Spec.FloatingIpId = getString(spec, "floatingIpId")
@@ -105,22 +109,26 @@ func (d *VmDataSource) Read(ctx context.Context, req datasource.ReadRequest, res
 	state.Spec.ImageScheduleIds = getStringList(ctx, spec, "imageScheduleIds")
 	state.Spec.OfferId = getString(spec, "offerId")
 	state.Spec.OnOffMaintenanceActionIds = getStringList(ctx, spec, "onOffMaintenanceActionIds")
+	state.Spec.OsType = getString(spec, "osType")
 	state.Spec.RecurrentCommandMaintenanceActionIds = getStringList(ctx, spec, "recurrentCommandMaintenanceActionIds")
+	state.Spec.SecurityGroupIds = getStringList(ctx, spec, "securityGroupIds")
 	state.Spec.SshKeyIds = getStringList(ctx, spec, "sshKeyIds")
 	state.Spec.VmState = getString(spec, "vmState")
 	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
 	state.Status = buildInfoObj(apiData,
 		map[string]attr.Type{
-			"private_ipv4": types.StringType,
-			"private_ipv6": types.StringType,
-			"public_ipv4":  types.StringType,
-			"public_ipv6":  types.StringType,
+			"private_ipv4":                   types.StringType,
+			"private_ipv6":                   types.StringType,
+			"public_ipv4":                    types.StringType,
+			"public_ipv6":                    types.StringType,
+			"windows_administrator_password": types.StringType,
 		},
 		map[string]attr.Value{
-			"private_ipv4": getStringFromInfo(apiData, "privateIpv4"),
-			"private_ipv6": getStringFromInfo(apiData, "privateIpv6"),
-			"public_ipv4":  getStringFromInfo(apiData, "publicIpv4"),
-			"public_ipv6":  getStringFromInfo(apiData, "publicIpv6"),
+			"private_ipv4":                   getStringFromInfo(apiData, "privateIpv4"),
+			"private_ipv6":                   getStringFromInfo(apiData, "privateIpv6"),
+			"public_ipv4":                    getStringFromInfo(apiData, "publicIpv4"),
+			"public_ipv6":                    getStringFromInfo(apiData, "publicIpv6"),
+			"windows_administrator_password": getStringFromInfo(apiData, "windowsAdministratorPassword"),
 		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

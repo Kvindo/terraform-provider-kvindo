@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type VpcPeeringExternalPeerDataSourceModel struct {
-	ID       types.String                    `tfsdk:"id"`
-	Name     types.String                    `tfsdk:"name"`
-	Metadata metadataModel                   `tfsdk:"metadata"`
-	Spec     VpcPeeringExternalPeerSpecModel `tfsdk:"spec"`
-	Status   types.Object                    `tfsdk:"status"`
+	ID       types.String                     `tfsdk:"id"`
+	Name     types.String                     `tfsdk:"name"`
+	Metadata *metadataModel                   `tfsdk:"metadata"`
+	Spec     *VpcPeeringExternalPeerSpecModel `tfsdk:"spec"`
+	Status   types.Object                     `tfsdk:"status"`
 }
 
 type VpcPeeringExternalPeerDataSource struct{ client *client.Client }
@@ -88,16 +88,18 @@ func (d *VpcPeeringExternalPeerDataSource) Read(ctx context.Context, req datasou
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &VpcPeeringExternalPeerSpecModel{}
 	spec := getSpec(apiData)
-	state.Spec.IpV4Cidrs = getStringList(ctx, spec, "ipV4Cidrs")
-	state.Spec.PrivateIpV4 = getString(spec, "privateIpV4")
-	state.Spec.SshIpV4 = getString(spec, "sshIpV4")
+	state.Spec.Ipv4Cidrs = getStringList(ctx, spec, "ipV4Cidrs")
+	state.Spec.PrivateIpv4 = getString(spec, "privateIpV4")
+	state.Spec.SshIpv4 = getString(spec, "sshIpV4")
 	state.Spec.SshPort = getInt64(spec, "sshPort")
 	state.Spec.SshPrivateKeyId = getString(spec, "sshPrivateKeyId")
 	state.Spec.SshUser = getString(spec, "sshUser")

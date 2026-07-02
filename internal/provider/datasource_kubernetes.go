@@ -14,11 +14,11 @@ import (
 var _ = fmt.Sprintf
 
 type KubernetesDataSourceModel struct {
-	ID       types.String        `tfsdk:"id"`
-	Name     types.String        `tfsdk:"name"`
-	Metadata metadataModel       `tfsdk:"metadata"`
-	Spec     KubernetesSpecModel `tfsdk:"spec"`
-	Status   types.Object        `tfsdk:"status"`
+	ID       types.String         `tfsdk:"id"`
+	Name     types.String         `tfsdk:"name"`
+	Metadata *metadataModel       `tfsdk:"metadata"`
+	Spec     *KubernetesSpecModel `tfsdk:"spec"`
+	Status   types.Object         `tfsdk:"status"`
 }
 
 type KubernetesDataSource struct{ client *client.Client }
@@ -84,14 +84,16 @@ func (d *KubernetesDataSource) Read(ctx context.Context, req datasource.ReadRequ
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &KubernetesSpecModel{}
 	spec := getSpec(apiData)
-	state.Spec.AssignPublicIpV4 = getBool(spec, "assignPublicIpV4")
+	state.Spec.AssignPublicIpv4 = getBool(spec, "assignPublicIpV4")
 	state.Spec.ControlPlaneLocations = listObjFromAPI(objList(spec, "controlPlaneLocations"), kubernetesControlPlaneLocationsObjFields)
 	state.Spec.Tier = getString(spec, "tier")
 	state.Spec.Version = getString(spec, "version")

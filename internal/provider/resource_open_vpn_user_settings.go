@@ -16,11 +16,11 @@ var _ = fmt.Sprintf
 
 type OpenVpnUserSettingsSpecModel struct {
 	AllowedDomains   types.List `tfsdk:"allowed_domains"`
-	AllowedIpV4Cidrs types.List `tfsdk:"allowed_ipv4_cidrs"`
-	AllowedIpV6Cidrs types.List `tfsdk:"allowed_ipv6_cidrs"`
+	AllowedIpv4Cidrs types.List `tfsdk:"allowed_ipv4_cidrs"`
+	AllowedIpv6Cidrs types.List `tfsdk:"allowed_ipv6_cidrs"`
 	DeniedDomains    types.List `tfsdk:"denied_domains"`
-	DeniedIpV4Cidrs  types.List `tfsdk:"denied_ipv4_cidrs"`
-	DeniedIpV6Cidrs  types.List `tfsdk:"denied_ipv6_cidrs"`
+	DeniedIpv4Cidrs  types.List `tfsdk:"denied_ipv4_cidrs"`
+	DeniedIpv6Cidrs  types.List `tfsdk:"denied_ipv6_cidrs"`
 }
 
 type OpenVpnUserSettingsResourceModel struct {
@@ -77,20 +77,20 @@ func buildOpenVpnUserSettingsRequestMap(ctx context.Context, plan OpenVpnUserSet
 	if !plan.Spec.AllowedDomains.IsNull() && !plan.Spec.AllowedDomains.IsUnknown() {
 		spec["allowedDomains"] = stringListToInterface(ctx, plan.Spec.AllowedDomains)
 	}
-	if !plan.Spec.AllowedIpV4Cidrs.IsNull() && !plan.Spec.AllowedIpV4Cidrs.IsUnknown() {
-		spec["allowedIpV4Cidrs"] = stringListToInterface(ctx, plan.Spec.AllowedIpV4Cidrs)
+	if !plan.Spec.AllowedIpv4Cidrs.IsNull() && !plan.Spec.AllowedIpv4Cidrs.IsUnknown() {
+		spec["allowedIpV4Cidrs"] = stringListToInterface(ctx, plan.Spec.AllowedIpv4Cidrs)
 	}
-	if !plan.Spec.AllowedIpV6Cidrs.IsNull() && !plan.Spec.AllowedIpV6Cidrs.IsUnknown() {
-		spec["allowedIpV6Cidrs"] = stringListToInterface(ctx, plan.Spec.AllowedIpV6Cidrs)
+	if !plan.Spec.AllowedIpv6Cidrs.IsNull() && !plan.Spec.AllowedIpv6Cidrs.IsUnknown() {
+		spec["allowedIpV6Cidrs"] = stringListToInterface(ctx, plan.Spec.AllowedIpv6Cidrs)
 	}
 	if !plan.Spec.DeniedDomains.IsNull() && !plan.Spec.DeniedDomains.IsUnknown() {
 		spec["deniedDomains"] = stringListToInterface(ctx, plan.Spec.DeniedDomains)
 	}
-	if !plan.Spec.DeniedIpV4Cidrs.IsNull() && !plan.Spec.DeniedIpV4Cidrs.IsUnknown() {
-		spec["deniedIpV4Cidrs"] = stringListToInterface(ctx, plan.Spec.DeniedIpV4Cidrs)
+	if !plan.Spec.DeniedIpv4Cidrs.IsNull() && !plan.Spec.DeniedIpv4Cidrs.IsUnknown() {
+		spec["deniedIpV4Cidrs"] = stringListToInterface(ctx, plan.Spec.DeniedIpv4Cidrs)
 	}
-	if !plan.Spec.DeniedIpV6Cidrs.IsNull() && !plan.Spec.DeniedIpV6Cidrs.IsUnknown() {
-		spec["deniedIpV6Cidrs"] = stringListToInterface(ctx, plan.Spec.DeniedIpV6Cidrs)
+	if !plan.Spec.DeniedIpv6Cidrs.IsNull() && !plan.Spec.DeniedIpv6Cidrs.IsUnknown() {
+		spec["deniedIpV6Cidrs"] = stringListToInterface(ctx, plan.Spec.DeniedIpv6Cidrs)
 	}
 	return m
 }
@@ -102,11 +102,11 @@ func populateOpenVpnUserSettingsState(ctx context.Context, data map[string]inter
 	state.ID = state.Metadata.ID
 	spec := getSpec(data)
 	state.Spec.AllowedDomains = getStringList(ctx, spec, "allowedDomains")
-	state.Spec.AllowedIpV4Cidrs = getStringList(ctx, spec, "allowedIpV4Cidrs")
-	state.Spec.AllowedIpV6Cidrs = getStringList(ctx, spec, "allowedIpV6Cidrs")
+	state.Spec.AllowedIpv4Cidrs = getStringList(ctx, spec, "allowedIpV4Cidrs")
+	state.Spec.AllowedIpv6Cidrs = getStringList(ctx, spec, "allowedIpV6Cidrs")
 	state.Spec.DeniedDomains = getStringList(ctx, spec, "deniedDomains")
-	state.Spec.DeniedIpV4Cidrs = getStringList(ctx, spec, "deniedIpV4Cidrs")
-	state.Spec.DeniedIpV6Cidrs = getStringList(ctx, spec, "deniedIpV6Cidrs")
+	state.Spec.DeniedIpv4Cidrs = getStringList(ctx, spec, "deniedIpV4Cidrs")
+	state.Spec.DeniedIpv6Cidrs = getStringList(ctx, spec, "deniedIpV6Cidrs")
 	state.Status = simpleStateInfoObj(data)
 	return nil
 }

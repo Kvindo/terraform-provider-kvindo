@@ -13,11 +13,11 @@ import (
 var _ = fmt.Sprintf
 
 type LoadbalancerUdpListenerRuleDataSourceModel struct {
-	ID       types.String                         `tfsdk:"id"`
-	Name     types.String                         `tfsdk:"name"`
-	Metadata metadataModel                        `tfsdk:"metadata"`
-	Spec     LoadbalancerUdpListenerRuleSpecModel `tfsdk:"spec"`
-	Status   types.Object                         `tfsdk:"status"`
+	ID       types.String                          `tfsdk:"id"`
+	Name     types.String                          `tfsdk:"name"`
+	Metadata *metadataModel                        `tfsdk:"metadata"`
+	Spec     *LoadbalancerUdpListenerRuleSpecModel `tfsdk:"spec"`
+	Status   types.Object                          `tfsdk:"status"`
 }
 
 type LoadbalancerUdpListenerRuleDataSource struct{ client *client.Client }
@@ -84,12 +84,14 @@ func (d *LoadbalancerUdpListenerRuleDataSource) Read(ctx context.Context, req da
 		resp.Diagnostics.AddError("Not Found", "resource not found")
 		return
 	}
-	if err := setCommonFieldsNested(ctx, apiData, &state.Metadata); err != nil {
+	state.Metadata = &metadataModel{}
+	if err := setCommonFieldsNested(ctx, apiData, state.Metadata); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
+	state.Spec = &LoadbalancerUdpListenerRuleSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.ForwardToUdpResponseAction = objFromAPI(objMap(spec, "forwardToUdpResponseAction"), loadbalancerUdpListenerRuleForwardToUdpResponseActionObjFields)
 	state.Spec.Order = getInt64(spec, "order")

@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -18,8 +19,18 @@ var _ = fmt.Sprintf
 
 var vmBootstrapCommandObjFields = []objField{{TF: "command", API: "command", Kind: "string"}, {TF: "success_return_code", API: "successReturnCode", Kind: "int64"}, {TF: "timeout_seconds", API: "timeoutSeconds", Kind: "int64"}}
 
+// boot_volume_attachment has no backend/swagger counterpart: the Kvindo API has no such field on
+// /api/v1/vm. It is a purely Terraform-side convenience that creates a kvindo_volume_attachment
+// behind the scenes (see VmResource.Create/Delete) so a running VM + its boot volume can be
+// expressed in one apply, without the vm_id-references-itself dependency cycle a hand-written
+// kvindo_volume_attachment resource would otherwise create. Never wired into
+// buildVmRequestMap/populateVmState. attachment_id is our own bookkeeping (the attachment we
+// create), never user-set.
+var bootVolumeAttachmentAttrTypes = map[string]attr.Type{"volume_id": types.StringType, "attachment_id": types.StringType}
+
 type VmSpecModel struct {
 	BootstrapCommand                     types.Object `tfsdk:"bootstrap_command"`
+	BootVolumeAttachment                 types.Object `tfsdk:"boot_volume_attachment"`
 	FloatingIpId                         types.String `tfsdk:"floating_ip_id"`
 	ImageBootVolumeDeviceIndex           types.Int64  `tfsdk:"image_boot_volume_device_index"`
 	ImageId                              types.String `tfsdk:"image_id"`
@@ -51,7 +62,16 @@ func (r *VmResource) Metadata(_ context.Context, req resource.MetadataRequest, r
 
 func VmResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"bootstrap_command":              objResourceSchema(vmBootstrapCommandObjFields),
+		"bootstrap_command": objResourceSchema(vmBootstrapCommandObjFields),
+		"boot_volume_attachment": schema.SingleNestedAttribute{
+			Optional:      true,
+			Computed:      true,
+			PlanModifiers: []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
+			Attributes: map[string]schema.Attribute{
+				"volume_id":     schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+				"attachment_id": schema.StringAttribute{Computed: true},
+			},
+		},
 		"floating_ip_id":                 schema.StringAttribute{Optional: true},
 		"image_boot_volume_device_index": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
 		"image_id":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -171,12 +191,62 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 	return nil
 }
 
+// resolvedVmState returns the vm_state the backend will end up applying, mirroring the default
+// ("running") that OrganizationVmResourceChangeRequest.CreateFromResourceAsync applies server-side.
+func resolvedVmState(spec VmSpecModel) string {
+	if spec.VmState.IsNull() || spec.VmState.IsUnknown() || spec.VmState.ValueString() == "" {
+		return "running"
+	}
+	return spec.VmState.ValueString()
+}
+
+// vmCreateRequiresBootVolumeAttachment reports whether Create() must fail fast because the VM
+// would be created running with no way for the backend to ever attach a boot volume. Mirrors the
+// backend's own create-time gate (OrganizationVmReconciler's Queued check): a from-scratch
+// running VM with no boot volume attachment would otherwise just poll forever until our own
+// client-side timeout. Only applies to Create — an already-existing VM (Update) may already have
+// its boot volume attached via a separately managed kvindo_volume_attachment resource.
+func vmCreateRequiresBootVolumeAttachment(spec VmSpecModel) bool {
+	hasBootVolumeAttachment := !spec.BootVolumeAttachment.IsNull() && !spec.BootVolumeAttachment.IsUnknown()
+	return !hasBootVolumeAttachment && resolvedVmState(spec) == "running"
+}
+
+// buildBootVolumeAttachmentPlan constructs the kvindo_volume_attachment created behind the scenes
+// by VmResource.Create so a running VM + its boot volume can be expressed in one apply.
+func buildBootVolumeAttachmentPlan(vmPlan VmResourceModel, vmId, attachmentId, volumeId string) VolumeAttachmentResourceModel {
+	return VolumeAttachmentResourceModel{
+		ID: types.StringValue(attachmentId),
+		Metadata: metadataModel{
+			Name:        types.StringValue(vmPlan.Metadata.Name.ValueString() + "-boot"),
+			Description: types.StringNull(),
+			FolderID:    vmPlan.Metadata.FolderID,
+			Labels:      types.MapNull(types.StringType),
+		},
+		Spec: VolumeAttachmentSpecModel{
+			VmId:          types.StringValue(vmId),
+			VolumeId:      types.StringValue(volumeId),
+			VmDeviceIndex: types.Int64Value(0),
+		},
+	}
+}
+
 func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan VmResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	hasBootVolumeAttachment := !plan.Spec.BootVolumeAttachment.IsNull() && !plan.Spec.BootVolumeAttachment.IsUnknown()
+	if vmCreateRequiresBootVolumeAttachment(plan.Spec) {
+		resp.Diagnostics.AddError(
+			"Missing boot_volume_attachment",
+			"spec.boot_volume_attachment.volume_id must be set to create a VM in state \"running\", "+
+				"unless it is already attached via a separately managed kvindo_volume_attachment resource.",
+		)
+		return
+	}
+
 	plan.ID = types.StringValue(newULID())
 	body := buildVmRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/vm", body)
@@ -184,13 +254,31 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		resp.Diagnostics.AddError("Create Error", err.Error())
 		return
 	}
-	if err := r.client.PollUntilDone(ctx, "/api/v1/vm", modResp.RequestId); err != nil {
-		resp.Diagnostics.AddError("Create Poll Error", err.Error())
-		return
-	}
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
+	}
+
+	var attachmentId string
+	if hasBootVolumeAttachment {
+		bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
+		volumeId := bootVolAttrs["volume_id"].(types.String).ValueString()
+		attachmentId = newULID()
+		// Create the boot volume_attachment behind the scenes, right after the VM's DB row is
+		// committed (the PUT above already returned, so it exists) but before polling the VM to
+		// done — the VM reconciler's own Queued gate waits for exactly this row instead of
+		// failing, so ordering here just needs "soon", not "before".
+		attPlan := buildBootVolumeAttachmentPlan(plan, resourceId, attachmentId, volumeId)
+		attBody := buildVolumeAttachmentRequestMap(ctx, attPlan)
+		if _, err := r.client.Put(ctx, "/api/v1/volume-attachment", attBody); err != nil {
+			resp.Diagnostics.AddError("Boot Volume Attachment Create Error", err.Error())
+			return
+		}
+	}
+
+	if err := r.client.PollUntilDone(ctx, "/api/v1/vm", modResp.RequestId); err != nil {
+		resp.Diagnostics.AddError("Create Poll Error", err.Error())
+		return
 	}
 	apiData, err := r.client.Get(ctx, "/api/v1/vm", resourceId)
 	if err != nil {
@@ -200,6 +288,15 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 	if apiData == nil {
 		resp.Diagnostics.AddError("Read After Create Error", "resource not found after creation")
 		return
+	}
+	if hasBootVolumeAttachment {
+		bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
+		obj, diags := types.ObjectValue(bootVolumeAttachmentAttrTypes, map[string]attr.Value{
+			"volume_id":     bootVolAttrs["volume_id"],
+			"attachment_id": types.StringValue(attachmentId),
+		})
+		resp.Diagnostics.Append(diags...)
+		plan.Spec.BootVolumeAttachment = obj
 	}
 	if err := populateVmState(ctx, apiData, &plan); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
@@ -278,6 +375,23 @@ func (r *VmResource) Delete(ctx context.Context, req resource.DeleteRequest, res
 	if err := r.client.PollUntilDone(ctx, "/api/v1/vm", modResp.RequestId); err != nil {
 		resp.Diagnostics.AddError("Delete Poll Error", err.Error())
 		return
+	}
+
+	// Clean up the boot volume_attachment created behind the scenes at Create() time, if any.
+	// Safe to do after the VM delete: the attachment reconciler's delete path explicitly
+	// tolerates the VM already being gone.
+	if !state.Spec.BootVolumeAttachment.IsNull() && !state.Spec.BootVolumeAttachment.IsUnknown() {
+		if attachmentIdVal, ok := state.Spec.BootVolumeAttachment.Attributes()["attachment_id"].(types.String); ok && !attachmentIdVal.IsNull() && attachmentIdVal.ValueString() != "" {
+			attModResp, err := r.client.Delete(ctx, "/api/v1/volume-attachment", attachmentIdVal.ValueString())
+			if err != nil {
+				resp.Diagnostics.AddError("Boot Volume Attachment Delete Error", err.Error())
+				return
+			}
+			if err := r.client.PollUntilDone(ctx, "/api/v1/volume-attachment", attModResp.RequestId); err != nil {
+				resp.Diagnostics.AddError("Boot Volume Attachment Delete Poll Error", err.Error())
+				return
+			}
+		}
 	}
 }
 
