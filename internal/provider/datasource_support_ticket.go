@@ -93,7 +93,7 @@ func (d *SupportTicketDataSource) Read(ctx context.Context, req datasource.ReadR
 	spec := getSpec(apiData)
 	state.Spec.Kind = getString(spec, "kind")
 	state.Spec.Severity = getString(spec, "severity")
-	state.Spec.Status = getString(spec, "status")
+	state.Spec.Status = getString(spec, "ticketStatus")
 	state.Status = simpleStateInfoObj(apiData)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

@@ -61,7 +61,9 @@ Read-Only:
 - `image_schedule_ids` (List of String)
 - `offer_id` (String)
 - `on_off_maintenance_action_ids` (List of String)
+- `os_type` (String)
 - `recurrent_command_maintenance_action_ids` (List of String)
+- `security_group_ids` (List of String)
 - `ssh_key_ids` (List of String)
 - `vm_state` (String)
 - `vpc_subnet_id` (String)
@@ -91,6 +93,7 @@ Read-Only:
 - `public_ipv4` (String)
 - `public_ipv6` (String)
 - `state` (String)
+- `windows_administrator_password` (String, Sensitive)
 
 <a id="nestedatt--status--created_by_user"></a>
 ### Nested Schema for `status.created_by_user`

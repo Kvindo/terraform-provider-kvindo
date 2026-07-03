@@ -75,7 +75,7 @@ func buildSupportTicketRequestMap(ctx context.Context, plan SupportTicketResourc
 		spec["severity"] = plan.Spec.Severity.ValueString()
 	}
 	if !plan.Spec.Status.IsNull() && !plan.Spec.Status.IsUnknown() {
-		spec["status"] = plan.Spec.Status.ValueString()
+		spec["ticketStatus"] = plan.Spec.Status.ValueString()
 	}
 	return m
 }
@@ -88,7 +88,7 @@ func populateSupportTicketState(ctx context.Context, data map[string]interface{}
 	spec := getSpec(data)
 	state.Spec.Kind = getString(spec, "kind")
 	state.Spec.Severity = getString(spec, "severity")
-	state.Spec.Status = getString(spec, "status")
+	state.Spec.Status = getString(spec, "ticketStatus")
 	state.Status = simpleStateInfoObj(data)
 	return nil
 }

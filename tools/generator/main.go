@@ -306,6 +306,19 @@ func extractResources(spec SwaggerSpec) []ResourceDef {
 			statusExtra[i].Sensitive = sensitiveStatusFields[statusExtra[i].TFName]
 		}
 
+		// why: the support-ticket swagger predates the C# rename Status -> TicketStatus, so the
+		// wire key the API actually reads is "ticketStatus". Keep the TF attribute named "status"
+		// (stable for users, and nicer than ticket_status) regardless of which swagger vintage the
+		// regen runs against, and always send/read the real wire key.
+		if resourceName == "support_ticket" {
+			for i := range fields {
+				if fields[i].TFName == "status" || fields[i].TFName == "ticket_status" {
+					fields[i].TFName = "status"
+					fields[i].APIName = "ticketStatus"
+				}
+			}
+		}
+
 		resources = append(resources, ResourceDef{
 			Name:        resourceName,
 			APIPath:     path,
