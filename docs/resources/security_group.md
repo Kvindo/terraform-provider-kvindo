@@ -20,15 +20,20 @@ resource "kvindo_security_group" "example" {
   spec = {
     ingress = [
       {
-        ports       = ["22", "80", "443"]
-        ipv4_blocks = ["0.0.0.0/0"]
+        ports       = ["tcp:22", "tcp:80", "tcp:443", "icmp"]
+        ipv4_blocks = ["external"]
+        action      = "allow"
+      },
+      {
+        ports       = ["all"]
+        ipv4_blocks = ["local"]
         action      = "allow"
       }
     ]
     egress = [
       {
-        ports       = []
-        ipv4_blocks = ["0.0.0.0/0"]
+        ports       = ["all"]
+        ipv4_blocks = ["all"]
         action      = "allow"
       }
     ]
