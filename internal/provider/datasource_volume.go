@@ -33,6 +33,7 @@ func (d *VolumeDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 		"hosting_provider_id": schema.StringAttribute{Computed: true},
 		"offer_id":            schema.StringAttribute{Computed: true},
 		"os_image_id":         schema.StringAttribute{Computed: true},
+		"image_id":            schema.StringAttribute{Computed: true},
 		"size_gib":            schema.Int64Attribute{Computed: true},
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
@@ -95,6 +96,7 @@ func (d *VolumeDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	state.Spec.HostingProviderId = getString(spec, "hostingProviderId")
 	state.Spec.OfferId = getString(spec, "offerId")
 	state.Spec.OsImageId = getString(spec, "osImageId")
+	state.Spec.ImageId = getString(spec, "imageId")
 	state.Spec.SizeGib = getInt64(spec, "sizeGiB")
 	state.Status = simpleStateInfoObj(apiData)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)

@@ -16,7 +16,8 @@ import (
 var _ = fmt.Sprintf
 
 type ImageSpecModel struct {
-	VmId types.String `tfsdk:"vm_id"`
+	VmId     types.String `tfsdk:"vm_id"`
+	VolumeId types.String `tfsdk:"volume_id"`
 }
 
 type ImageResourceModel struct {
@@ -36,13 +37,14 @@ func (r *ImageResource) Metadata(_ context.Context, req resource.MetadataRequest
 
 func ImageResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"vm_id": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"vm_id":     schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"volume_id": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(map[string]schema.Attribute{"size_bytes": schema.Int64Attribute{Computed: true}, "volumes": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"size_bytes": schema.Int64Attribute{Computed: true}, "volumes": schema.StringAttribute{Computed: true}, "is_vm_image": schema.BoolAttribute{Computed: true}}),
 	}
 }
 
@@ -68,6 +70,9 @@ func buildImageRequestMap(ctx context.Context, plan ImageResourceModel) map[stri
 	if !plan.Spec.VmId.IsNull() && !plan.Spec.VmId.IsUnknown() {
 		spec["vmId"] = plan.Spec.VmId.ValueString()
 	}
+	if !plan.Spec.VolumeId.IsNull() && !plan.Spec.VolumeId.IsUnknown() {
+		spec["volumeId"] = plan.Spec.VolumeId.ValueString()
+	}
 	return m
 }
 
@@ -78,14 +83,17 @@ func populateImageState(ctx context.Context, data map[string]interface{}, state 
 	state.ID = state.Metadata.ID
 	spec := getSpec(data)
 	state.Spec.VmId = getString(spec, "vmId")
+	state.Spec.VolumeId = getString(spec, "volumeId")
 	state.Status = buildInfoObj(data,
 		map[string]attr.Type{
-			"size_bytes": types.Int64Type,
-			"volumes":    types.StringType,
+			"size_bytes":  types.Int64Type,
+			"volumes":     types.StringType,
+			"is_vm_image": types.BoolType,
 		},
 		map[string]attr.Value{
-			"size_bytes": getInt64FromInfo(data, "sizeBytes"),
-			"volumes":    getStringFromInfo(data, "volumes"),
+			"size_bytes":  getInt64FromInfo(data, "sizeBytes"),
+			"volumes":     getStringFromInfo(data, "volumes"),
+			"is_vm_image": getBoolFromInfo(data, "isVmImage"),
 		})
 	return nil
 }

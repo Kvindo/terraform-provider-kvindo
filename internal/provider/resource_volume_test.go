@@ -78,3 +78,44 @@ func TestPopulateVolumeState_Nested(t *testing.T) {
 		t.Errorf("metadata.name: got %q", state.Metadata.Name.ValueString())
 	}
 }
+
+func TestBuildVolumeRequestMap_ImageId(t *testing.T) {
+	plan := VolumeResourceModel{
+		ID:       types.StringValue("01abc"),
+		Metadata: metadataModel{Name: types.StringValue("test-vol"), Description: types.StringNull(), FolderID: types.StringNull(), Labels: types.MapNull(types.StringType)},
+		Spec: VolumeSpecModel{
+			HostingProviderId: types.StringValue("provider-1"),
+			OfferId:           types.StringValue("gp3-750"),
+			SizeGib:           types.Int64Value(40),
+			ImageId:           types.StringValue("01img123"),
+		},
+	}
+
+	m := buildVolumeRequestMap(context.Background(), plan)
+	spec, ok := m["spec"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected 'spec' key with map value in request")
+	}
+	if spec["imageId"] != "01img123" {
+		t.Errorf("expected imageId=01img123, got %v", spec["imageId"])
+	}
+	if _, ok := spec["osImageId"]; ok {
+		t.Error("expected no osImageId key when OsImageId is unset")
+	}
+}
+
+func TestPopulateVolumeState_ImageId(t *testing.T) {
+	apiData := map[string]interface{}{
+		"metadata": map[string]interface{}{"id": "01abc", "name": "test-vol"},
+		"spec":     map[string]interface{}{"hostingProviderId": "provider-1", "offerId": "gp3-750", "sizeGiB": float64(40), "imageId": "01img123"},
+		"status":   map[string]interface{}{"state": "stable"},
+	}
+
+	var state VolumeResourceModel
+	if err := populateVolumeState(context.Background(), apiData, &state); err != nil {
+		t.Fatalf("populateVolumeState returned error: %v", err)
+	}
+	if state.Spec.ImageId.ValueString() != "01img123" {
+		t.Errorf("expected spec.image_id=01img123, got %q", state.Spec.ImageId.ValueString())
+	}
+}

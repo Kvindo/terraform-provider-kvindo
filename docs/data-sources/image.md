@@ -55,6 +55,7 @@ Read-Only:
 Read-Only:
 
 - `vm_id` (String)
+- `volume_id` (String)
 
 
 <a id="nestedatt--status"></a>
@@ -64,6 +65,7 @@ Read-Only:
 
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--status--created_by_user))
+- `is_vm_image` (Boolean)
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--status--pricing))
 - `size_bytes` (Number)

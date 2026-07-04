@@ -19,6 +19,7 @@ type VolumeSpecModel struct {
 	HostingProviderId types.String `tfsdk:"hosting_provider_id"`
 	OfferId           types.String `tfsdk:"offer_id"`
 	OsImageId         types.String `tfsdk:"os_image_id"`
+	ImageId           types.String `tfsdk:"image_id"`
 	SizeGib           types.Int64  `tfsdk:"size_gib"`
 }
 
@@ -42,6 +43,7 @@ func VolumeResourceSchemaAttrs() map[string]schema.Attribute {
 		"hosting_provider_id": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"offer_id":            schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"os_image_id":         schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"image_id":            schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"size_gib":            schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
 	}
 	return map[string]schema.Attribute{
@@ -80,6 +82,9 @@ func buildVolumeRequestMap(ctx context.Context, plan VolumeResourceModel) map[st
 	if !plan.Spec.OsImageId.IsNull() && !plan.Spec.OsImageId.IsUnknown() {
 		spec["osImageId"] = plan.Spec.OsImageId.ValueString()
 	}
+	if !plan.Spec.ImageId.IsNull() && !plan.Spec.ImageId.IsUnknown() {
+		spec["imageId"] = plan.Spec.ImageId.ValueString()
+	}
 	if !plan.Spec.SizeGib.IsNull() && !plan.Spec.SizeGib.IsUnknown() {
 		spec["sizeGiB"] = plan.Spec.SizeGib.ValueInt64()
 	}
@@ -95,6 +100,7 @@ func populateVolumeState(ctx context.Context, data map[string]interface{}, state
 	state.Spec.HostingProviderId = getString(spec, "hostingProviderId")
 	state.Spec.OfferId = getString(spec, "offerId")
 	state.Spec.OsImageId = getString(spec, "osImageId")
+	state.Spec.ImageId = getString(spec, "imageId")
 	state.Spec.SizeGib = getInt64(spec, "sizeGiB")
 	state.Status = simpleStateInfoObj(data)
 	return nil

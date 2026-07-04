@@ -1039,6 +1039,7 @@ Optional:
 Optional:
 
 - `vm_id` (String)
+- `volume_id` (String)
 
 
 <a id="nestedatt--spec--images--status"></a>
@@ -1048,6 +1049,7 @@ Optional:
 
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--images--status--created_by_user))
+- `is_vm_image` (Boolean)
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--images--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--images--status--pricing))
 - `size_bytes` (Number)
@@ -5423,6 +5425,7 @@ Optional:
 Optional:
 
 - `hosting_provider_id` (String)
+- `image_id` (String)
 - `offer_id` (String)
 - `os_image_id` (String)
 - `size_gib` (Number)

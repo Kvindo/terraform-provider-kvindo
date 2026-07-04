@@ -31,14 +31,15 @@ func (d *ImageDataSource) Metadata(_ context.Context, req datasource.MetadataReq
 
 func (d *ImageDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	specAttrs := map[string]schema.Attribute{
-		"vm_id": schema.StringAttribute{Computed: true},
+		"vm_id":     schema.StringAttribute{Computed: true},
+		"volume_id": schema.StringAttribute{Computed: true},
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Optional: true, Computed: true, Description: "ID of the resource to look up. Set exactly one of `id` or `name`."},
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"size_bytes": schema.Int64Attribute{Computed: true}, "volumes": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"size_bytes": schema.Int64Attribute{Computed: true}, "volumes": schema.StringAttribute{Computed: true}, "is_vm_image": schema.BoolAttribute{Computed: true}}),
 	}}
 }
 
@@ -91,14 +92,17 @@ func (d *ImageDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	state.Spec = &ImageSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.VmId = getString(spec, "vmId")
+	state.Spec.VolumeId = getString(spec, "volumeId")
 	state.Status = buildInfoObj(apiData,
 		map[string]attr.Type{
-			"size_bytes": types.Int64Type,
-			"volumes":    types.StringType,
+			"size_bytes":  types.Int64Type,
+			"volumes":     types.StringType,
+			"is_vm_image": types.BoolType,
 		},
 		map[string]attr.Value{
-			"size_bytes": getInt64FromInfo(apiData, "sizeBytes"),
-			"volumes":    getStringFromInfo(apiData, "volumes"),
+			"size_bytes":  getInt64FromInfo(apiData, "sizeBytes"),
+			"volumes":     getStringFromInfo(apiData, "volumes"),
+			"is_vm_image": getBoolFromInfo(apiData, "isVmImage"),
 		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

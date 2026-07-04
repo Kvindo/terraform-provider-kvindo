@@ -55,6 +55,7 @@ Read-Only:
 Read-Only:
 
 - `hosting_provider_id` (String)
+- `image_id` (String)
 - `offer_id` (String)
 - `os_image_id` (String)
 - `size_gib` (Number)
