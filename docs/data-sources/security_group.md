@@ -54,6 +54,7 @@ Read-Only:
 
 Read-Only:
 
+- `default_action` (String)
 - `egress` (Attributes List) (see [below for nested schema](#nestedatt--spec--egress))
 - `ingress` (Attributes List) (see [below for nested schema](#nestedatt--spec--ingress))
 

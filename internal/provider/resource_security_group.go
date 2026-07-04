@@ -19,8 +19,9 @@ var securityGroupEgressObjFields = []objField{{TF: "action", API: "action", Kind
 var securityGroupIngressObjFields = []objField{{TF: "action", API: "action", Kind: "string"}, {TF: "ipv4_blocks", API: "ipv4Blocks", Kind: "list_string"}, {TF: "ports", API: "ports", Kind: "list_string"}}
 
 type SecurityGroupSpecModel struct {
-	Egress  types.List `tfsdk:"egress"`
-	Ingress types.List `tfsdk:"ingress"`
+	DefaultAction types.String `tfsdk:"default_action"`
+	Egress        types.List   `tfsdk:"egress"`
+	Ingress       types.List   `tfsdk:"ingress"`
 }
 
 type SecurityGroupResourceModel struct {
@@ -40,8 +41,9 @@ func (r *SecurityGroupResource) Metadata(_ context.Context, req resource.Metadat
 
 func SecurityGroupResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"egress":  listObjResourceSchema(securityGroupEgressObjFields),
-		"ingress": listObjResourceSchema(securityGroupIngressObjFields),
+		"default_action": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"egress":         listObjResourceSchema(securityGroupEgressObjFields),
+		"ingress":        listObjResourceSchema(securityGroupIngressObjFields),
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -70,6 +72,9 @@ func (r *SecurityGroupResource) Configure(_ context.Context, req resource.Config
 func buildSecurityGroupRequestMap(ctx context.Context, plan SecurityGroupResourceModel) map[string]interface{} {
 	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
 	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.DefaultAction.IsNull() && !plan.Spec.DefaultAction.IsUnknown() {
+		spec["defaultAction"] = plan.Spec.DefaultAction.ValueString()
+	}
 	if !plan.Spec.Egress.IsNull() && !plan.Spec.Egress.IsUnknown() {
 		spec["egress"] = listObjToAPI(plan.Spec.Egress, securityGroupEgressObjFields)
 	}
@@ -85,6 +90,7 @@ func populateSecurityGroupState(ctx context.Context, data map[string]interface{}
 	}
 	state.ID = state.Metadata.ID
 	spec := getSpec(data)
+	state.Spec.DefaultAction = getString(spec, "defaultAction")
 	state.Spec.Egress = listObjFromAPI(objList(spec, "egress"), securityGroupEgressObjFields)
 	state.Spec.Ingress = listObjFromAPI(objList(spec, "ingress"), securityGroupIngressObjFields)
 	state.Status = simpleStateInfoObj(data)

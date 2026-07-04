@@ -18,6 +18,9 @@ resource "kvindo_security_group" "example" {
     name = "my-sg"
   }
   spec = {
+    # optional, defaults to "deny" (unmatched traffic dropped); set to "allow" for
+    # blacklist mode (unmatched traffic allowed, only explicit deny rules block it)
+    default_action = "deny"
     ingress = [
       {
         ports       = ["tcp:22", "tcp:80", "tcp:443", "icmp"]
@@ -81,6 +84,7 @@ Read-Only:
 
 Optional:
 
+- `default_action` (String)
 - `egress` (Attributes List) (see [below for nested schema](#nestedatt--spec--egress))
 - `ingress` (Attributes List) (see [below for nested schema](#nestedatt--spec--ingress))
 

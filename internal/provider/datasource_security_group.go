@@ -30,8 +30,9 @@ func (d *SecurityGroupDataSource) Metadata(_ context.Context, req datasource.Met
 
 func (d *SecurityGroupDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	specAttrs := map[string]schema.Attribute{
-		"egress":  listObjDatasourceSchema(securityGroupEgressObjFields),
-		"ingress": listObjDatasourceSchema(securityGroupIngressObjFields),
+		"default_action": schema.StringAttribute{Computed: true},
+		"egress":         listObjDatasourceSchema(securityGroupEgressObjFields),
+		"ingress":        listObjDatasourceSchema(securityGroupIngressObjFields),
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Optional: true, Computed: true, Description: "ID of the resource to look up. Set exactly one of `id` or `name`."},
@@ -90,6 +91,7 @@ func (d *SecurityGroupDataSource) Read(ctx context.Context, req datasource.ReadR
 	state.Name = state.Metadata.Name
 	state.Spec = &SecurityGroupSpecModel{}
 	spec := getSpec(apiData)
+	state.Spec.DefaultAction = getString(spec, "defaultAction")
 	state.Spec.Egress = listObjFromAPI(objList(spec, "egress"), securityGroupEgressObjFields)
 	state.Spec.Ingress = listObjFromAPI(objList(spec, "ingress"), securityGroupIngressObjFields)
 	state.Status = simpleStateInfoObj(apiData)
