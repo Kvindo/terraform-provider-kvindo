@@ -128,8 +128,12 @@ func populateOllamaState(ctx context.Context, data map[string]interface{}, state
 	state.Spec.VolumeSizeGib = getInt64(spec, "volumeSizeGiB")
 	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
 	state.Status = buildInfoObj(data,
-		map[string]attr.Type{"host": types.StringType},
-		map[string]attr.Value{"host": getStringFromInfo(data, "host")})
+		map[string]attr.Type{
+			"host": types.StringType,
+		},
+		map[string]attr.Value{
+			"host": getStringFromInfo(data, "host"),
+		})
 	return nil
 }
 

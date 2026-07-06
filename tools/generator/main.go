@@ -338,6 +338,14 @@ var commonFieldNames = map[string]bool{
 	"folderId": true, "deleteProtection": true, "resourceName": true,
 }
 
+// envelopeFieldNames are the outer apiVersion/kind/metadata/spec/status keys of a PUT-path
+// resource's top-level schema (e.g. GitlabResource). They are handled by the common
+// metadata/status blocks (or, for "spec", unwrapped below) and must never be emitted as
+// resource-specific spec fields themselves.
+var envelopeFieldNames = map[string]bool{
+	"apiVersion": true, "kind": true, "metadata": true, "spec": true, "status": true, "info": true,
+}
+
 func extractFields(schema SchemaObject, schemas map[string]SchemaObject) (fields, infoFields []FieldDef) {
 	props := schema.Properties
 	if props == nil && len(schema.AllOf) > 0 {
@@ -357,55 +365,66 @@ func extractFields(schema SchemaObject, schemas map[string]SchemaObject) (fields
 		}
 	}
 
-	for apiName, prop := range props {
-		if commonFieldNames[apiName] {
+	// The swagger wraps a resource's writable fields in a "spec" $ref (envelope shape:
+	// apiVersion/kind/metadata/spec/status on the outer PUT-body schema) rather than exposing
+	// them as top-level properties. Unwrap it so the loop below always walks a flat set of the
+	// resource's own fields. Spec-less resources (e.g. Folder) have no "spec" key at all, so
+	// specProps falls back to props — which, after the envelopeFieldNames skip below, yields no
+	// fields, correctly.
+	specProps := props
+	if specProp, ok := props["spec"]; ok && specProp.Ref != "" {
+		if specSchema, ok := schemas[extractRefName(specProp.Ref)]; ok {
+			specProps = specSchema.Properties
+		}
+	}
+
+	// Status sub-fields beyond the base ResourceInfo live under "status" (legacy swagger used
+	// "info"; kept as a fallback). The base fields (state/createTime/createdByUser/
+	// lastChangeRequest/pricing) are rendered by the common status block, so only
+	// resource-specific extras are collected here.
+	statusProp, hasStatus := props["status"]
+	if !hasStatus {
+		statusProp, hasStatus = props["info"]
+	}
+	if hasStatus && statusProp.Ref != "" {
+		refName := extractRefName(statusProp.Ref)
+		if infoSchema, ok := schemas[refName]; ok {
+			infoProps := infoSchema.Properties
+			if infoProps == nil && len(infoSchema.AllOf) > 0 {
+				infoProps = make(map[string]*SchemaRef)
+				for _, s := range infoSchema.AllOf {
+					if s.Ref != "" {
+						if rs, ok := schemas[extractRefName(s.Ref)]; ok {
+							for k, v := range rs.Properties {
+								infoProps[k] = v
+							}
+						}
+					}
+					for k, v := range s.Properties {
+						infoProps[k] = v
+					}
+				}
+			}
+			for infoFieldName, infoFieldProp := range infoProps {
+				if baseInfoFields[infoFieldName] {
+					continue
+				}
+				infoFields = append(infoFields, FieldDef{
+					TFName:    camelToSnake(infoFieldName),
+					APIName:   infoFieldName,
+					FieldType: swaggerTypeToFieldType(infoFieldProp),
+					Computed:  true,
+				})
+			}
+		}
+	}
+
+	for apiName, prop := range specProps {
+		if commonFieldNames[apiName] || envelopeFieldNames[apiName] || strings.HasPrefix(apiName, "info") {
 			continue
 		}
 
 		tfName := camelToSnake(apiName)
-		isInfo := apiName == "info" || strings.HasPrefix(apiName, "info")
-
-		if apiName == "info" && prop.Ref != "" {
-			// Extract status (info) sub-fields beyond the base ResourceInfo. The base fields
-			// (state/createTime/createdByUser/lastChangeRequest/pricing) are rendered by the
-			// common status block, so only resource-specific extras are collected here.
-			refName := extractRefName(prop.Ref)
-			if infoSchema, ok := schemas[refName]; ok {
-				infoProps := infoSchema.Properties
-				if infoProps == nil && len(infoSchema.AllOf) > 0 {
-					infoProps = make(map[string]*SchemaRef)
-					for _, s := range infoSchema.AllOf {
-						if s.Ref != "" {
-							if rs, ok := schemas[extractRefName(s.Ref)]; ok {
-								for k, v := range rs.Properties {
-									infoProps[k] = v
-								}
-							}
-						}
-						for k, v := range s.Properties {
-							infoProps[k] = v
-						}
-					}
-				}
-				for infoFieldName, infoFieldProp := range infoProps {
-					if baseInfoFields[infoFieldName] {
-						continue
-					}
-					infoFields = append(infoFields, FieldDef{
-						TFName:    camelToSnake(infoFieldName),
-						APIName:   infoFieldName,
-						FieldType: swaggerTypeToFieldType(infoFieldProp),
-						Computed:  true,
-					})
-				}
-			}
-			continue
-		}
-
-		if isInfo {
-			continue
-		}
-
 		ft := swaggerTypeToFieldType(prop)
 		var objFields []FieldDef
 

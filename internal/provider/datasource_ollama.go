@@ -108,7 +108,11 @@ func (d *OllamaDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	state.Spec.VolumeSizeGib = getInt64(spec, "volumeSizeGiB")
 	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
 	state.Status = buildInfoObj(apiData,
-		map[string]attr.Type{"host": types.StringType},
-		map[string]attr.Value{"host": getStringFromInfo(apiData, "host")})
+		map[string]attr.Type{
+			"host": types.StringType,
+		},
+		map[string]attr.Value{
+			"host": getStringFromInfo(apiData, "host"),
+		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
