@@ -232,9 +232,6 @@ The provider implements the following resources and data sources:
 - `kvindo_s3_user` / `data.kvindo_s3_user`
 - `kvindo_s3_user_access_policy` / `data.kvindo_s3_user_access_policy`
 
-### Monitoring
-- `kvindo_victoria_metrics` / `data.kvindo_victoria_metrics`
-
 ### VPN
 - `kvindo_open_vpn` / `data.kvindo_open_vpn`
 - `kvindo_open_vpn_user` / `data.kvindo_open_vpn_user`
@@ -243,6 +240,9 @@ The provider implements the following resources and data sources:
 ### Dev Tools
 - `kvindo_gitlab` / `data.kvindo_gitlab`
 - `kvindo_gitlab_runner` / `data.kvindo_gitlab_runner`
+
+### AI
+- `kvindo_ollama` / `data.kvindo_ollama`
 
 ### Support
 - `kvindo_support_plan` / `data.kvindo_support_plan`

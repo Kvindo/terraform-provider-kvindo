@@ -92,7 +92,7 @@ type ResourceDef struct {
 // (removed/unimplemented backends, plus the hand-written transaction resource).
 var skipResources = map[string]bool{
 	"etcd": true, "etcd_node_group": true, "grafana": true, "nat_gateway": true,
-	"ollama": true, "postgresql": true, "postgresql_node_group": true,
+	"postgresql": true, "postgresql_node_group": true, "victoria_metrics": true,
 	"vm_on_off_maintenance_action": true, "vm_recurrent_command_maintenance_action": true,
 	"transaction": true,
 }
@@ -148,9 +148,9 @@ var requiredSpecFields = map[string]map[string]bool{
 var optionalOnlySpecFields = map[string]map[string]bool{
 	"gitlab":                    {"floating_ip_id": true, "record_name": true},
 	"loadbalancer":              {"floating_ip_id": true},
+	"ollama":                    {"floating_ip_id": true},
 	"open_vpn":                  {"floating_ip_id": true},
 	"postgresql_standalone":     {"parameters_set_id": true, "floating_ip_id": true},
-	"victoria_metrics":          {"dns_record_name": true},
 	"vm":                        {"floating_ip_id": true, "security_group_ids": true},
 	"vpc":                       {"nat_floating_ip_id": true},
 	"vpc_peering_external_peer": {"ssh_private_key_id": true},
@@ -161,6 +161,7 @@ var optionalOnlySpecFields = map[string]map[string]bool{
 var sensitiveSpecFields = map[string]map[string]bool{
 	"certificate":           {"private_key_pem": true},
 	"gitlab":                {"root_password": true},
+	"ollama":                {"root_password": true},
 	"postgresql_standalone": {"root_password": true},
 	"ssh_private_key":       {"private_key": true},
 }

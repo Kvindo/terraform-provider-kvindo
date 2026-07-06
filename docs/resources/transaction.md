@@ -150,6 +150,7 @@ Optional:
 - `loadbalancer_udp_listener_rules` (Attributes Map) (see [below for nested schema](#nestedatt--spec--loadbalancer_udp_listener_rules))
 - `loadbalancer_udp_listeners` (Attributes Map) (see [below for nested schema](#nestedatt--spec--loadbalancer_udp_listeners))
 - `loadbalancers` (Attributes Map) (see [below for nested schema](#nestedatt--spec--loadbalancers))
+- `ollamas` (Attributes Map) (see [below for nested schema](#nestedatt--spec--ollamas))
 - `open_vpn_user_settings` (Attributes Map) (see [below for nested schema](#nestedatt--spec--open_vpn_user_settings))
 - `open_vpn_users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--open_vpn_users))
 - `open_vpns` (Attributes Map) (see [below for nested schema](#nestedatt--spec--open_vpns))
@@ -172,7 +173,6 @@ Optional:
 - `support_tickets` (Attributes Map) (see [below for nested schema](#nestedatt--spec--support_tickets))
 - `user_tokens` (Attributes Map) (see [below for nested schema](#nestedatt--spec--user_tokens))
 - `users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--users))
-- `victoria_metrics` (Attributes Map) (see [below for nested schema](#nestedatt--spec--victoria_metrics))
 - `vms` (Attributes Map) (see [below for nested schema](#nestedatt--spec--vms))
 - `volume_attachments` (Attributes Map) (see [below for nested schema](#nestedatt--spec--volume_attachments))
 - `volumes` (Attributes Map) (see [below for nested schema](#nestedatt--spec--volumes))
@@ -3066,6 +3066,101 @@ Optional:
 
 
 
+<a id="nestedatt--spec--ollamas"></a>
+### Nested Schema for `spec.ollamas`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--ollamas--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--ollamas--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--ollamas--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--ollamas--metadata"></a>
+### Nested Schema for `spec.ollamas.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--ollamas--spec"></a>
+### Nested Schema for `spec.ollamas.spec`
+
+Optional:
+
+- `floating_ip_id` (String)
+- `models` (List of String)
+- `root_password` (String, Sensitive)
+- `tier` (String)
+- `vm_offer_id` (String)
+- `vm_state` (String)
+- `volume_offer_id` (String)
+- `volume_size_gib` (Number)
+- `vpc_subnet_id` (String)
+
+
+<a id="nestedatt--spec--ollamas--status"></a>
+### Nested Schema for `spec.ollamas.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--ollamas--status--created_by_user))
+- `host` (String)
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--ollamas--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--ollamas--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--ollamas--status--created_by_user"></a>
+### Nested Schema for `spec.ollamas.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--ollamas--status--last_change_request"></a>
+### Nested Schema for `spec.ollamas.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--ollamas--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--ollamas--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.ollamas.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--ollamas--status--pricing"></a>
+### Nested Schema for `spec.ollamas.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
 <a id="nestedatt--spec--open_vpn_user_settings"></a>
 ### Nested Schema for `spec.open_vpn_user_settings`
 
@@ -5015,163 +5110,6 @@ Optional:
 
 <a id="nestedatt--spec--users--status--pricing"></a>
 ### Nested Schema for `spec.users.status.pricing`
-
-Optional:
-
-- `day` (Number)
-- `hour` (Number)
-- `month` (Number)
-
-
-
-
-<a id="nestedatt--spec--victoria_metrics"></a>
-### Nested Schema for `spec.victoria_metrics`
-
-Optional:
-
-- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--victoria_metrics--metadata))
-- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--victoria_metrics--spec))
-- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--victoria_metrics--status))
-
-Read-Only:
-
-- `id` (String)
-
-<a id="nestedatt--spec--victoria_metrics--metadata"></a>
-### Nested Schema for `spec.victoria_metrics.metadata`
-
-Optional:
-
-- `delete_protection` (Boolean)
-- `description` (String)
-- `folder_id` (String)
-- `id` (String)
-- `labels` (Map of String)
-- `name` (String)
-
-
-<a id="nestedatt--spec--victoria_metrics--spec"></a>
-### Nested Schema for `spec.victoria_metrics.spec`
-
-Optional:
-
-- `constraints` (Attributes List) (see [below for nested schema](#nestedatt--spec--victoria_metrics--spec--constraints))
-- `create_public_ipv4` (Boolean)
-- `create_public_ipv6` (Boolean)
-- `dns_record_name` (String)
-- `scrap_targets` (Attributes List) (see [below for nested schema](#nestedatt--spec--victoria_metrics--spec--scrap_targets))
-- `tier` (String)
-- `vpc_id` (String)
-
-<a id="nestedatt--spec--victoria_metrics--spec--constraints"></a>
-### Nested Schema for `spec.victoria_metrics.spec.constraints`
-
-Optional:
-
-- `cpu` (Attributes List) (see [below for nested schema](#nestedatt--spec--victoria_metrics--spec--constraints--cpu))
-- `disk` (Attributes List) (see [below for nested schema](#nestedatt--spec--victoria_metrics--spec--constraints--disk))
-- `memory` (Attributes List) (see [below for nested schema](#nestedatt--spec--victoria_metrics--spec--constraints--memory))
-- `offer` (Attributes List) (see [below for nested schema](#nestedatt--spec--victoria_metrics--spec--constraints--offer))
-
-<a id="nestedatt--spec--victoria_metrics--spec--constraints--cpu"></a>
-### Nested Schema for `spec.victoria_metrics.spec.constraints.cpu`
-
-Optional:
-
-- `architecture` (String)
-- `threads_count` (String)
-
-
-<a id="nestedatt--spec--victoria_metrics--spec--constraints--disk"></a>
-### Nested Schema for `spec.victoria_metrics.spec.constraints.disk`
-
-Optional:
-
-- `read_iops` (String)
-- `read_throughput` (String)
-- `size` (String)
-- `write_iops` (String)
-- `write_throughput` (String)
-
-
-<a id="nestedatt--spec--victoria_metrics--spec--constraints--memory"></a>
-### Nested Schema for `spec.victoria_metrics.spec.constraints.memory`
-
-Optional:
-
-- `memory` (String)
-
-
-<a id="nestedatt--spec--victoria_metrics--spec--constraints--offer"></a>
-### Nested Schema for `spec.victoria_metrics.spec.constraints.offer`
-
-Optional:
-
-- `offer_id` (String)
-
-
-
-<a id="nestedatt--spec--victoria_metrics--spec--scrap_targets"></a>
-### Nested Schema for `spec.victoria_metrics.spec.scrap_targets`
-
-Optional:
-
-- `job_name` (String)
-- `path` (String)
-- `port` (Number)
-- `target_ip_or_hostnames` (List of String)
-
-
-
-<a id="nestedatt--spec--victoria_metrics--status"></a>
-### Nested Schema for `spec.victoria_metrics.status`
-
-Optional:
-
-- `create_time` (String)
-- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--victoria_metrics--status--created_by_user))
-- `discovered_scrap_targets` (String)
-- `fqdn` (String)
-- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--victoria_metrics--status--last_change_request))
-- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--victoria_metrics--status--pricing))
-- `private_ipv4` (String)
-- `private_ipv6` (String)
-- `public_ipv4` (String)
-- `public_ipv6` (String)
-- `state` (String)
-
-<a id="nestedatt--spec--victoria_metrics--status--created_by_user"></a>
-### Nested Schema for `spec.victoria_metrics.status.created_by_user`
-
-Optional:
-
-- `id` (String)
-- `name` (String)
-
-
-<a id="nestedatt--spec--victoria_metrics--status--last_change_request"></a>
-### Nested Schema for `spec.victoria_metrics.status.last_change_request`
-
-Optional:
-
-- `create_time` (String)
-- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--victoria_metrics--status--last_change_request--created_by_user))
-- `error_message` (String)
-- `state` (String)
-
-<a id="nestedatt--spec--victoria_metrics--status--last_change_request--created_by_user"></a>
-### Nested Schema for `spec.victoria_metrics.status.last_change_request.created_by_user`
-
-Optional:
-
-- `id` (String)
-- `name` (String)
-
-
-
-<a id="nestedatt--spec--victoria_metrics--status--pricing"></a>
-### Nested Schema for `spec.victoria_metrics.status.pricing`
 
 Optional:
 

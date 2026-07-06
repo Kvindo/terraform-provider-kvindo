@@ -114,11 +114,11 @@ groups fields into the `metadata` / `spec` / `status` blocks.
 ### VPN
 - `kvindo_open_vpn` / `kvindo_open_vpn_user` / `kvindo_open_vpn_user_settings`
 
-### Monitoring
-- `kvindo_victoria_metrics`
-
 ### Dev Tools
 - `kvindo_gitlab` / `kvindo_gitlab_runner`
+
+### AI
+- `kvindo_ollama` — Ollama LLM server
 
 ### IAM / Organization
 - `kvindo_folder` — Resource namespace
@@ -147,7 +147,8 @@ returns. The most useful field per type:
 | `kvindo_vm` | `state`, `private_ipv4`, `public_ipv4`, `private_ipv6`, `public_ipv6`, `windows_administrator_password` |
 | `kvindo_floating_ip` | `state`, `public_ip_v4` |
 | `kvindo_loadbalancer`, `kvindo_vpc_peering_peer` | `state`, `public_ip_v4`, `public_ip_v6`, `private_ip_v4`, `private_ip_v6` |
-| `kvindo_victoria_metrics`, `kvindo_gitlab` | `state`, `public_ip_v4`, `public_ip_v6`, `private_ip_v4`, `private_ip_v6`, `fqdn` |
+| `kvindo_gitlab` | `state`, `public_ip_v4`, `public_ip_v6`, `private_ip_v4`, `private_ip_v6`, `fqdn` |
+| `kvindo_ollama` | `state`, `host` |
 | `kvindo_kubernetes` | `state`, `api_server_url` |
 | `kvindo_kubernetes_user` | `state`, `kubeconfig` |
 | `kvindo_open_vpn_user` | `state`, `config` |

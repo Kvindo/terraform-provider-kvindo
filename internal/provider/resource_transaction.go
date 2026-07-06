@@ -81,8 +81,8 @@ type TransactionSpecModel struct {
 	BillingAccounts                                types.Map  `tfsdk:"billing_accounts"`
 	Quotas                                         types.Map  `tfsdk:"quotas"`
 	QuotaChangeRequests                            types.Map  `tfsdk:"quota_change_requests"`
-	VictoriaMetrics                                types.Map  `tfsdk:"victoria_metrics"`
 	Gitlabs                                        types.Map  `tfsdk:"gitlabs"`
+	Ollamas                                        types.Map  `tfsdk:"ollamas"`
 	SupportTicketCommentAttachments                types.Map  `tfsdk:"support_ticket_comment_attachments"`
 	Images                                         types.Map  `tfsdk:"images"`
 	Vms                                            types.Map  `tfsdk:"vms"`

@@ -399,18 +399,18 @@ var txnSubs = []txnSub{
 		populate: txnPop[QuotaChangeRequestResourceModel](populateQuotaChangeRequestState, QuotaChangeRequestResourceSchemaAttrs),
 	},
 	{
-		tfKey: "victoria_metrics", apiKey: "victoriaMetricss", gate: "",
-		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.VictoriaMetrics },
-		attrs:    VictoriaMetricsResourceSchemaAttrs,
-		build:    txnBuild(buildVictoriaMetricsRequestMap),
-		populate: txnPop[VictoriaMetricsResourceModel](populateVictoriaMetricsState, VictoriaMetricsResourceSchemaAttrs),
-	},
-	{
 		tfKey: "gitlabs", apiKey: "gitlabs", gate: "",
 		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.Gitlabs },
 		attrs:    GitlabResourceSchemaAttrs,
 		build:    txnBuild(buildGitlabRequestMap),
 		populate: txnPop[GitlabResourceModel](populateGitlabState, GitlabResourceSchemaAttrs),
+	},
+	{
+		tfKey: "ollamas", apiKey: "ollamas", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.Ollamas },
+		attrs:    OllamaResourceSchemaAttrs,
+		build:    txnBuild(buildOllamaRequestMap),
+		populate: txnPop[OllamaResourceModel](populateOllamaState, OllamaResourceSchemaAttrs),
 	},
 	{
 		tfKey: "support_ticket_comment_attachments", apiKey: "supportTicketCommentAttachments", gate: "",
