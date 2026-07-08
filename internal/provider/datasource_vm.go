@@ -50,7 +50,13 @@ func (d *VmDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, res
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}, "windows_administrator_password": schema.StringAttribute{Computed: true, Sensitive: true}}),
+		"status": commonInfoDatasourceSchema(map[string]schema.Attribute{
+			"bootstrap_command": schema.SingleNestedAttribute{Computed: true, Attributes: map[string]schema.Attribute{
+				"return_code": schema.Int64Attribute{Computed: true},
+				"output":      schema.StringAttribute{Computed: true},
+				"duration_ms": schema.Int64Attribute{Computed: true},
+			}},
+			"private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}, "windows_administrator_password": schema.StringAttribute{Computed: true, Sensitive: true}}),
 	}}
 }
 
@@ -117,6 +123,7 @@ func (d *VmDataSource) Read(ctx context.Context, req datasource.ReadRequest, res
 	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
 	state.Status = buildInfoObj(apiData,
 		map[string]attr.Type{
+			"bootstrap_command":              types.ObjectType{AttrTypes: vmBootstrapCommandInfoAttrTypes},
 			"private_ipv4":                   types.StringType,
 			"private_ipv6":                   types.StringType,
 			"public_ipv4":                    types.StringType,
@@ -124,6 +131,7 @@ func (d *VmDataSource) Read(ctx context.Context, req datasource.ReadRequest, res
 			"windows_administrator_password": types.StringType,
 		},
 		map[string]attr.Value{
+			"bootstrap_command":              buildVmBootstrapCommandInfoObj(apiData),
 			"private_ipv4":                   getStringFromInfo(apiData, "privateIpv4"),
 			"private_ipv6":                   getStringFromInfo(apiData, "privateIpv6"),
 			"public_ipv4":                    getStringFromInfo(apiData, "publicIpv4"),

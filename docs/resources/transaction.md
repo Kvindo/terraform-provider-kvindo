@@ -5181,8 +5181,6 @@ Optional:
 Optional:
 
 - `command` (String)
-- `success_return_code` (Number)
-- `timeout_seconds` (Number)
 
 
 
@@ -5191,6 +5189,7 @@ Optional:
 
 Optional:
 
+- `bootstrap_command` (Attributes) (see [below for nested schema](#nestedatt--spec--vms--status--bootstrap_command))
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--vms--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--vms--status--last_change_request))
@@ -5201,6 +5200,16 @@ Optional:
 - `public_ipv6` (String)
 - `state` (String)
 - `windows_administrator_password` (String, Sensitive)
+
+<a id="nestedatt--spec--vms--status--bootstrap_command"></a>
+### Nested Schema for `spec.vms.status.bootstrap_command`
+
+Optional:
+
+- `duration_ms` (Number)
+- `output` (String)
+- `return_code` (Number)
+
 
 <a id="nestedatt--spec--vms--status--created_by_user"></a>
 ### Nested Schema for `spec.vms.status.created_by_user`

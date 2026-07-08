@@ -127,6 +127,48 @@ func TestBuildBootVolumeAttachmentPlan(t *testing.T) {
 	}
 }
 
+// bootstrap_command dropped success_return_code/timeout_seconds: neither field was ever enforced
+// server-side, and the VM now reports its actual execution result via status.bootstrap_command_*.
+func TestVmSpec_BootstrapCommandOnlyHasCommandField(t *testing.T) {
+	spec := vmSpecSchema(t)
+	bc, ok := spec["bootstrap_command"].(schema.SingleNestedAttribute)
+	if !ok {
+		t.Fatal("bootstrap_command is not a SingleNestedAttribute")
+	}
+	if _, ok := bc.Attributes["command"]; !ok {
+		t.Error("bootstrap_command.command should be present")
+	}
+	for _, gone := range []string{"success_return_code", "timeout_seconds"} {
+		if _, ok := bc.Attributes[gone]; ok {
+			t.Errorf("bootstrap_command.%s was removed and must not appear", gone)
+		}
+	}
+}
+
+func TestVmStatus_HasBootstrapCommandResultObject(t *testing.T) {
+	r := NewVmResource().(*VmResource)
+	var resp resource.SchemaResponse
+	r.Schema(context.Background(), resource.SchemaRequest{}, &resp)
+
+	status, ok := resp.Schema.Attributes["status"].(schema.SingleNestedAttribute)
+	if !ok {
+		t.Fatal("status is not a SingleNestedAttribute")
+	}
+	bc, ok := status.Attributes["bootstrap_command"].(schema.SingleNestedAttribute)
+	if !ok {
+		t.Fatal("status.bootstrap_command is not a SingleNestedAttribute")
+	}
+	if _, ok := bc.Attributes["return_code"].(schema.Int64Attribute); !ok {
+		t.Error("status.bootstrap_command.return_code not found or wrong type")
+	}
+	if _, ok := bc.Attributes["output"].(schema.StringAttribute); !ok {
+		t.Error("status.bootstrap_command.output not found or wrong type")
+	}
+	if _, ok := bc.Attributes["duration_ms"].(schema.Int64Attribute); !ok {
+		t.Error("status.bootstrap_command.duration_ms not found or wrong type")
+	}
+}
+
 func TestVmStatus_WindowsPasswordSensitive(t *testing.T) {
 	r := NewVmResource().(*VmResource)
 	var resp resource.SchemaResponse

@@ -74,8 +74,6 @@ Read-Only:
 Read-Only:
 
 - `command` (String)
-- `success_return_code` (Number)
-- `timeout_seconds` (Number)
 
 
 
@@ -84,6 +82,7 @@ Read-Only:
 
 Read-Only:
 
+- `bootstrap_command` (Attributes) (see [below for nested schema](#nestedatt--status--bootstrap_command))
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--status--last_change_request))
@@ -94,6 +93,16 @@ Read-Only:
 - `public_ipv6` (String)
 - `state` (String)
 - `windows_administrator_password` (String, Sensitive)
+
+<a id="nestedatt--status--bootstrap_command"></a>
+### Nested Schema for `status.bootstrap_command`
+
+Read-Only:
+
+- `duration_ms` (Number)
+- `output` (String)
+- `return_code` (Number)
+
 
 <a id="nestedatt--status--created_by_user"></a>
 ### Nested Schema for `status.created_by_user`

@@ -17,7 +17,28 @@ import (
 
 var _ = fmt.Sprintf
 
-var vmBootstrapCommandObjFields = []objField{{TF: "command", API: "command", Kind: "string"}, {TF: "success_return_code", API: "successReturnCode", Kind: "int64"}, {TF: "timeout_seconds", API: "timeoutSeconds", Kind: "int64"}}
+var vmBootstrapCommandObjFields = []objField{{TF: "command", API: "command", Kind: "string"}}
+
+// vmBootstrapCommandInfoAttrTypes/buildVmBootstrapCommandInfoObj mirror buildUserInfoObj/buildPricingObj
+// in resource_common.go: a nested status object, null when the VM has no bootstrap_command set (the
+// C# API omits status.bootstrapCommand entirely in that case rather than sending null-valued fields).
+var vmBootstrapCommandInfoAttrTypes = map[string]attr.Type{
+	"return_code": types.Int64Type, "output": types.StringType, "duration_ms": types.Int64Type,
+}
+
+func buildVmBootstrapCommandInfoObj(data map[string]interface{}) types.Object {
+	raw, ok := infoFieldRaw(data, "bootstrapCommand")
+	m, mapOk := raw.(map[string]interface{})
+	if !ok || !mapOk {
+		return types.ObjectNull(vmBootstrapCommandInfoAttrTypes)
+	}
+	obj, _ := types.ObjectValue(vmBootstrapCommandInfoAttrTypes, map[string]attr.Value{
+		"return_code": getInt64(m, "returnCode"),
+		"output":      getString(m, "output"),
+		"duration_ms": getInt64(m, "durationMs"),
+	})
+	return obj
+}
 
 // boot_volume_attachment has no backend/swagger counterpart: the Kvindo API has no such field on
 // /api/v1/vm. It is a purely Terraform-side convenience that creates a kvindo_volume_attachment
@@ -89,7 +110,13 @@ func VmResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(map[string]schema.Attribute{"private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}, "windows_administrator_password": schema.StringAttribute{Computed: true, Sensitive: true}}),
+		"status": commonInfoSchema(map[string]schema.Attribute{
+			"bootstrap_command": schema.SingleNestedAttribute{Computed: true, Attributes: map[string]schema.Attribute{
+				"return_code": schema.Int64Attribute{Computed: true},
+				"output":      schema.StringAttribute{Computed: true},
+				"duration_ms": schema.Int64Attribute{Computed: true},
+			}},
+			"private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}, "windows_administrator_password": schema.StringAttribute{Computed: true, Sensitive: true}}),
 	}
 }
 
@@ -175,6 +202,7 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
 	state.Status = buildInfoObj(data,
 		map[string]attr.Type{
+			"bootstrap_command":              types.ObjectType{AttrTypes: vmBootstrapCommandInfoAttrTypes},
 			"private_ipv4":                   types.StringType,
 			"private_ipv6":                   types.StringType,
 			"public_ipv4":                    types.StringType,
@@ -182,6 +210,7 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 			"windows_administrator_password": types.StringType,
 		},
 		map[string]attr.Value{
+			"bootstrap_command":              buildVmBootstrapCommandInfoObj(data),
 			"private_ipv4":                   getStringFromInfo(data, "privateIpv4"),
 			"private_ipv6":                   getStringFromInfo(data, "privateIpv6"),
 			"public_ipv4":                    getStringFromInfo(data, "publicIpv4"),
