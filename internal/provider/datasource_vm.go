@@ -37,7 +37,7 @@ func (d *VmDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, res
 		"image_id":                       schema.StringAttribute{Computed: true},
 		"image_schedule_ids":             schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"offer_id":                       schema.StringAttribute{Computed: true},
-		"on_off_maintenance_action_ids":  schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"on_off_schedule_ids":            schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"os_type":                        schema.StringAttribute{Computed: true},
 		"recurrent_command_maintenance_action_ids": schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"security_group_ids":                       schema.ListAttribute{Computed: true, ElementType: types.StringType},
@@ -114,7 +114,7 @@ func (d *VmDataSource) Read(ctx context.Context, req datasource.ReadRequest, res
 	state.Spec.ImageId = getString(spec, "imageId")
 	state.Spec.ImageScheduleIds = getStringList(ctx, spec, "imageScheduleIds")
 	state.Spec.OfferId = getString(spec, "offerId")
-	state.Spec.OnOffMaintenanceActionIds = getStringList(ctx, spec, "onOffMaintenanceActionIds")
+	state.Spec.OnOffScheduleIds = getStringList(ctx, spec, "onOffScheduleIds")
 	state.Spec.OsType = getString(spec, "osType")
 	state.Spec.RecurrentCommandMaintenanceActionIds = getStringList(ctx, spec, "recurrentCommandMaintenanceActionIds")
 	state.Spec.SecurityGroupIds = getStringList(ctx, spec, "securityGroupIds")

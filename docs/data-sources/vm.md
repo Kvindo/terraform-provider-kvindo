@@ -60,7 +60,7 @@ Read-Only:
 - `image_id` (String)
 - `image_schedule_ids` (List of String)
 - `offer_id` (String)
-- `on_off_maintenance_action_ids` (List of String)
+- `on_off_schedule_ids` (List of String)
 - `os_type` (String)
 - `recurrent_command_maintenance_action_ids` (List of String)
 - `security_group_ids` (List of String)

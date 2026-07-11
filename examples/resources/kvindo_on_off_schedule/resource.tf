@@ -18,8 +18,8 @@ resource "kvindo_vpc_subnet" "main" {
 }
 
 # A schedule is a standalone resource; attach it to one or more VMs via the
-# VM's on_off_maintenance_action_ids, not the other way around.
-resource "kvindo_vm_on_off_maintenance_action" "evening_stop" {
+# VM's on_off_schedule_ids, not the other way around.
+resource "kvindo_on_off_schedule" "evening_stop" {
   metadata = {
     name = "evening-stop"
   }
@@ -36,9 +36,9 @@ resource "kvindo_vm" "main" {
     name = "my-vm"
   }
   spec = {
-    offer_id                     = "01vm0ffr123456789012345"
-    image_id                     = "01img123456789012345678"
-    vpc_subnet_id                = kvindo_vpc_subnet.main.id
-    on_off_maintenance_action_ids = [kvindo_vm_on_off_maintenance_action.evening_stop.id]
+    offer_id            = "01vm0ffr123456789012345"
+    image_id            = "01img123456789012345678"
+    vpc_subnet_id       = kvindo_vpc_subnet.main.id
+    on_off_schedule_ids = [kvindo_on_off_schedule.evening_stop.id]
   }
 }

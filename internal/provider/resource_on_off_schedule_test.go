@@ -9,9 +9,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func vmOnOffMaintenanceActionSpecSchema(t *testing.T) map[string]schema.Attribute {
+func onOffScheduleSpecSchema(t *testing.T) map[string]schema.Attribute {
 	t.Helper()
-	r := NewVmOnOffMaintenanceActionResource().(*VmOnOffMaintenanceActionResource)
+	r := NewOnOffScheduleResource().(*OnOffScheduleResource)
 	var resp resource.SchemaResponse
 	r.Schema(context.Background(), resource.SchemaRequest{}, &resp)
 	spec, ok := resp.Schema.Attributes["spec"].(schema.SingleNestedAttribute)
@@ -21,8 +21,8 @@ func vmOnOffMaintenanceActionSpecSchema(t *testing.T) map[string]schema.Attribut
 	return spec.Attributes
 }
 
-func TestVmOnOffMaintenanceActionSpec_AttributeNames(t *testing.T) {
-	spec := vmOnOffMaintenanceActionSpecSchema(t)
+func TestOnOffScheduleSpec_AttributeNames(t *testing.T) {
+	spec := onOffScheduleSpecSchema(t)
 	for _, name := range []string{"enabled", "schedule", "schedule_format", "target_state"} {
 		if _, ok := spec[name]; !ok {
 			t.Errorf("expected spec attribute %q", name)
@@ -30,11 +30,11 @@ func TestVmOnOffMaintenanceActionSpec_AttributeNames(t *testing.T) {
 	}
 }
 
-func TestBuildVmOnOffMaintenanceActionRequestMap(t *testing.T) {
-	plan := VmOnOffMaintenanceActionResourceModel{
+func TestBuildOnOffScheduleRequestMap(t *testing.T) {
+	plan := OnOffScheduleResourceModel{
 		ID:       types.StringValue("01abc"),
 		Metadata: metadataModel{Name: types.StringValue("evening-stop"), Description: types.StringNull(), FolderID: types.StringNull(), Labels: types.MapNull(types.StringType)},
-		Spec: VmOnOffMaintenanceActionSpecModel{
+		Spec: OnOffScheduleSpecModel{
 			Enabled:        types.BoolValue(true),
 			Schedule:       types.StringValue("0 20 * * *"),
 			ScheduleFormat: types.StringValue("cron"),
@@ -42,7 +42,7 @@ func TestBuildVmOnOffMaintenanceActionRequestMap(t *testing.T) {
 		},
 	}
 
-	m := buildVmOnOffMaintenanceActionRequestMap(context.Background(), plan)
+	m := buildOnOffScheduleRequestMap(context.Background(), plan)
 	spec, ok := m["spec"].(map[string]interface{})
 	if !ok {
 		t.Fatal("expected 'spec' key with map value in request")
@@ -61,16 +61,16 @@ func TestBuildVmOnOffMaintenanceActionRequestMap(t *testing.T) {
 	}
 }
 
-func TestPopulateVmOnOffMaintenanceActionState(t *testing.T) {
+func TestPopulateOnOffScheduleState(t *testing.T) {
 	apiData := map[string]interface{}{
 		"metadata": map[string]interface{}{"id": "01abc", "name": "evening-stop"},
 		"spec":     map[string]interface{}{"enabled": true, "schedule": "0 20 * * *", "scheduleFormat": "cron", "targetState": "stopped"},
 		"status":   map[string]interface{}{"state": "stable"},
 	}
 
-	var state VmOnOffMaintenanceActionResourceModel
-	if err := populateVmOnOffMaintenanceActionState(context.Background(), apiData, &state); err != nil {
-		t.Fatalf("populateVmOnOffMaintenanceActionState returned error: %v", err)
+	var state OnOffScheduleResourceModel
+	if err := populateOnOffScheduleState(context.Background(), apiData, &state); err != nil {
+		t.Fatalf("populateOnOffScheduleState returned error: %v", err)
 	}
 	if state.Spec.TargetState.ValueString() != "stopped" {
 		t.Errorf("expected spec.target_state=stopped, got %q", state.Spec.TargetState.ValueString())

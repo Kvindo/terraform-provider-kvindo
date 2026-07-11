@@ -57,7 +57,7 @@ type VmSpecModel struct {
 	ImageId                              types.String `tfsdk:"image_id"`
 	ImageScheduleIds                     types.List   `tfsdk:"image_schedule_ids"`
 	OfferId                              types.String `tfsdk:"offer_id"`
-	OnOffMaintenanceActionIds            types.List   `tfsdk:"on_off_maintenance_action_ids"`
+	OnOffScheduleIds                     types.List   `tfsdk:"on_off_schedule_ids"`
 	OsType                               types.String `tfsdk:"os_type"`
 	RecurrentCommandMaintenanceActionIds types.List   `tfsdk:"recurrent_command_maintenance_action_ids"`
 	SecurityGroupIds                     types.List   `tfsdk:"security_group_ids"`
@@ -98,7 +98,7 @@ func VmResourceSchemaAttrs() map[string]schema.Attribute {
 		"image_id":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"image_schedule_ids":             schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
 		"offer_id":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"on_off_maintenance_action_ids":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"on_off_schedule_ids":            schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
 		"os_type":                        schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"recurrent_command_maintenance_action_ids": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
 		"security_group_ids":                       schema.ListAttribute{Optional: true, ElementType: types.StringType},
@@ -157,8 +157,8 @@ func buildVmRequestMap(ctx context.Context, plan VmResourceModel) map[string]int
 	if !plan.Spec.OfferId.IsNull() && !plan.Spec.OfferId.IsUnknown() {
 		spec["offerId"] = plan.Spec.OfferId.ValueString()
 	}
-	if !plan.Spec.OnOffMaintenanceActionIds.IsNull() && !plan.Spec.OnOffMaintenanceActionIds.IsUnknown() {
-		spec["onOffMaintenanceActionIds"] = stringListToInterface(ctx, plan.Spec.OnOffMaintenanceActionIds)
+	if !plan.Spec.OnOffScheduleIds.IsNull() && !plan.Spec.OnOffScheduleIds.IsUnknown() {
+		spec["onOffScheduleIds"] = stringListToInterface(ctx, plan.Spec.OnOffScheduleIds)
 	}
 	if !plan.Spec.OsType.IsNull() && !plan.Spec.OsType.IsUnknown() {
 		spec["osType"] = plan.Spec.OsType.ValueString()
@@ -193,7 +193,7 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 	state.Spec.ImageId = getString(spec, "imageId")
 	state.Spec.ImageScheduleIds = getStringList(ctx, spec, "imageScheduleIds")
 	state.Spec.OfferId = getString(spec, "offerId")
-	state.Spec.OnOffMaintenanceActionIds = getStringList(ctx, spec, "onOffMaintenanceActionIds")
+	state.Spec.OnOffScheduleIds = getStringList(ctx, spec, "onOffScheduleIds")
 	state.Spec.OsType = getString(spec, "osType")
 	state.Spec.RecurrentCommandMaintenanceActionIds = getStringList(ctx, spec, "recurrentCommandMaintenanceActionIds")
 	state.Spec.SecurityGroupIds = getStringList(ctx, spec, "securityGroupIds")

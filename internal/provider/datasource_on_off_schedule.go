@@ -12,25 +12,23 @@ import (
 
 var _ = fmt.Sprintf
 
-type VmOnOffMaintenanceActionDataSourceModel struct {
-	ID       types.String                       `tfsdk:"id"`
-	Name     types.String                       `tfsdk:"name"`
-	Metadata *metadataModel                     `tfsdk:"metadata"`
-	Spec     *VmOnOffMaintenanceActionSpecModel `tfsdk:"spec"`
-	Status   types.Object                       `tfsdk:"status"`
+type OnOffScheduleDataSourceModel struct {
+	ID       types.String            `tfsdk:"id"`
+	Name     types.String            `tfsdk:"name"`
+	Metadata *metadataModel          `tfsdk:"metadata"`
+	Spec     *OnOffScheduleSpecModel `tfsdk:"spec"`
+	Status   types.Object            `tfsdk:"status"`
 }
 
-type VmOnOffMaintenanceActionDataSource struct{ client *client.Client }
+type OnOffScheduleDataSource struct{ client *client.Client }
 
-func NewVmOnOffMaintenanceActionDataSource() datasource.DataSource {
-	return &VmOnOffMaintenanceActionDataSource{}
+func NewOnOffScheduleDataSource() datasource.DataSource { return &OnOffScheduleDataSource{} }
+
+func (d *OnOffScheduleDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_on_off_schedule"
 }
 
-func (d *VmOnOffMaintenanceActionDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_vm_on_off_maintenance_action"
-}
-
-func (d *VmOnOffMaintenanceActionDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+func (d *OnOffScheduleDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	specAttrs := map[string]schema.Attribute{
 		"enabled":         schema.BoolAttribute{Computed: true},
 		"schedule":        schema.StringAttribute{Computed: true},
@@ -46,7 +44,7 @@ func (d *VmOnOffMaintenanceActionDataSource) Schema(_ context.Context, _ datasou
 	}}
 }
 
-func (d *VmOnOffMaintenanceActionDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+func (d *OnOffScheduleDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
@@ -58,8 +56,8 @@ func (d *VmOnOffMaintenanceActionDataSource) Configure(_ context.Context, req da
 	d.client = pd.Client
 }
 
-func (d *VmOnOffMaintenanceActionDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var state VmOnOffMaintenanceActionDataSourceModel
+func (d *OnOffScheduleDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var state OnOffScheduleDataSourceModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -73,9 +71,9 @@ func (d *VmOnOffMaintenanceActionDataSource) Read(ctx context.Context, req datas
 		return
 	}
 	if idSet {
-		apiData, err = d.client.Get(ctx, "/api/v1/vm-on-off-maintenance-action", state.ID.ValueString())
+		apiData, err = d.client.Get(ctx, "/api/v1/on-off-schedule", state.ID.ValueString())
 	} else {
-		apiData, err = d.client.GetByName(ctx, "/api/v1/vm-on-off-maintenance-action", state.Name.ValueString())
+		apiData, err = d.client.GetByName(ctx, "/api/v1/on-off-schedule", state.Name.ValueString())
 	}
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -92,7 +90,7 @@ func (d *VmOnOffMaintenanceActionDataSource) Read(ctx context.Context, req datas
 	}
 	state.ID = state.Metadata.ID
 	state.Name = state.Metadata.Name
-	state.Spec = &VmOnOffMaintenanceActionSpecModel{}
+	state.Spec = &OnOffScheduleSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.Enabled = getBool(spec, "enabled")
 	state.Spec.Schedule = getString(spec, "schedule")

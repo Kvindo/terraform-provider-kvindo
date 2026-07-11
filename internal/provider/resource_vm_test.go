@@ -221,7 +221,7 @@ func baseVmPlan() VmResourceModel {
 			SshKeyIds:                            types.ListNull(types.StringType),
 			ImageScheduleIds:                     types.ListNull(types.StringType),
 			RecurrentCommandMaintenanceActionIds: types.ListNull(types.StringType),
-			OnOffMaintenanceActionIds:            types.ListNull(types.StringType),
+			OnOffScheduleIds:                     types.ListNull(types.StringType),
 			BootstrapCommand:                     types.ObjectNull(objAttrTypes(vmBootstrapCommandObjFields)),
 		},
 	}
