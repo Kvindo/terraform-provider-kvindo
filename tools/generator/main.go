@@ -93,7 +93,6 @@ type ResourceDef struct {
 var skipResources = map[string]bool{
 	"etcd": true, "etcd_node_group": true, "grafana": true, "nat_gateway": true,
 	"postgresql": true, "postgresql_node_group": true, "victoria_metrics": true,
-	"vm_command_schedule": true,
 	"transaction": true,
 }
 
