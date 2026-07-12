@@ -50,20 +50,20 @@ func buildVmBootstrapCommandInfoObj(data map[string]interface{}) types.Object {
 var bootVolumeAttachmentAttrTypes = map[string]attr.Type{"volume_id": types.StringType, "attachment_id": types.StringType}
 
 type VmSpecModel struct {
-	BootstrapCommand                     types.Object `tfsdk:"bootstrap_command"`
-	BootVolumeAttachment                 types.Object `tfsdk:"boot_volume_attachment"`
-	FloatingIpId                         types.String `tfsdk:"floating_ip_id"`
-	ImageBootVolumeDeviceIndex           types.Int64  `tfsdk:"image_boot_volume_device_index"`
-	ImageId                              types.String `tfsdk:"image_id"`
-	ImageScheduleIds                     types.List   `tfsdk:"image_schedule_ids"`
-	OfferId                              types.String `tfsdk:"offer_id"`
-	OnOffScheduleIds                     types.List   `tfsdk:"on_off_schedule_ids"`
-	OsType                               types.String `tfsdk:"os_type"`
-	RecurrentCommandMaintenanceActionIds types.List   `tfsdk:"recurrent_command_maintenance_action_ids"`
-	SecurityGroupIds                     types.List   `tfsdk:"security_group_ids"`
-	SshKeyIds                            types.List   `tfsdk:"ssh_key_ids"`
-	VmState                              types.String `tfsdk:"vm_state"`
-	VpcSubnetId                          types.String `tfsdk:"vpc_subnet_id"`
+	BootstrapCommand           types.Object `tfsdk:"bootstrap_command"`
+	BootVolumeAttachment       types.Object `tfsdk:"boot_volume_attachment"`
+	FloatingIpId               types.String `tfsdk:"floating_ip_id"`
+	ImageBootVolumeDeviceIndex types.Int64  `tfsdk:"image_boot_volume_device_index"`
+	ImageId                    types.String `tfsdk:"image_id"`
+	ImageScheduleIds           types.List   `tfsdk:"image_schedule_ids"`
+	OfferId                    types.String `tfsdk:"offer_id"`
+	OnOffScheduleIds           types.List   `tfsdk:"on_off_schedule_ids"`
+	OsType                     types.String `tfsdk:"os_type"`
+	CommandScheduleIds         types.List   `tfsdk:"command_schedule_ids"`
+	SecurityGroupIds           types.List   `tfsdk:"security_group_ids"`
+	SshKeyIds                  types.List   `tfsdk:"ssh_key_ids"`
+	VmState                    types.String `tfsdk:"vm_state"`
+	VpcSubnetId                types.String `tfsdk:"vpc_subnet_id"`
 }
 
 type VmResourceModel struct {
@@ -100,11 +100,11 @@ func VmResourceSchemaAttrs() map[string]schema.Attribute {
 		"offer_id":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"on_off_schedule_ids":            schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
 		"os_type":                        schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"recurrent_command_maintenance_action_ids": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"security_group_ids":                       schema.ListAttribute{Optional: true, ElementType: types.StringType},
-		"ssh_key_ids":                              schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"vm_state":                                 schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"vpc_subnet_id":                            schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"command_schedule_ids":           schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"security_group_ids":             schema.ListAttribute{Optional: true, ElementType: types.StringType},
+		"ssh_key_ids":                    schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"vm_state":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"vpc_subnet_id":                  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -163,8 +163,8 @@ func buildVmRequestMap(ctx context.Context, plan VmResourceModel) map[string]int
 	if !plan.Spec.OsType.IsNull() && !plan.Spec.OsType.IsUnknown() {
 		spec["osType"] = plan.Spec.OsType.ValueString()
 	}
-	if !plan.Spec.RecurrentCommandMaintenanceActionIds.IsNull() && !plan.Spec.RecurrentCommandMaintenanceActionIds.IsUnknown() {
-		spec["recurrentCommandMaintenanceActionIds"] = stringListToInterface(ctx, plan.Spec.RecurrentCommandMaintenanceActionIds)
+	if !plan.Spec.CommandScheduleIds.IsNull() && !plan.Spec.CommandScheduleIds.IsUnknown() {
+		spec["commandScheduleIds"] = stringListToInterface(ctx, plan.Spec.CommandScheduleIds)
 	}
 	if !plan.Spec.SecurityGroupIds.IsNull() && !plan.Spec.SecurityGroupIds.IsUnknown() {
 		spec["securityGroupIds"] = stringListToInterface(ctx, plan.Spec.SecurityGroupIds)
@@ -195,7 +195,7 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 	state.Spec.OfferId = getString(spec, "offerId")
 	state.Spec.OnOffScheduleIds = getStringList(ctx, spec, "onOffScheduleIds")
 	state.Spec.OsType = getString(spec, "osType")
-	state.Spec.RecurrentCommandMaintenanceActionIds = getStringList(ctx, spec, "recurrentCommandMaintenanceActionIds")
+	state.Spec.CommandScheduleIds = getStringList(ctx, spec, "commandScheduleIds")
 	state.Spec.SecurityGroupIds = getStringList(ctx, spec, "securityGroupIds")
 	state.Spec.SshKeyIds = getStringList(ctx, spec, "sshKeyIds")
 	state.Spec.VmState = getString(spec, "vmState")

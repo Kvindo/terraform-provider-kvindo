@@ -55,6 +55,7 @@ Read-Only:
 Read-Only:
 
 - `bootstrap_command` (Attributes) (see [below for nested schema](#nestedatt--spec--bootstrap_command))
+- `command_schedule_ids` (List of String)
 - `floating_ip_id` (String)
 - `image_boot_volume_device_index` (Number)
 - `image_id` (String)
@@ -62,7 +63,6 @@ Read-Only:
 - `offer_id` (String)
 - `on_off_schedule_ids` (List of String)
 - `os_type` (String)
-- `recurrent_command_maintenance_action_ids` (List of String)
 - `security_group_ids` (List of String)
 - `ssh_key_ids` (List of String)
 - `vm_state` (String)

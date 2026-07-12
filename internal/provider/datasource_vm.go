@@ -39,11 +39,11 @@ func (d *VmDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, res
 		"offer_id":                       schema.StringAttribute{Computed: true},
 		"on_off_schedule_ids":            schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"os_type":                        schema.StringAttribute{Computed: true},
-		"recurrent_command_maintenance_action_ids": schema.ListAttribute{Computed: true, ElementType: types.StringType},
-		"security_group_ids":                       schema.ListAttribute{Computed: true, ElementType: types.StringType},
-		"ssh_key_ids":                              schema.ListAttribute{Computed: true, ElementType: types.StringType},
-		"vm_state":                                 schema.StringAttribute{Computed: true},
-		"vpc_subnet_id":                            schema.StringAttribute{Computed: true},
+		"command_schedule_ids":           schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"security_group_ids":             schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"ssh_key_ids":                    schema.ListAttribute{Computed: true, ElementType: types.StringType},
+		"vm_state":                       schema.StringAttribute{Computed: true},
+		"vpc_subnet_id":                  schema.StringAttribute{Computed: true},
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Optional: true, Computed: true, Description: "ID of the resource to look up. Set exactly one of `id` or `name`."},
@@ -116,7 +116,7 @@ func (d *VmDataSource) Read(ctx context.Context, req datasource.ReadRequest, res
 	state.Spec.OfferId = getString(spec, "offerId")
 	state.Spec.OnOffScheduleIds = getStringList(ctx, spec, "onOffScheduleIds")
 	state.Spec.OsType = getString(spec, "osType")
-	state.Spec.RecurrentCommandMaintenanceActionIds = getStringList(ctx, spec, "recurrentCommandMaintenanceActionIds")
+	state.Spec.CommandScheduleIds = getStringList(ctx, spec, "commandScheduleIds")
 	state.Spec.SecurityGroupIds = getStringList(ctx, spec, "securityGroupIds")
 	state.Spec.SshKeyIds = getStringList(ctx, spec, "sshKeyIds")
 	state.Spec.VmState = getString(spec, "vmState")

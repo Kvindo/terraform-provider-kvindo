@@ -216,13 +216,13 @@ func baseVmPlan() VmResourceModel {
 		ID:       types.StringValue("01vm"),
 		Metadata: metadataModel{Name: types.StringValue("my-vm"), Description: types.StringNull(), FolderID: types.StringNull(), Labels: types.MapNull(types.StringType)},
 		Spec: VmSpecModel{
-			SecurityGroupIds:                     types.ListNull(types.StringType),
-			OsType:                               types.StringNull(),
-			SshKeyIds:                            types.ListNull(types.StringType),
-			ImageScheduleIds:                     types.ListNull(types.StringType),
-			RecurrentCommandMaintenanceActionIds: types.ListNull(types.StringType),
-			OnOffScheduleIds:                     types.ListNull(types.StringType),
-			BootstrapCommand:                     types.ObjectNull(objAttrTypes(vmBootstrapCommandObjFields)),
+			SecurityGroupIds:   types.ListNull(types.StringType),
+			OsType:             types.StringNull(),
+			SshKeyIds:          types.ListNull(types.StringType),
+			ImageScheduleIds:   types.ListNull(types.StringType),
+			CommandScheduleIds: types.ListNull(types.StringType),
+			OnOffScheduleIds:   types.ListNull(types.StringType),
+			BootstrapCommand:   types.ObjectNull(objAttrTypes(vmBootstrapCommandObjFields)),
 		},
 	}
 }
