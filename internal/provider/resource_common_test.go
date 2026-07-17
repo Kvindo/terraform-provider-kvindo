@@ -5,9 +5,95 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
+
+// ---- resourceOtherwiseChanging ----
+
+var resourceOtherwiseChangingObjType = tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+	"id":     tftypes.String,
+	"spec":   tftypes.String,
+	"status": tftypes.String,
+}}
+
+func TestResourceOtherwiseChanging_IdleReplan_NotChanging(t *testing.T) {
+	state := tftypes.NewValue(resourceOtherwiseChangingObjType, map[string]tftypes.Value{
+		"id":     tftypes.NewValue(tftypes.String, "abc"),
+		"spec":   tftypes.NewValue(tftypes.String, "same"),
+		"status": tftypes.NewValue(tftypes.String, "old-status"),
+	})
+	// Own attribute ("status") always differs/unknown on replan - that alone must not count.
+	plan := tftypes.NewValue(resourceOtherwiseChangingObjType, map[string]tftypes.Value{
+		"id":     tftypes.NewValue(tftypes.String, "abc"),
+		"spec":   tftypes.NewValue(tftypes.String, "same"),
+		"status": tftypes.NewValue(tftypes.String, nil),
+	})
+	if resourceOtherwiseChanging(path.Root("status"), plan, state) {
+		t.Error("expected not-changing for an idle re-plan where only the own attribute differs")
+	}
+}
+
+func TestResourceOtherwiseChanging_SpecUpdate_IsChanging(t *testing.T) {
+	// Regression test for the kvindo_s3_bucket "Provider produced inconsistent result after
+	// apply" bug: flipping delete_protection (a spec field) on an already-stable resource
+	// legitimately changes status.last_change_request.create_time too - the modifier must
+	// detect the spec-level change and NOT freeze status to its prior value in that case.
+	state := tftypes.NewValue(resourceOtherwiseChangingObjType, map[string]tftypes.Value{
+		"id":     tftypes.NewValue(tftypes.String, "abc"),
+		"spec":   tftypes.NewValue(tftypes.String, "same"),
+		"status": tftypes.NewValue(tftypes.String, "old-status"),
+	})
+	plan := tftypes.NewValue(resourceOtherwiseChangingObjType, map[string]tftypes.Value{
+		"id":     tftypes.NewValue(tftypes.String, "abc"),
+		"spec":   tftypes.NewValue(tftypes.String, "different"),
+		"status": tftypes.NewValue(tftypes.String, nil),
+	})
+	if !resourceOtherwiseChanging(path.Root("status"), plan, state) {
+		t.Error("expected changing when a sibling attribute (spec) differs between plan and state")
+	}
+}
+
+// TestResourceOtherwiseChanging_NestedSpecObject_DetectsUnknownLeaf exercises a spec shaped
+// like a real resource's SingleNestedAttribute (not a flat string), where flipping one leaf
+// field (e.g. delete_protection) leaves a sibling leaf unknown pending apply - the same shape
+// that triggered the original kvindo_s3_bucket bug.
+func TestResourceOtherwiseChanging_NestedSpecObject_DetectsUnknownLeaf(t *testing.T) {
+	specType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"tier":              tftypes.String,
+		"delete_protection": tftypes.Bool,
+	}}
+	objType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"id":     tftypes.String,
+		"spec":   specType,
+		"status": tftypes.String,
+	}}
+
+	state := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id": tftypes.NewValue(tftypes.String, "abc"),
+		"spec": tftypes.NewValue(specType, map[string]tftypes.Value{
+			"tier":              tftypes.NewValue(tftypes.String, "standard"),
+			"delete_protection": tftypes.NewValue(tftypes.Bool, true),
+		}),
+		"status": tftypes.NewValue(tftypes.String, "old-status"),
+	})
+	// delete_protection flips to false; tier is untouched but still reported known (matching
+	// a real UseStateForUnknown-backed leaf, which stays known across an unrelated sibling edit).
+	plan := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id": tftypes.NewValue(tftypes.String, "abc"),
+		"spec": tftypes.NewValue(specType, map[string]tftypes.Value{
+			"tier":              tftypes.NewValue(tftypes.String, "standard"),
+			"delete_protection": tftypes.NewValue(tftypes.Bool, false),
+		}),
+		"status": tftypes.NewValue(tftypes.String, nil),
+	})
+
+	if !resourceOtherwiseChanging(path.Root("status"), plan, state) {
+		t.Error("expected changing when a nested spec leaf (delete_protection) differs between plan and state")
+	}
+}
 
 // ---- buildUserInfoObj ----
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -38,7 +39,7 @@ func (r *LoadbalancerTargetGroupServiceDiscoveryTargetResource) Metadata(_ conte
 
 func LoadbalancerTargetGroupServiceDiscoveryTargetResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"label_selectors": schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"label_selectors": schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()}},
 		"target_group_id": schema.StringAttribute{Required: true},
 	}
 	return map[string]schema.Attribute{

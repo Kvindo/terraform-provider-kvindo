@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
@@ -125,10 +126,56 @@ func (m volatileInfoModifier) PlanModifyObject(ctx context.Context, req planmodi
 	if !ok || sv.IsNull() || sv.IsUnknown() {
 		return
 	}
-	if isStableState(sv.ValueString()) {
-		resp.PlanValue = req.StateValue
+	if !isStableState(sv.ValueString()) {
+		return // leave unknown -> object re-resolves on apply.
 	}
-	// else: leave unknown -> object re-resolves on apply.
+	// Even with a stable prior, only freeze on a genuinely idle re-plan. If some OTHER
+	// top-level attribute (spec, metadata, ...) is actually changing between state and plan,
+	// Update() will really run and legitimately produce a new last_change_request with a
+	// fresh create_time - freezing here would predict the OLD snapshot survives unchanged,
+	// which apply's real read then contradicts ("Provider produced inconsistent result after
+	// apply"). Caught by TerraformMockTests flipping delete_protection on an already-stable
+	// kvindo_s3_bucket before destroying it.
+	if resourceOtherwiseChanging(req.Path, req.Plan.Raw, req.State.Raw) {
+		return
+	}
+	resp.PlanValue = req.StateValue
+}
+
+// resourceOtherwiseChanging reports whether any top-level resource attribute OTHER than the
+// one at ownPath differs between the proposed plan and the prior state - i.e. whether this
+// pass is a genuine update (Update() will run) as opposed to an idle re-plan. Generic over
+// every resource's own spec/status shape: decomposes the whole-resource Raw values into their
+// top-level attribute map rather than depending on a specific model type.
+func resourceOtherwiseChanging(ownPath path.Path, planRaw, stateRaw tftypes.Value) bool {
+	// ownPath is always a single top-level attribute name here: volatileInfoModifier is only
+	// ever wired to the "status" key at commonInfoSchema()'s single call site per resource, so
+	// req.Path is never more than one step deep in practice.
+	ownName := ""
+	if steps := ownPath.Steps(); len(steps) > 0 {
+		if name, ok := steps[len(steps)-1].(path.PathStepAttributeName); ok {
+			ownName = string(name)
+		}
+	}
+
+	var planAttrs, stateAttrs map[string]tftypes.Value
+	if err := planRaw.As(&planAttrs); err != nil {
+		return true // can't tell -> assume changing, the safe default
+	}
+	if err := stateRaw.As(&stateAttrs); err != nil {
+		return true
+	}
+
+	for name, planVal := range planAttrs {
+		if name == ownName {
+			continue
+		}
+		stateVal, ok := stateAttrs[name]
+		if !ok || !planVal.Equal(stateVal) {
+			return true
+		}
+	}
+	return false
 }
 
 // volatileStateModifier is the string-attribute analogue of volatileInfoModifier, for a

@@ -4,6 +4,14 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	dschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	rschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -231,46 +239,67 @@ func apiToTfAttr(raw interface{}, f objField) attr.Value {
 
 // ---- schema builders ----
 
+// objLeafResourceSchema builds the schema for one nested-object field. Every Optional+Computed
+// leaf carries a UseStateForUnknown plan modifier, mirroring resourceAttrDef's top-level spec
+// fields in tools/generator/main.go — without it, terraform-plugin-framework marks an
+// unconfigured Optional+Computed attribute unknown on every plan, producing phantom drift on
+// every apply (caught via TerraformMockTests' plan-after-apply drift check, originally on
+// kvindo_vpc.spec.security_group_ids, a top-level field; this nested-object path had the exact
+// same gap for anything under an "object"/"list_object" spec field, e.g.
+// kvindo_loadbalancer_https_listener.spec.tls.protocols).
 func objLeafResourceSchema(f objField) rschema.Attribute {
 	switch f.Kind {
 	case "bool":
-		return rschema.BoolAttribute{Optional: true, Computed: true}
+		return rschema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}}
 	case "int64":
-		return rschema.Int64Attribute{Optional: true, Computed: true}
+		return rschema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}}
 	case "float64":
-		return rschema.Float64Attribute{Optional: true, Computed: true}
+		return rschema.Float64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Float64{float64planmodifier.UseStateForUnknown()}}
 	case "list_string":
-		return rschema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType}
+		return rschema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}}
 	case "map_string":
-		return rschema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType}
+		return rschema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()}}
 	case "object":
 		return objResourceSchema(f.Obj)
 	case "list_object":
 		return listObjResourceSchema(f.Obj)
 	default:
-		return rschema.StringAttribute{Optional: true, Computed: true, Sensitive: f.Sensitive}
+		return rschema.StringAttribute{Optional: true, Computed: true, Sensitive: f.Sensitive, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}
 	}
 }
 
 // objResourceSchema builds an Optional+Computed SingleNestedAttribute for a nested object.
+// Needs its own UseStateForUnknown (not just on its leaf children): when the object itself is
+// unconfigured, terraform-plugin-framework marks the whole object unknown on every plan absent
+// this modifier, regardless of whether its children are individually stable - confirmed by the
+// kvindo_vm bootstrap_command drift (an unset nested object showing as freshly "+ added" on every
+// plan after apply). The hand-written sibling boot_volume_attachment schema in resource_vm.go
+// already carried this modifier; this shared helper didn't, which was the actual gap.
 func objResourceSchema(fields []objField) rschema.Attribute {
 	attrs := make(map[string]rschema.Attribute, len(fields))
 	for _, f := range fields {
 		attrs[f.TF] = objLeafResourceSchema(f)
 	}
-	return rschema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: attrs}
+	return rschema.SingleNestedAttribute{
+		Optional:      true,
+		Computed:      true,
+		Attributes:    attrs,
+		PlanModifiers: []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
+	}
 }
 
 // listObjResourceSchema builds an Optional+Computed ListNestedAttribute for a list of objects.
+// Same container-level UseStateForUnknown reasoning as objResourceSchema above.
 func listObjResourceSchema(fields []objField) rschema.Attribute {
 	attrs := make(map[string]rschema.Attribute, len(fields))
 	for _, f := range fields {
 		attrs[f.TF] = objLeafResourceSchema(f)
 	}
 	return rschema.ListNestedAttribute{
-		Optional:     true,
-		Computed:     true,
-		NestedObject: rschema.NestedAttributeObject{Attributes: attrs},
+		Optional:      true,
+		Computed:      true,
+		NestedObject:  rschema.NestedAttributeObject{Attributes: attrs},
+		PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 	}
 }
 

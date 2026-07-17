@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -40,12 +41,12 @@ func (r *OpenVpnUserSettingsResource) Metadata(_ context.Context, req resource.M
 
 func OpenVpnUserSettingsResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"allowed_domains":    schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"allowed_ipv4_cidrs": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"allowed_ipv6_cidrs": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"denied_domains":     schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"denied_ipv4_cidrs":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-		"denied_ipv6_cidrs":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"allowed_domains":    schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
+		"allowed_ipv4_cidrs": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
+		"allowed_ipv6_cidrs": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
+		"denied_domains":     schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
+		"denied_ipv4_cidrs":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
+		"denied_ipv6_cidrs":  schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},

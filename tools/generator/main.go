@@ -15,8 +15,8 @@ import (
 
 // SwaggerSpec represents the minimal swagger/OpenAPI spec we need.
 type SwaggerSpec struct {
-	Paths      map[string]PathItem            `json:"paths"`
-	Components Components                     `json:"components"`
+	Paths      map[string]PathItem `json:"paths"`
+	Components Components          `json:"components"`
 }
 
 type Components struct {
@@ -48,12 +48,12 @@ type Response struct {
 }
 
 type SchemaRef struct {
-	Ref        string                 `json:"$ref"`
-	Type       string                 `json:"type"`
-	Format     string                 `json:"format"`
-	Properties map[string]*SchemaRef  `json:"properties"`
-	Items      *SchemaRef             `json:"items"`
-	AllOf      []*SchemaRef           `json:"allOf"`
+	Ref        string                `json:"$ref"`
+	Type       string                `json:"type"`
+	Format     string                `json:"format"`
+	Properties map[string]*SchemaRef `json:"properties"`
+	Items      *SchemaRef            `json:"items"`
+	AllOf      []*SchemaRef          `json:"allOf"`
 }
 
 type SchemaObject struct {
@@ -679,9 +679,10 @@ func emitResourceImports(sb *strings.Builder, r ResourceDef) {
 	// attr is only needed for the status-extras buildInfoObj literals; nested objects are handled
 	// by runtime helpers in nested_objects.go.
 	needsAttr := len(r.StatusExtra) > 0
-	needsBool, needsInt64, needsFloat64 := false, false, false
-	// Plan modifiers are emitted only for top-level Optional+Computed scalar spec fields; nested
-	// object/list_object schemas are built at runtime without per-field modifiers.
+	needsBool, needsInt64, needsFloat64, needsListString, needsMapString := false, false, false, false, false
+	// Plan modifiers are emitted only for top-level Optional+Computed scalar/list_string/map_string
+	// spec fields; nested object/list_object schemas are built at runtime without per-field
+	// modifiers (a separate, broader limitation — see objLeafResourceSchema in nested_objects.go).
 	for _, f := range r.Fields {
 		if f.Required || f.OptionalOnly {
 			continue
@@ -693,6 +694,10 @@ func emitResourceImports(sb *strings.Builder, r ResourceDef) {
 			needsInt64 = true
 		case "float64":
 			needsFloat64 = true
+		case "list_string":
+			needsListString = true
+		case "map_string":
+			needsMapString = true
 		}
 	}
 	sb.WriteString("package provider\n\n")
@@ -712,6 +717,12 @@ func emitResourceImports(sb *strings.Builder, r ResourceDef) {
 	}
 	if needsInt64 {
 		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier\"\n")
+	}
+	if needsListString {
+		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier\"\n")
+	}
+	if needsMapString {
+		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier\"\n")
 	}
 	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier\"\n")
 	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier\"\n")
@@ -1004,7 +1015,7 @@ func resourceAttrDef(f FieldDef) string {
 		if f.OptionalOnly {
 			return "schema.ListAttribute{Optional: true, ElementType: types.StringType}"
 		}
-		return "schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType}"
+		return "schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}}"
 	case "map_string":
 		if f.Required {
 			return "schema.MapAttribute{Required: true, ElementType: types.StringType}"
@@ -1012,7 +1023,7 @@ func resourceAttrDef(f FieldDef) string {
 		if f.OptionalOnly {
 			return "schema.MapAttribute{Optional: true, ElementType: types.StringType}"
 		}
-		return "schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType}"
+		return "schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()}}"
 	case "list_object":
 		var b strings.Builder
 		b.WriteString("schema.ListNestedAttribute{Optional: true, Computed: true, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{")

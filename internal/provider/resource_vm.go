@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -90,19 +91,19 @@ func VmResourceSchemaAttrs() map[string]schema.Attribute {
 			PlanModifiers: []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
 			Attributes: map[string]schema.Attribute{
 				"volume_id":     schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-				"attachment_id": schema.StringAttribute{Computed: true},
+				"attachment_id": schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 			},
 		},
 		"floating_ip_id":                 schema.StringAttribute{Optional: true},
 		"image_boot_volume_device_index": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
 		"image_id":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"image_schedule_ids":             schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"image_schedule_ids":             schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
 		"offer_id":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"on_off_schedule_ids":            schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"on_off_schedule_ids":            schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
 		"os_type":                        schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"command_schedule_ids":           schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"command_schedule_ids":           schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
 		"security_group_ids":             schema.ListAttribute{Optional: true, ElementType: types.StringType},
-		"ssh_key_ids":                    schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+		"ssh_key_ids":                    schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
 		"vm_state":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"vpc_subnet_id":                  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 	}
