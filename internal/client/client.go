@@ -270,12 +270,19 @@ func (c *Client) Delete(ctx context.Context, path string, id string) (*Modificat
 }
 
 // PollUntilDone polls the async request status endpoint until the operation succeeds or times out.
+// The deadline is deliberately generous (not a tight per-resource estimate): dev's shared-environment
+// reconciler contention (org-wide in-progress gates serializing all in-flight changes of a type -
+// see e.g. OpenVpn/LoadBalancer/SecurityGroup reconcilers) can legitimately leave a real, healthy
+// change request "Waiting for all changes to finish first" for a long time with nothing actually
+// wrong. Since this only bounds a poll loop that returns immediately on success, a long ceiling
+// costs nothing on the fast path - it only matters for a genuinely hung/broken backend, which is
+// better diagnosed by querying the resource's real state directly than by a client timing out early.
 func (c *Client) PollUntilDone(ctx context.Context, path string, requestId string) error {
 	if requestId == "" {
 		return nil
 	}
 
-	deadline := time.Now().Add(30 * time.Minute)
+	deadline := time.Now().Add(6 * time.Hour)
 	backoff := 2 * time.Second
 
 	for time.Now().Before(deadline) {
@@ -285,9 +292,22 @@ func (c *Client) PollUntilDone(ctx context.Context, path string, requestId strin
 			return err
 		}
 
+		// A transient network error (VPN blip, DNS hiccup, connection reset) on a single poll
+		// attempt does NOT mean the operation failed - the backend is still working regardless.
+		// Treat it the same as "not done yet" and retry with the loop's own backoff, same as the
+		// C# test harness's KvindoCloudClient already does for its own read/poll calls. Bounded
+		// by the outer deadline above, so a genuinely unreachable backend still eventually errors.
 		data, statusCode, err := c.do(ctx, req)
 		if err != nil {
-			return err
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
+			if backoff < 30*time.Second {
+				backoff += 2 * time.Second
+			}
+			continue
 		}
 
 		if statusCode >= 400 {

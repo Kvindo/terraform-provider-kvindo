@@ -143,10 +143,15 @@ func (m volatileInfoModifier) PlanModifyObject(ctx context.Context, req planmodi
 }
 
 // resourceOtherwiseChanging reports whether any top-level resource attribute OTHER than the
-// one at ownPath differs between the proposed plan and the prior state - i.e. whether this
-// pass is a genuine update (Update() will run) as opposed to an idle re-plan. Generic over
-// every resource's own spec/status shape: decomposes the whole-resource Raw values into their
-// top-level attribute map rather than depending on a specific model type.
+// one at ownPath is KNOWN to differ between the proposed plan and the prior state - i.e.
+// whether this pass is a genuine update (Update() will run) as opposed to an idle re-plan.
+// Generic over every resource's own spec/status shape: decomposes the whole-resource Raw
+// values into their top-level attribute map rather than depending on a specific model type.
+//
+// Delegates the actual comparison to valueGenuinelyDiffers, which walks each sibling
+// recursively and only trusts KNOWN leaves - see its own doc comment for why a flat
+// top-level-only check (either a plain Equal(), or an earlier version of this function that
+// skipped a whole sibling via IsFullyKnown()) is wrong in both directions.
 func resourceOtherwiseChanging(ownPath path.Path, planRaw, stateRaw tftypes.Value) bool {
 	// ownPath is always a single top-level attribute name here: volatileInfoModifier is only
 	// ever wired to the "status" key at commonInfoSchema()'s single call site per resource, so
@@ -171,11 +176,89 @@ func resourceOtherwiseChanging(ownPath path.Path, planRaw, stateRaw tftypes.Valu
 			continue
 		}
 		stateVal, ok := stateAttrs[name]
-		if !ok || !planVal.Equal(stateVal) {
+		if !ok {
+			return true
+		}
+		if valueGenuinelyDiffers(planVal, stateVal) {
 			return true
 		}
 	}
 	return false
+}
+
+// valueGenuinelyDiffers reports whether plan and state differ at any KNOWN leaf, recursing into
+// compound values (Object/Map/List/Set/Tuple) instead of judging a whole compound value by a
+// single top-level known/unknown flag. Two failure modes motivated this, both hit live against
+// dev:
+//
+//  1. A flat Equal() treats "unknown" (not yet resolved by that leaf's own UseStateForUnknown
+//     modifier - metadata.id/description/folder_id/delete_protection/labels are ALL wired with
+//     one, see metadataResourceSchema()) as "different from the known prior value", which is
+//     wrong: it's simply not resolved YET at the point this runs, not evidence of a real change.
+//     This made resourceOtherwiseChanging ALWAYS return true for any resource complex enough to
+//     skip Terraform's own trivial-unchanged fast path, permanently defeating the freeze
+//     volatileInfoModifier exists to provide (confirmed via a live VPC repro).
+//  2. The first fix for (1) called IsFullyKnown() on the WHOLE sibling value (e.g. all of
+//     "metadata") and skipped comparing it entirely if ANY leaf inside was still unknown - which
+//     then missed a genuinely differing KNOWN leaf sitting right next to an unrelated unresolved
+//     one in the same object (e.g. metadata.delete_protection explicitly flipped false in config,
+//     bundled with metadata.id still unresolved at this point) -> resourceOtherwiseChanging
+//     wrongly returned false, the modifier froze status to the old snapshot, and apply's real
+//     read then legitimately produced a new last_change_request -> "Provider produced
+//     inconsistent result after apply". Caught by DocExampleS3Backups_ApplyAndDestroy flipping
+//     delete_protection on an already-stable kvindo_s3_bucket before destroying it - the exact
+//     scenario resourceOtherwiseChanging was originally written for (see ecae5d2).
+//
+// The correct rule is per-leaf: an unknown leaf is inconclusive (skip it), a known leaf that
+// differs from state is real evidence of change (report it), regardless of what its siblings
+// inside the same compound value happen to be.
+func valueGenuinelyDiffers(planVal, stateVal tftypes.Value) bool {
+	if !planVal.IsKnown() {
+		return false // not resolved yet at this point in the walk - not proof of a real change
+	}
+
+	// Object and Map both decode to map[string]tftypes.Value - covers every compound attribute
+	// type this schema uses other than lists (security_group_ids etc.), tried next.
+	var planMap, stateMap map[string]tftypes.Value
+	if err := planVal.As(&planMap); err == nil {
+		if err := stateVal.As(&stateMap); err != nil {
+			return true // shape mismatch between plan/state - treat as a real difference
+		}
+		for k, pv := range planMap {
+			sv, ok := stateMap[k]
+			if !ok {
+				if pv.IsKnown() && !pv.IsNull() {
+					return true
+				}
+				continue
+			}
+			if valueGenuinelyDiffers(pv, sv) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// List/Set/Tuple decode to []tftypes.Value.
+	var planList, stateList []tftypes.Value
+	if err := planVal.As(&planList); err == nil {
+		if err := stateVal.As(&stateList); err != nil {
+			return true
+		}
+		if len(planList) != len(stateList) {
+			return true
+		}
+		for i := range planList {
+			if valueGenuinelyDiffers(planList[i], stateList[i]) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Leaf/primitive value: this IS a real, known value now (guarded by IsKnown() above), so a
+	// direct Equal() against state is exactly the right check.
+	return !planVal.Equal(stateVal)
 }
 
 // volatileStateModifier is the string-attribute analogue of volatileInfoModifier, for a

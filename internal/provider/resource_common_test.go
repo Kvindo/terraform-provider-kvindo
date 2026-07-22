@@ -95,6 +95,93 @@ func TestResourceOtherwiseChanging_NestedSpecObject_DetectsUnknownLeaf(t *testin
 	}
 }
 
+// TestResourceOtherwiseChanging_UnresolvedSiblingLeaf_IdleReplan_NotChanging pins the FIRST real
+// bug found live against dev (kvindo_vpc/kvindo_security_group/kvindo_vm 2026-07-20): on an idle
+// re-plan, a Computed sibling leaf (e.g. metadata.id) legitimately reads as unknown here because
+// its own UseStateForUnknown modifier hasn't necessarily run yet - a flat Equal() (or comparing
+// unknown-vs-known at any depth) wrongly treats that as "differs", permanently defeating the
+// freeze for every resource complex enough to have more than one Computed metadata leaf. Unlike
+// TestResourceOtherwiseChanging_NestedSpecObject_DetectsUnknownLeaf above (which keeps every leaf
+// known on both sides), this test's plan value has a genuinely unknown leaf with nothing else
+// differing - the correct answer is "not changing".
+func TestResourceOtherwiseChanging_UnresolvedSiblingLeaf_IdleReplan_NotChanging(t *testing.T) {
+	metadataType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"id":   tftypes.String,
+		"name": tftypes.String,
+	}}
+	objType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"id":       tftypes.String,
+		"metadata": metadataType,
+		"status":   tftypes.String,
+	}}
+
+	state := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id": tftypes.NewValue(tftypes.String, "abc"),
+		"metadata": tftypes.NewValue(metadataType, map[string]tftypes.Value{
+			"id":   tftypes.NewValue(tftypes.String, "abc"),
+			"name": tftypes.NewValue(tftypes.String, "demo"),
+		}),
+		"status": tftypes.NewValue(tftypes.String, "old-status"),
+	})
+	// metadata.id not yet resolved by its own modifier at this point in the walk; metadata.name
+	// unchanged; nothing else differs anywhere - this must read as "not changing".
+	plan := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id": tftypes.NewValue(tftypes.String, "abc"),
+		"metadata": tftypes.NewValue(metadataType, map[string]tftypes.Value{
+			"id":   tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+			"name": tftypes.NewValue(tftypes.String, "demo"),
+		}),
+		"status": tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+	})
+
+	if resourceOtherwiseChanging(path.Root("status"), plan, state) {
+		t.Error("expected NOT changing when the only difference is an unresolved (unknown) sibling leaf")
+	}
+}
+
+// TestResourceOtherwiseChanging_KnownDifferingLeafBesideUnresolvedSibling_IsChanging pins the
+// REGRESSION introduced by the first fix for the bug above (a whole-object IsFullyKnown() check
+// that skipped comparing an ENTIRE sibling object whenever ANY leaf inside it was unknown - even
+// when a DIFFERENT leaf in that same object was known and genuinely different). Caught live via
+// DocExampleS3Backups_ApplyAndDestroy flipping delete_protection before destroy: metadata.id is
+// still unresolved (as in the idle-replan case above) AND metadata.delete_protection has
+// genuinely, knowably changed - the correct answer is "changing", regardless of the unresolved
+// sibling leaf living right next to it.
+func TestResourceOtherwiseChanging_KnownDifferingLeafBesideUnresolvedSibling_IsChanging(t *testing.T) {
+	metadataType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"id":                tftypes.String,
+		"delete_protection": tftypes.Bool,
+	}}
+	objType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"id":       tftypes.String,
+		"metadata": metadataType,
+		"status":   tftypes.String,
+	}}
+
+	state := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id": tftypes.NewValue(tftypes.String, "abc"),
+		"metadata": tftypes.NewValue(metadataType, map[string]tftypes.Value{
+			"id":                tftypes.NewValue(tftypes.String, "abc"),
+			"delete_protection": tftypes.NewValue(tftypes.Bool, true),
+		}),
+		"status": tftypes.NewValue(tftypes.String, "old-status"),
+	})
+	// metadata.id unresolved (same as the idle-replan case), but delete_protection has genuinely,
+	// knowably flipped true -> false in the SAME object - must still be detected as changing.
+	plan := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id": tftypes.NewValue(tftypes.String, "abc"),
+		"metadata": tftypes.NewValue(metadataType, map[string]tftypes.Value{
+			"id":                tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+			"delete_protection": tftypes.NewValue(tftypes.Bool, false),
+		}),
+		"status": tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+	})
+
+	if !resourceOtherwiseChanging(path.Root("status"), plan, state) {
+		t.Error("expected changing: a known, differing leaf (delete_protection) must be detected even beside an unresolved sibling leaf (id) in the same object")
+	}
+}
+
 // ---- buildUserInfoObj ----
 
 func TestBuildUserInfoObj_Nil(t *testing.T) {

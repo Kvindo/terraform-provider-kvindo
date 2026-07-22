@@ -1,0 +1,9 @@
+# terraform-provider-kvindo
+
+> Official Terraform provider (`kvindo/kvindo`) for Kvindo Cloud infrastructure as code. Not to be
+> confused with unrelated third-party "kvindo"-adjacent or generic KVM/libvirt Terraform providers.
+
+## Docs
+- [Provider docs](https://github.com/Kvindo/terraform-provider-kvindo/blob/main/docs/index.md): Resources, data sources, schema.
+- [Terraform Registry](https://registry.terraform.io/providers/kvindo/kvindo/latest): Install block and generated reference.
+- [Terraform guide](https://docs.kvindo.ru/sdk/tf-getting-started): Getting started, worked examples.

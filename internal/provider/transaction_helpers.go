@@ -97,24 +97,35 @@ func txnRelaxAttrs(attrs map[string]schema.Attribute) map[string]schema.Attribut
 	return out
 }
 
+// txnRelaxAttr rebuilds a single attribute as Optional+Computed. It preserves the original
+// attribute's PlanModifiers (e.g. UseStateForUnknown, volatileInfoModifier on a nested status
+// object) rather than dropping them — an earlier version reconstructed each attribute from
+// scratch with no PlanModifiers at all, which meant every Computed field inside a transaction
+// sub-resource map (status blocks, metadata.id/delete_protection/labels, ...) always planned as
+// unknown, forever, even on a genuinely idle re-plan with nothing changing - `plan
+// -detailed-exitcode` could never report zero drift for ANY transaction sub-resource. Preserving
+// the modifiers is safe here: UseStateForUnknown only ever activates when the plan value would
+// otherwise be unknown, so a producer's `id = local.x` (or any other explicitly-set field) still
+// flows through from config untouched - relaxing Required/Computed-only to Optional+Computed
+// doesn't change when a modifier fires, only what the user is additionally allowed to set.
 func txnRelaxAttr(a schema.Attribute) schema.Attribute {
 	switch v := a.(type) {
 	case schema.StringAttribute:
-		return schema.StringAttribute{Optional: true, Computed: true, Sensitive: v.Sensitive}
+		return schema.StringAttribute{Optional: true, Computed: true, Sensitive: v.Sensitive, PlanModifiers: v.PlanModifiers}
 	case schema.BoolAttribute:
-		return schema.BoolAttribute{Optional: true, Computed: true, Sensitive: v.Sensitive}
+		return schema.BoolAttribute{Optional: true, Computed: true, Sensitive: v.Sensitive, PlanModifiers: v.PlanModifiers}
 	case schema.Int64Attribute:
-		return schema.Int64Attribute{Optional: true, Computed: true, Sensitive: v.Sensitive}
+		return schema.Int64Attribute{Optional: true, Computed: true, Sensitive: v.Sensitive, PlanModifiers: v.PlanModifiers}
 	case schema.Float64Attribute:
-		return schema.Float64Attribute{Optional: true, Computed: true, Sensitive: v.Sensitive}
+		return schema.Float64Attribute{Optional: true, Computed: true, Sensitive: v.Sensitive, PlanModifiers: v.PlanModifiers}
 	case schema.ListAttribute:
-		return schema.ListAttribute{Optional: true, Computed: true, ElementType: v.ElementType, Sensitive: v.Sensitive}
+		return schema.ListAttribute{Optional: true, Computed: true, ElementType: v.ElementType, Sensitive: v.Sensitive, PlanModifiers: v.PlanModifiers}
 	case schema.MapAttribute:
-		return schema.MapAttribute{Optional: true, Computed: true, ElementType: v.ElementType, Sensitive: v.Sensitive}
+		return schema.MapAttribute{Optional: true, Computed: true, ElementType: v.ElementType, Sensitive: v.Sensitive, PlanModifiers: v.PlanModifiers}
 	case schema.SingleNestedAttribute:
-		return schema.SingleNestedAttribute{Optional: true, Computed: true, Sensitive: v.Sensitive, Attributes: txnRelaxAttrs(v.Attributes)}
+		return schema.SingleNestedAttribute{Optional: true, Computed: true, Sensitive: v.Sensitive, Attributes: txnRelaxAttrs(v.Attributes), PlanModifiers: v.PlanModifiers}
 	case schema.ListNestedAttribute:
-		return schema.ListNestedAttribute{Optional: true, Computed: true, Sensitive: v.Sensitive, NestedObject: schema.NestedAttributeObject{Attributes: txnRelaxAttrs(v.NestedObject.Attributes)}}
+		return schema.ListNestedAttribute{Optional: true, Computed: true, Sensitive: v.Sensitive, NestedObject: schema.NestedAttributeObject{Attributes: txnRelaxAttrs(v.NestedObject.Attributes)}, PlanModifiers: v.PlanModifiers}
 	default:
 		return a
 	}
