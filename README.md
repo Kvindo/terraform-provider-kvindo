@@ -9,6 +9,11 @@ Cloud infrastructure as code (IaC): VMs, S3 object storage, Kubernetes clusters,
 VPCs, VPNs, managed PostgreSQL, networking, and IAM. Talks to the same API as the web console and
 the [`kc` CLI](https://github.com/Kvindo/kc-cli).
 
+> **Using Claude Code?** This repo ships a [Claude Code skill](.claude/skills/kvindo-terraform/SKILL.md)
+> that teaches Claude how to write and apply Terraform against Kvindo Cloud with this provider —
+> clone this repo (or otherwise have it on disk) and open Claude Code there to pick it up
+> automatically.
+
 ## Requirements
 
 - [Terraform](https://www.terraform.io/downloads) >= 1.0
@@ -410,3 +415,4 @@ Part of the Kvindo Cloud developer toolchain:
 - **[kc CLI](https://github.com/Kvindo/kc-cli)** — kubectl-style command-line client for Kvindo Cloud.
 - **[kc-sdk-python](https://github.com/Kvindo/kc-sdk-python)** — Python SDK for the Kvindo Cloud API ([PyPI](https://pypi.org/project/kc-sdk-python/)).
 - **[Kvindo Cloud console](https://cloud.kvindo.com)** — web UI and API ([docs](https://cloud.kvindo.com)).
+- **[Claude Code skill](.claude/skills/kvindo-terraform/SKILL.md)** — lets Claude write and apply Terraform against Kvindo Cloud conversationally.

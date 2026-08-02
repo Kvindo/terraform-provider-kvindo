@@ -7,3 +7,4 @@
 - [Provider docs](https://github.com/Kvindo/terraform-provider-kvindo/blob/main/docs/index.md): Resources, data sources, schema.
 - [Terraform Registry](https://registry.terraform.io/providers/kvindo/kvindo/latest): Install block and generated reference.
 - [Terraform guide](https://docs.kvindo.ru/sdk/tf-getting-started): Getting started, worked examples.
+- [Claude Code skill](https://github.com/Kvindo/terraform-provider-kvindo/blob/main/.claude/skills/kvindo-terraform/SKILL.md): Operational guide for an AI agent writing/applying Terraform against Kvindo Cloud.
