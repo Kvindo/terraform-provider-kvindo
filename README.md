@@ -414,5 +414,6 @@ Part of the Kvindo Cloud developer toolchain:
 
 - **[kc CLI](https://github.com/Kvindo/kc-cli)** — kubectl-style command-line client for Kvindo Cloud.
 - **[kc-sdk-python](https://github.com/Kvindo/kc-sdk-python)** — Python SDK for the Kvindo Cloud API ([PyPI](https://pypi.org/project/kc-sdk-python/)).
+- **[kc-mcp-server](https://github.com/Kvindo/kc-mcp-server)** — MCP server for Kvindo Cloud ([npm](https://www.npmjs.com/package/kc-mcp-server)), for managing resources from Claude Desktop/Code and other MCP clients.
 - **[Kvindo Cloud console](https://cloud.kvindo.com)** — web UI and API ([docs](https://cloud.kvindo.com)).
 - **[Claude Code skill](.claude/skills/kvindo-terraform/SKILL.md)** — lets Claude write and apply Terraform against Kvindo Cloud conversationally.
