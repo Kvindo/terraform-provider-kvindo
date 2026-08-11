@@ -17,6 +17,7 @@ var _ = fmt.Sprintf
 type RouteTableAttachmentSpecModel struct {
 	RouteTableId types.String `tfsdk:"route_table_id"`
 	VpcId        types.String `tfsdk:"vpc_id"`
+	VpcSubnetId  types.String `tfsdk:"vpc_subnet_id"`
 }
 
 type RouteTableAttachmentResourceModel struct {
@@ -37,7 +38,8 @@ func (r *RouteTableAttachmentResource) Metadata(_ context.Context, req resource.
 func RouteTableAttachmentResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
 		"route_table_id": schema.StringAttribute{Required: true},
-		"vpc_id":         schema.StringAttribute{Required: true},
+		"vpc_id":         schema.StringAttribute{Optional: true, Description: "Mutually exclusive with `vpc_subnet_id`. Attaches the route table to the whole VPC."},
+		"vpc_subnet_id":  schema.StringAttribute{Optional: true, Description: "Mutually exclusive with `vpc_id`. Attaches the route table to a single subnet only - its routes are policy-routed so they apply solely to that subnet's traffic."},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -72,6 +74,9 @@ func buildRouteTableAttachmentRequestMap(ctx context.Context, plan RouteTableAtt
 	if !plan.Spec.VpcId.IsNull() && !plan.Spec.VpcId.IsUnknown() {
 		spec["vpcId"] = plan.Spec.VpcId.ValueString()
 	}
+	if !plan.Spec.VpcSubnetId.IsNull() && !plan.Spec.VpcSubnetId.IsUnknown() {
+		spec["vpcSubnetId"] = plan.Spec.VpcSubnetId.ValueString()
+	}
 	return m
 }
 
@@ -83,6 +88,7 @@ func populateRouteTableAttachmentState(ctx context.Context, data map[string]inte
 	spec := getSpec(data)
 	state.Spec.RouteTableId = getString(spec, "routeTableId")
 	state.Spec.VpcId = getString(spec, "vpcId")
+	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
 	state.Status = simpleStateInfoObj(data)
 	return nil
 }
@@ -95,12 +101,12 @@ func (r *RouteTableAttachmentResource) Create(ctx context.Context, req resource.
 	}
 	plan.ID = types.StringValue(newULID())
 	body := buildRouteTableAttachmentRequestMap(ctx, plan)
-	modResp, err := r.client.Put(ctx, "/api/v1/route-table-attachments", body)
+	modResp, err := r.client.Put(ctx, "/api/v1/route-table-attachment", body)
 	if err != nil {
 		resp.Diagnostics.AddError("Create Error", err.Error())
 		return
 	}
-	if err := r.client.PollUntilDone(ctx, "/api/v1/route-table-attachments", modResp.RequestId); err != nil {
+	if err := r.client.PollUntilDone(ctx, "/api/v1/route-table-attachment", modResp.RequestId); err != nil {
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
@@ -108,7 +114,7 @@ func (r *RouteTableAttachmentResource) Create(ctx context.Context, req resource.
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
 	}
-	apiData, err := r.client.Get(ctx, "/api/v1/route-table-attachments", resourceId)
+	apiData, err := r.client.Get(ctx, "/api/v1/route-table-attachment", resourceId)
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Create Error", err.Error())
 		return
@@ -130,7 +136,7 @@ func (r *RouteTableAttachmentResource) Read(ctx context.Context, req resource.Re
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	apiData, err := r.client.Get(ctx, "/api/v1/route-table-attachments", state.ID.ValueString())
+	apiData, err := r.client.Get(ctx, "/api/v1/route-table-attachment", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
 		return
@@ -155,16 +161,16 @@ func (r *RouteTableAttachmentResource) Update(ctx context.Context, req resource.
 	}
 	plan.ID = state.ID
 	body := buildRouteTableAttachmentRequestMap(ctx, plan)
-	modResp, err := r.client.Put(ctx, "/api/v1/route-table-attachments", body)
+	modResp, err := r.client.Put(ctx, "/api/v1/route-table-attachment", body)
 	if err != nil {
 		resp.Diagnostics.AddError("Update Error", err.Error())
 		return
 	}
-	if err := r.client.PollUntilDone(ctx, "/api/v1/route-table-attachments", modResp.RequestId); err != nil {
+	if err := r.client.PollUntilDone(ctx, "/api/v1/route-table-attachment", modResp.RequestId); err != nil {
 		resp.Diagnostics.AddError("Update Poll Error", err.Error())
 		return
 	}
-	apiData, err := r.client.Get(ctx, "/api/v1/route-table-attachments", plan.ID.ValueString())
+	apiData, err := r.client.Get(ctx, "/api/v1/route-table-attachment", plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read After Update Error", err.Error())
 		return
@@ -186,12 +192,12 @@ func (r *RouteTableAttachmentResource) Delete(ctx context.Context, req resource.
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	modResp, err := r.client.Delete(ctx, "/api/v1/route-table-attachments", state.ID.ValueString())
+	modResp, err := r.client.Delete(ctx, "/api/v1/route-table-attachment", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Delete Error", err.Error())
 		return
 	}
-	if err := r.client.PollUntilDone(ctx, "/api/v1/route-table-attachments", modResp.RequestId); err != nil {
+	if err := r.client.PollUntilDone(ctx, "/api/v1/route-table-attachment", modResp.RequestId); err != nil {
 		resp.Diagnostics.AddError("Delete Poll Error", err.Error())
 		return
 	}
@@ -200,7 +206,7 @@ func (r *RouteTableAttachmentResource) Delete(ctx context.Context, req resource.
 func (r *RouteTableAttachmentResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	var state RouteTableAttachmentResourceModel
 	state.ID = types.StringValue(req.ID)
-	apiData, err := r.client.Get(ctx, "/api/v1/route-table-attachments", req.ID)
+	apiData, err := r.client.Get(ctx, "/api/v1/route-table-attachment", req.ID)
 	if err != nil {
 		resp.Diagnostics.AddError("Import Error", err.Error())
 		return

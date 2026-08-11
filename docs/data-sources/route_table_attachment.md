@@ -56,6 +56,7 @@ Read-Only:
 
 - `route_table_id` (String)
 - `vpc_id` (String)
+- `vpc_subnet_id` (String)
 
 
 <a id="nestedatt--status"></a>

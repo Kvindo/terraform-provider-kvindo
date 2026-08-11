@@ -34,7 +34,11 @@ resource "kvindo_route_table_attachment" "example" {
   }
   spec = {
     route_table_id = kvindo_route_table.main.id
-    vpc_id         = kvindo_vpc.main.id
+    # vpc_id and vpc_subnet_id are mutually exclusive: vpc_id attaches the route table to the
+    # whole VPC (routes apply VPC-wide); vpc_subnet_id attaches it to a single subnet only
+    # (routes are policy-routed so they apply solely to that subnet's traffic). Set exactly one.
+    vpc_id = kvindo_vpc.main.id
+    # vpc_subnet_id = kvindo_vpc_subnet.main.id
   }
 }
 ```
@@ -77,7 +81,11 @@ Read-Only:
 Required:
 
 - `route_table_id` (String)
-- `vpc_id` (String)
+
+Optional:
+
+- `vpc_id` (String) Mutually exclusive with `vpc_subnet_id`. Attaches the route table to the whole VPC.
+- `vpc_subnet_id` (String) Mutually exclusive with `vpc_id`. Attaches the route table to a single subnet only - its routes are policy-routed so they apply solely to that subnet's traffic.
 
 
 <a id="nestedatt--status"></a>

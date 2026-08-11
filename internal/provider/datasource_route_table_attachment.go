@@ -34,6 +34,7 @@ func (d *RouteTableAttachmentDataSource) Schema(_ context.Context, _ datasource.
 	specAttrs := map[string]schema.Attribute{
 		"route_table_id": schema.StringAttribute{Computed: true},
 		"vpc_id":         schema.StringAttribute{Computed: true},
+		"vpc_subnet_id":  schema.StringAttribute{Computed: true},
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Optional: true, Computed: true, Description: "ID of the resource to look up. Set exactly one of `id` or `name`."},
@@ -71,9 +72,9 @@ func (d *RouteTableAttachmentDataSource) Read(ctx context.Context, req datasourc
 		return
 	}
 	if idSet {
-		apiData, err = d.client.Get(ctx, "/api/v1/route-table-attachments", state.ID.ValueString())
+		apiData, err = d.client.Get(ctx, "/api/v1/route-table-attachment", state.ID.ValueString())
 	} else {
-		apiData, err = d.client.GetByName(ctx, "/api/v1/route-table-attachments", state.Name.ValueString())
+		apiData, err = d.client.GetByName(ctx, "/api/v1/route-table-attachment", state.Name.ValueString())
 	}
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -94,6 +95,7 @@ func (d *RouteTableAttachmentDataSource) Read(ctx context.Context, req datasourc
 	spec := getSpec(apiData)
 	state.Spec.RouteTableId = getString(spec, "routeTableId")
 	state.Spec.VpcId = getString(spec, "vpcId")
+	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
 	state.Status = simpleStateInfoObj(apiData)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

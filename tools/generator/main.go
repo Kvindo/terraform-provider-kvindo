@@ -71,6 +71,7 @@ type FieldDef struct {
 	OptionalOnly bool // Optional but NOT Computed (server never defaults it)
 	Computed     bool
 	Sensitive    bool
+	Description  string // schema Description; empty means none (see specFieldDescriptions)
 	ObjFields    []FieldDef
 }
 
@@ -127,7 +128,10 @@ var requiredSpecFields = map[string]map[string]bool{
 	"loadbalancer_udp_listener_rule":                     {"udp_listener_id": true},
 	"open_vpn_user":                                      {"open_vpn_id": true},
 	"quota_change_request":                               {"quota_id": true, "new_quota_limit": true},
-	"route_table_attachment":                             {"route_table_id": true, "vpc_id": true},
+	// vpc_id is deliberately NOT Required here: it and vpc_subnet_id are mutually exclusive
+	// (server-enforced) since the subnet-scoped attachment feature - see specFieldDescriptions
+	// below. Only route_table_id is unconditionally required.
+	"route_table_attachment": {"route_table_id": true},
 	"route_table_route":                                  {"route_table_id": true, "destination_cidr": true, "target_ip": true},
 	"s3_user":                                            {"bucket_id": true},
 	"s3_user_access_policy":                              {"policy_json": true},
@@ -150,6 +154,10 @@ var optionalOnlySpecFields = map[string]map[string]bool{
 	"ollama":                    {"floating_ip_id": true},
 	"open_vpn":                  {"floating_ip_id": true},
 	"postgresql_standalone":     {"parameters_set_id": true, "floating_ip_id": true},
+	// vpc_id/vpc_subnet_id are mutually exclusive (server-enforced) and neither is ever defaulted
+	// by the server, so Computed would produce spurious plan diffs - same reasoning as every
+	// other entry in this table.
+	"route_table_attachment": {"vpc_id": true, "vpc_subnet_id": true},
 	"vm":                        {"floating_ip_id": true, "security_group_ids": true},
 	"vpc":                       {"nat_floating_ip_id": true},
 	"vpc_peering_external_peer": {"ssh_private_key_id": true},
@@ -163,6 +171,18 @@ var sensitiveSpecFields = map[string]map[string]bool{
 	"ollama":                {"root_password": true},
 	"postgresql_standalone": {"root_password": true},
 	"ssh_private_key":       {"private_key": true},
+}
+
+// specFieldDescriptions[resource][tf_field] = the field's schema Description. tfplugindocs
+// generates docs straight from the compiled binary's schema, so a spec field with no Description
+// here renders with no explanation at all - only worth setting where the field's meaning isn't
+// self-evident from its name (e.g. a mutual-exclusivity pair like route_table_attachment's
+// vpc_id/vpc_subnet_id below), not for every field.
+var specFieldDescriptions = map[string]map[string]string{
+	"route_table_attachment": {
+		"vpc_id":        "Mutually exclusive with `vpc_subnet_id`. Attaches the route table to the whole VPC.",
+		"vpc_subnet_id": "Mutually exclusive with `vpc_id`. Attaches the route table to a single subnet only - its routes are policy-routed so they apply solely to that subnet's traffic.",
+	},
 }
 
 // sensitiveStatusFields[tf_field] = true marks a status field Sensitive (consistent by name
@@ -296,11 +316,13 @@ func extractResources(spec SwaggerSpec) []ResourceDef {
 		req := requiredSpecFields[resourceName]
 		optOnly := optionalOnlySpecFields[resourceName]
 		sens := sensitiveSpecFields[resourceName]
+		descs := specFieldDescriptions[resourceName]
 		for i := range fields {
 			tf := fields[i].TFName
 			fields[i].Required = req[tf]
 			fields[i].OptionalOnly = optOnly[tf]
 			fields[i].Sensitive = sens[tf]
+			fields[i].Description = descs[tf]
 		}
 		for i := range statusExtra {
 			statusExtra[i].Sensitive = sensitiveStatusFields[statusExtra[i].TFName]
@@ -975,15 +997,19 @@ func resourceAttrDef(f FieldDef) string {
 	if f.Sensitive {
 		sens = ", Sensitive: true"
 	}
+	desc := ""
+	if f.Description != "" {
+		desc = fmt.Sprintf(", Description: %q", f.Description)
+	}
 	switch f.FieldType {
 	case "string":
 		if f.Required {
-			return fmt.Sprintf("schema.StringAttribute{Required: true%s}", sens)
+			return fmt.Sprintf("schema.StringAttribute{Required: true%s%s}", sens, desc)
 		}
 		if f.OptionalOnly {
-			return fmt.Sprintf("schema.StringAttribute{Optional: true%s}", sens)
+			return fmt.Sprintf("schema.StringAttribute{Optional: true%s%s}", sens, desc)
 		}
-		return fmt.Sprintf("schema.StringAttribute{Optional: true, Computed: true%s, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}", sens)
+		return fmt.Sprintf("schema.StringAttribute{Optional: true, Computed: true%s%s, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}", sens, desc)
 	case "bool":
 		if f.Required {
 			return "schema.BoolAttribute{Required: true}"

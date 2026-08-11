@@ -3825,6 +3825,7 @@ Optional:
 
 - `route_table_id` (String)
 - `vpc_id` (String)
+- `vpc_subnet_id` (String)
 
 
 <a id="nestedatt--spec--route_table_attachments--status"></a>
