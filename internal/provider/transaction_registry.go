@@ -440,4 +440,11 @@ var txnSubs = []txnSub{
 		build:    txnBuild(buildSecurityGroupRequestMap),
 		populate: txnPop[SecurityGroupResourceModel](populateSecurityGroupState, SecurityGroupResourceSchemaAttrs),
 	},
+	{
+		tfKey: "etcds", apiKey: "etcds", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.Etcds },
+		attrs:    EtcdResourceSchemaAttrs,
+		build:    txnBuild(buildEtcdRequestMap),
+		populate: txnPop[EtcdResourceModel](populateEtcdState, EtcdResourceSchemaAttrs),
+	},
 }

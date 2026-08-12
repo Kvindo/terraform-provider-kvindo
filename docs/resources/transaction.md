@@ -125,6 +125,7 @@ Optional:
 - `billing_accounts` (Attributes Map) (see [below for nested schema](#nestedatt--spec--billing_accounts))
 - `certificates` (Attributes Map) (see [below for nested schema](#nestedatt--spec--certificates))
 - `delete_resources_on_transaction_delete` (Boolean)
+- `etcds` (Attributes Map) (see [below for nested schema](#nestedatt--spec--etcds))
 - `floating_ips` (Attributes Map) (see [below for nested schema](#nestedatt--spec--floating_ips))
 - `folders` (Attributes Map) (see [below for nested schema](#nestedatt--spec--folders))
 - `gitlab_runners` (Attributes Map) (see [below for nested schema](#nestedatt--spec--gitlab_runners))
@@ -423,6 +424,121 @@ Optional:
 
 <a id="nestedatt--spec--certificates--status--pricing"></a>
 ### Nested Schema for `spec.certificates.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--etcds"></a>
+### Nested Schema for `spec.etcds`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--etcds--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--etcds--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--etcds--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--etcds--metadata"></a>
+### Nested Schema for `spec.etcds.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--etcds--spec"></a>
+### Nested Schema for `spec.etcds.spec`
+
+Optional:
+
+- `create_public_ipv4` (Boolean)
+- `etcd_version` (String)
+- `instances` (Attributes List) (see [below for nested schema](#nestedatt--spec--etcds--spec--instances))
+- `root_password` (String, Sensitive)
+- `tier` (String)
+- `vm_offer_id` (String)
+- `volume_offer_id` (String)
+- `volume_size_gib` (Number)
+
+<a id="nestedatt--spec--etcds--spec--instances"></a>
+### Nested Schema for `spec.etcds.spec.instances`
+
+Optional:
+
+- `id` (String)
+- `vpc_subnet_id` (String)
+
+
+
+<a id="nestedatt--spec--etcds--status"></a>
+### Nested Schema for `spec.etcds.status`
+
+Optional:
+
+- `ca_cert` (String)
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--etcds--status--created_by_user))
+- `instances` (Attributes List) (see [below for nested schema](#nestedatt--spec--etcds--status--instances))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--etcds--status--last_change_request))
+- `port` (Number)
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--etcds--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--etcds--status--created_by_user"></a>
+### Nested Schema for `spec.etcds.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--etcds--status--instances"></a>
+### Nested Schema for `spec.etcds.status.instances`
+
+Optional:
+
+- `id` (String)
+- `private_ipv4` (String)
+- `public_ipv4` (String)
+
+
+<a id="nestedatt--spec--etcds--status--last_change_request"></a>
+### Nested Schema for `spec.etcds.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--etcds--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--etcds--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.etcds.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--etcds--status--pricing"></a>
+### Nested Schema for `spec.etcds.status.pricing`
 
 Optional:
 

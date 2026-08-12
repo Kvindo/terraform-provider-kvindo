@@ -92,7 +92,11 @@ type ResourceDef struct {
 // skipResources are PUT-path resources present in the swagger that the provider does NOT expose
 // (removed/unimplemented backends, plus the hand-written transaction resource).
 var skipResources = map[string]bool{
-	"etcd": true, "etcd_node_group": true, "grafana": true, "nat_gateway": true,
+	// "etcd_node_group" never existed as a real resource (EtcdSpec.Instances[] is inline on the
+	// one Etcd resource, no separate node-group type) - kept skipped since swagger has no such
+	// path to generate from either way. "etcd" itself was removed from this list 2026-08-12: it
+	// shipped as a real resource this session and is now generated normally below.
+	"etcd_node_group": true, "grafana": true, "nat_gateway": true,
 	"postgresql": true, "postgresql_node_group": true, "victoria_metrics": true,
 	"transaction": true,
 }
@@ -167,6 +171,7 @@ var optionalOnlySpecFields = map[string]map[string]bool{
 // keyword heuristic over-matches (it would mark public_key etc.), so sensitivity is explicit.
 var sensitiveSpecFields = map[string]map[string]bool{
 	"certificate":           {"private_key_pem": true},
+	"etcd":                  {"root_password": true},
 	"gitlab":                {"root_password": true},
 	"ollama":                {"root_password": true},
 	"postgresql_standalone": {"root_password": true},
@@ -430,10 +435,29 @@ func extractFields(schema SchemaObject, schemas map[string]SchemaObject) (fields
 				if baseInfoFields[infoFieldName] {
 					continue
 				}
+				// Mirrors the spec-field loop below: a status field can be an array of objects
+				// (e.g. etcd's status.instances, or a schedule's status.runs) just like a spec
+				// field can - without this, such a field silently fell to the "default: string"
+				// case in emitStatusSchemaArg/emitStatusAssign and always read back empty.
+				ift := swaggerTypeToFieldType(infoFieldProp)
+				var iObjFields []FieldDef
+				switch ift {
+				case "object":
+					iObjFields = extractObjFields(infoFieldProp, schemas)
+					if len(iObjFields) == 0 {
+						ift = "string" // $ref to a scalar/enum
+					}
+				case "list_object":
+					iObjFields = extractObjFields(infoFieldProp.Items, schemas)
+					if len(iObjFields) == 0 {
+						ift = "list_string" // array of scalars/enums
+					}
+				}
 				infoFields = append(infoFields, FieldDef{
 					TFName:    camelToSnake(infoFieldName),
 					APIName:   infoFieldName,
-					FieldType: swaggerTypeToFieldType(infoFieldProp),
+					FieldType: ift,
+					ObjFields: iObjFields,
 					Computed:  true,
 				})
 			}
@@ -649,6 +673,14 @@ func descVarName(sn string, f FieldDef) string {
 	return lowerFirst(sn) + toTitle(f.TFName) + "ObjFields"
 }
 
+// statusDescVarName is descVarName's status-side counterpart, suffixed "Status" so it can never
+// collide with a same-named spec field's descriptor var - e.g. etcd's spec.instances
+// ({id, vpc_subnet_id}) and status.instances ({id, public_ipv4, private_ipv4}) are differently
+// shaped but would otherwise both want "etcdInstancesObjFields".
+func statusDescVarName(sn string, f FieldDef) string {
+	return lowerFirst(sn) + "Status" + toTitle(f.TFName) + "ObjFields"
+}
+
 func lowerFirst(s string) string {
 	if s == "" {
 		return s
@@ -677,11 +709,16 @@ func descLiteral(fields []FieldDef) string {
 }
 
 // emitObjDescriptors writes the package-level []objField descriptor vars for a resource's nested
-// spec fields (object / list_object). The datasource file reuses these same vars.
+// spec AND status fields (object / list_object). The datasource file reuses these same vars.
 func emitObjDescriptors(sb *strings.Builder, sn string, r ResourceDef) {
 	for _, f := range r.Fields {
 		if f.FieldType == "object" || f.FieldType == "list_object" {
 			sb.WriteString(fmt.Sprintf("var %s = %s\n\n", descVarName(sn, f), descLiteral(f.ObjFields)))
+		}
+	}
+	for _, f := range r.StatusExtra {
+		if f.FieldType == "object" || f.FieldType == "list_object" {
+			sb.WriteString(fmt.Sprintf("var %s = %s\n\n", statusDescVarName(sn, f), descLiteral(f.ObjFields)))
 		}
 	}
 }
@@ -766,11 +803,18 @@ func emitSpecModel(sb *strings.Builder, sn string, r ResourceDef) {
 	sb.WriteString("}\n\n")
 }
 
-// emitStatusSchemaArg returns the argument expression for commonInfoSchema / commonInfoDatasourceSchema.
+// emitStatusSchemaArg returns the argument expression for commonInfoSchema (the RESOURCE file's
+// status block). A status field is always server-computed, so object/list_object cases use the
+// Computed-only objStatusSchema/listObjStatusSchema builders here, NOT the Optional+Computed
+// objResourceSchema/listObjResourceSchema builders spec fields use - marking a read-only status
+// sub-tree Optional would let a user "configure" it, which terraform-plugin-framework accepts at
+// schema-build time but breaks at plan time. emitDatasourceStatusSchemaArg's datasource
+// equivalent doesn't need this distinction: datasource schemas are Computed-only throughout.
 func emitStatusSchemaArg(r ResourceDef) string {
 	if len(r.StatusExtra) == 0 {
 		return "nil"
 	}
+	sn := structName(r.Name)
 	var b strings.Builder
 	b.WriteString("map[string]schema.Attribute{")
 	for _, f := range r.StatusExtra {
@@ -780,6 +824,10 @@ func emitStatusSchemaArg(r ResourceDef) string {
 			attrType = "schema.Int64Attribute{Computed: true}"
 		case "bool":
 			attrType = "schema.BoolAttribute{Computed: true}"
+		case "object":
+			attrType = fmt.Sprintf("objStatusSchema(%s)", statusDescVarName(sn, f))
+		case "list_object":
+			attrType = fmt.Sprintf("listObjStatusSchema(%s)", statusDescVarName(sn, f))
 		default:
 			if f.Sensitive {
 				attrType = "schema.StringAttribute{Computed: true, Sensitive: true}"
@@ -800,6 +848,7 @@ func emitStatusAssign(sb *strings.Builder, r ResourceDef, dataVar string) {
 		sb.WriteString(fmt.Sprintf("\tstate.Status = simpleStateInfoObj(%s)\n", dataVar))
 		return
 	}
+	sn := structName(r.Name)
 	sb.WriteString("\tstate.Status = buildInfoObj(" + dataVar + ",\n")
 	sb.WriteString("\t\tmap[string]attr.Type{\n")
 	for _, f := range r.StatusExtra {
@@ -809,6 +858,8 @@ func emitStatusAssign(sb *strings.Builder, r ResourceDef, dataVar string) {
 			at = "types.Int64Type"
 		case "bool":
 			at = "types.BoolType"
+		case "object", "list_object":
+			at = fmt.Sprintf("attrTypeOf(%q, %s)", f.FieldType, statusDescVarName(sn, f))
 		default:
 			at = "types.StringType"
 		}
@@ -817,16 +868,20 @@ func emitStatusAssign(sb *strings.Builder, r ResourceDef, dataVar string) {
 	sb.WriteString("\t\t},\n")
 	sb.WriteString("\t\tmap[string]attr.Value{\n")
 	for _, f := range r.StatusExtra {
-		var getter string
+		var valExpr string
 		switch f.FieldType {
 		case "int64":
-			getter = "getInt64FromInfo"
+			valExpr = fmt.Sprintf("getInt64FromInfo(%s, %q)", dataVar, f.APIName)
 		case "bool":
-			getter = "getBoolFromInfo"
+			valExpr = fmt.Sprintf("getBoolFromInfo(%s, %q)", dataVar, f.APIName)
+		case "object":
+			valExpr = fmt.Sprintf("getObjFromInfo(%s, %q, %s)", dataVar, f.APIName, statusDescVarName(sn, f))
+		case "list_object":
+			valExpr = fmt.Sprintf("getListObjFromInfo(%s, %q, %s)", dataVar, f.APIName, statusDescVarName(sn, f))
 		default:
-			getter = "getStringFromInfo"
+			valExpr = fmt.Sprintf("getStringFromInfo(%s, %q)", dataVar, f.APIName)
 		}
-		sb.WriteString(fmt.Sprintf("\t\t\t%q: %s(%s, %q),\n", f.TFName, getter, dataVar, f.APIName))
+		sb.WriteString(fmt.Sprintf("\t\t\t%q: %s,\n", f.TFName, valExpr))
 	}
 	sb.WriteString("\t\t})\n")
 }
@@ -1275,6 +1330,7 @@ func emitDatasourceStatusSchemaArg(r ResourceDef) string {
 	if len(r.StatusExtra) == 0 {
 		return "nil"
 	}
+	sn := structName(r.Name)
 	var b strings.Builder
 	b.WriteString("map[string]schema.Attribute{")
 	for _, f := range r.StatusExtra {
@@ -1284,6 +1340,10 @@ func emitDatasourceStatusSchemaArg(r ResourceDef) string {
 			attrType = "schema.Int64Attribute{Computed: true}"
 		case "bool":
 			attrType = "schema.BoolAttribute{Computed: true}"
+		case "object":
+			attrType = fmt.Sprintf("objDatasourceSchema(%s)", statusDescVarName(sn, f))
+		case "list_object":
+			attrType = fmt.Sprintf("listObjDatasourceSchema(%s)", statusDescVarName(sn, f))
 		default:
 			if f.Sensitive {
 				attrType = "schema.StringAttribute{Computed: true, Sensitive: true}"

@@ -82,6 +82,103 @@ func TestObjFromAPI_NilIsNull(t *testing.T) {
 	}
 }
 
+// TestGetListObjFromInfo_ReadsStatusArray reproduces the real bug this covers: a status field
+// that's an array of objects (e.g. etcd's status.instances) used to always read back as an
+// empty string via getStringFromInfo's `v.(string)` assertion silently failing. This proves the
+// list_object path through infoFieldRaw -> getListObjFromInfo -> listObjFromAPI works end to end.
+func TestGetListObjFromInfo_ReadsStatusArray(t *testing.T) {
+	instanceFields := []objField{
+		{TF: "id", API: "id", Kind: "string"},
+		{TF: "private_ipv4", API: "privateIpV4", Kind: "string"},
+		{TF: "public_ipv4", API: "publicIpV4", Kind: "string"},
+	}
+	data := map[string]interface{}{
+		"status": map[string]interface{}{
+			"instances": []interface{}{
+				map[string]interface{}{"id": "i1", "privateIpV4": "10.0.0.5"},
+				map[string]interface{}{"id": "i2", "privateIpV4": "10.0.0.9"},
+			},
+		},
+	}
+	l := getListObjFromInfo(data, "instances", instanceFields)
+	if l.IsNull() || l.IsUnknown() {
+		t.Fatal("expected a non-null, known list")
+	}
+	if len(l.Elements()) != 2 {
+		t.Fatalf("expected 2 instances, got %d", len(l.Elements()))
+	}
+	first, ok := l.Elements()[0].(types.Object)
+	if !ok {
+		t.Fatalf("element 0 is not an Object: %T", l.Elements()[0])
+	}
+	if v, ok := first.Attributes()["id"].(types.String); !ok || v.ValueString() != "i1" {
+		t.Errorf("element 0 id: got %v", first.Attributes()["id"])
+	}
+	if v, ok := first.Attributes()["private_ipv4"].(types.String); !ok || v.ValueString() != "10.0.0.5" {
+		t.Errorf("element 0 private_ipv4: got %v", first.Attributes()["private_ipv4"])
+	}
+	// public_ipv4 was absent on the wire (private-only cluster) - must come back null, not an
+	// empty string, mirroring the real API's "field omitted when disabled" contract.
+	if v, ok := first.Attributes()["public_ipv4"].(types.String); !ok || !v.IsNull() {
+		t.Errorf("element 0 public_ipv4: expected null, got %v", first.Attributes()["public_ipv4"])
+	}
+}
+
+// TestGetListObjFromInfo_AbsentFieldIsEmptyNotPanic covers the field-missing case (e.g. a
+// resource whose status predates this field, or a wire hiccup) - must degrade to an empty list,
+// never panic on the type assertion.
+func TestGetListObjFromInfo_AbsentFieldIsEmptyNotPanic(t *testing.T) {
+	l := getListObjFromInfo(map[string]interface{}{"status": map[string]interface{}{}}, "instances", testObjFields)
+	if l.IsNull() {
+		t.Error("expected an empty (non-null) list when the field is absent, matching listObjFromAPI's convention")
+	}
+	if len(l.Elements()) != 0 {
+		t.Errorf("expected 0 elements, got %d", len(l.Elements()))
+	}
+}
+
+// TestGetObjFromInfo_ReadsStatusObject covers the singular nested-object status case
+// (object, not list_object) through the same infoFieldRaw path.
+func TestGetObjFromInfo_ReadsStatusObject(t *testing.T) {
+	fields := []objField{{TF: "min_version", API: "minVersion", Kind: "string"}}
+	data := map[string]interface{}{
+		"status": map[string]interface{}{
+			"tls": map[string]interface{}{"minVersion": "1.3"},
+		},
+	}
+	o := getObjFromInfo(data, "tls", fields)
+	if o.IsNull() {
+		t.Fatal("expected a non-null object")
+	}
+	if v, ok := o.Attributes()["min_version"].(types.String); !ok || v.ValueString() != "1.3" {
+		t.Errorf("min_version: got %v", o.Attributes()["min_version"])
+	}
+}
+
+// TestListObjStatusSchema_IsComputedOnly pins the semantic point of adding a separate
+// status-side schema builder instead of reusing listObjResourceSchema (spec-field, Optional+
+// Computed): a status field is always server-computed, so it and every leaf under it must be
+// Computed only - Optional would let terraform-plugin-framework accept user config for a
+// read-only sub-tree at schema-build time, only to break at plan time.
+func TestListObjStatusSchema_IsComputedOnly(t *testing.T) {
+	attr := listObjStatusSchema([]objField{
+		{TF: "id", API: "id", Kind: "string"},
+	})
+	ln, ok := attr.(interface {
+		IsOptional() bool
+		IsComputed() bool
+	})
+	if !ok {
+		t.Fatalf("unexpected attribute type: %T", attr)
+	}
+	if ln.IsOptional() {
+		t.Error("status list attribute must not be Optional")
+	}
+	if !ln.IsComputed() {
+		t.Error("status list attribute must be Computed")
+	}
+}
+
 func TestObjToAPI_OmitsNullAttrs(t *testing.T) {
 	// Build an object with only one attribute set; the rest null.
 	at := objAttrTypes(testObjFields)

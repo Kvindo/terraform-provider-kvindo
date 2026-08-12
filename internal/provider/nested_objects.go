@@ -303,6 +303,54 @@ func listObjResourceSchema(fields []objField) rschema.Attribute {
 	}
 }
 
+// objLeafStatusSchema/objStatusSchema/listObjStatusSchema are objLeafResourceSchema/
+// objResourceSchema/listObjResourceSchema's Computed-only counterparts, used for a nested
+// object/list-of-objects field inside a RESOURCE file's "status" block. A status field is always
+// server-computed (unlike a spec field), so it must NOT be Optional - marking it Optional would
+// let a user "configure" a read-only sub-tree, which terraform-plugin-framework accepts at
+// schema-build time but breaks at plan time. The datasource equivalents (objDatasourceSchema/
+// listObjDatasourceSchema below) don't need a separate status variant since every datasource
+// field, spec or status, is already Computed-only.
+func objLeafStatusSchema(f objField) rschema.Attribute {
+	switch f.Kind {
+	case "bool":
+		return rschema.BoolAttribute{Computed: true}
+	case "int64":
+		return rschema.Int64Attribute{Computed: true}
+	case "float64":
+		return rschema.Float64Attribute{Computed: true}
+	case "list_string":
+		return rschema.ListAttribute{Computed: true, ElementType: types.StringType}
+	case "map_string":
+		return rschema.MapAttribute{Computed: true, ElementType: types.StringType}
+	case "object":
+		return objStatusSchema(f.Obj)
+	case "list_object":
+		return listObjStatusSchema(f.Obj)
+	default:
+		return rschema.StringAttribute{Computed: true, Sensitive: f.Sensitive}
+	}
+}
+
+func objStatusSchema(fields []objField) rschema.Attribute {
+	attrs := make(map[string]rschema.Attribute, len(fields))
+	for _, f := range fields {
+		attrs[f.TF] = objLeafStatusSchema(f)
+	}
+	return rschema.SingleNestedAttribute{Computed: true, Attributes: attrs}
+}
+
+func listObjStatusSchema(fields []objField) rschema.Attribute {
+	attrs := make(map[string]rschema.Attribute, len(fields))
+	for _, f := range fields {
+		attrs[f.TF] = objLeafStatusSchema(f)
+	}
+	return rschema.ListNestedAttribute{
+		Computed:     true,
+		NestedObject: rschema.NestedAttributeObject{Attributes: attrs},
+	}
+}
+
 func objLeafDatasourceSchema(f objField) dschema.Attribute {
 	switch f.Kind {
 	case "bool":

@@ -700,6 +700,30 @@ func getStringFromInfo(data map[string]interface{}, field string) types.String {
 	return types.StringValue("")
 }
 
+// getObjFromInfo extracts a nested-object field from the "status" sub-object (case-insensitive
+// key match, same as getStringFromInfo/infoFieldRaw). Returns a null object of the right shape
+// when the field is absent, same null-on-absent convention as getStringFromInfo's empty string.
+func getObjFromInfo(data map[string]interface{}, field string, fields []objField) types.Object {
+	if v, ok := infoFieldRaw(data, field); ok {
+		if m, ok := v.(map[string]interface{}); ok {
+			return objFromAPI(m, fields)
+		}
+	}
+	return objFromAPI(nil, fields)
+}
+
+// getListObjFromInfo extracts a list-of-objects field from the "status" sub-object
+// (case-insensitive key match, same as getStringFromInfo/infoFieldRaw). Returns an empty list of
+// the right shape when the field is absent.
+func getListObjFromInfo(data map[string]interface{}, field string, fields []objField) types.List {
+	if v, ok := infoFieldRaw(data, field); ok {
+		if arr, ok := v.([]interface{}); ok {
+			return listObjFromAPI(arr, fields)
+		}
+	}
+	return listObjFromAPI(nil, fields)
+}
+
 // getInt64FromInfo extracts an int64 field from the "status" sub-object.
 func getInt64FromInfo(data map[string]interface{}, field string) types.Int64 {
 	if v, ok := infoFieldRaw(data, field); ok {

@@ -66,10 +66,10 @@ func TestTransactionSchema_SubResourcesAreNested(t *testing.T) {
 }
 
 func TestTransactionRegistry_CoversAllMaps(t *testing.T) {
-	// Every registry tfKey must be a real schema attribute. There are 59 transactable sub-types
+	// Every registry tfKey must be a real schema attribute. There are 60 transactable sub-types
 	// (the transaction's own "labels" map is not a sub-resource).
-	if len(txnSubs) != 59 {
-		t.Errorf("expected 59 transactable sub-types, got %d", len(txnSubs))
+	if len(txnSubs) != 60 {
+		t.Errorf("expected 60 transactable sub-types, got %d", len(txnSubs))
 	}
 	seen := map[string]bool{}
 	for _, s := range txnSubs {

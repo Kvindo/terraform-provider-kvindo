@@ -87,6 +87,7 @@ type TransactionSpecModel struct {
 	Images                                         types.Map  `tfsdk:"images"`
 	Vms                                            types.Map  `tfsdk:"vms"`
 	SecurityGroups                                 types.Map  `tfsdk:"security_groups"`
+	Etcds                                          types.Map  `tfsdk:"etcds"`
 }
 
 // ---------------------------------------------------------------------------
