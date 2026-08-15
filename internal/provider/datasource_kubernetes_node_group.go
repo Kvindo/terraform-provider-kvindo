@@ -47,7 +47,7 @@ func (d *KubernetesNodeGroupDataSource) Schema(_ context.Context, _ datasource.S
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"nodes": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"nodes": listObjDatasourceSchema(kubernetesNodeGroupStatusNodesObjFields)}),
 	}}
 }
 
@@ -109,10 +109,10 @@ func (d *KubernetesNodeGroupDataSource) Read(ctx context.Context, req datasource
 	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
 	state.Status = buildInfoObj(apiData,
 		map[string]attr.Type{
-			"nodes": types.StringType,
+			"nodes": attrTypeOf("list_object", kubernetesNodeGroupStatusNodesObjFields),
 		},
 		map[string]attr.Value{
-			"nodes": getStringFromInfo(apiData, "nodes"),
+			"nodes": getListObjFromInfo(apiData, "nodes", kubernetesNodeGroupStatusNodesObjFields),
 		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

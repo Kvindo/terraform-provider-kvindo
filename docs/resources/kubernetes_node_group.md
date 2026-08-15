@@ -117,7 +117,7 @@ Read-Only:
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--status--last_change_request))
-- `nodes` (String)
+- `nodes` (Attributes List) (see [below for nested schema](#nestedatt--status--nodes))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--status--pricing))
 - `state` (String)
 
@@ -148,6 +148,17 @@ Read-Only:
 - `id` (String)
 - `name` (String)
 
+
+
+<a id="nestedatt--status--nodes"></a>
+### Nested Schema for `status.nodes`
+
+Read-Only:
+
+- `private_ipv4` (String)
+- `private_ipv6` (String)
+- `public_ipv4` (String)
+- `public_ipv6` (String)
 
 
 <a id="nestedatt--status--pricing"></a>

@@ -116,6 +116,7 @@ Read-Only:
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--status--pricing))
+- `runs` (Attributes List) (see [below for nested schema](#nestedatt--status--runs))
 - `state` (String)
 
 <a id="nestedatt--status--created_by_user"></a>
@@ -155,3 +156,19 @@ Read-Only:
 - `day` (Number)
 - `hour` (Number)
 - `month` (Number)
+
+
+<a id="nestedatt--status--runs"></a>
+### Nested Schema for `status.runs`
+
+Read-Only:
+
+- `completion_time` (String)
+- `create_time` (String)
+- `duration_ms` (Number)
+- `id` (String)
+- `output` (String)
+- `return_code` (Number)
+- `start_time` (String)
+- `status` (String)
+- `vm_id` (String)

@@ -992,8 +992,11 @@ Optional:
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--hosting_providers--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--hosting_providers--status--last_change_request))
+- `os_images` (Attributes List) (see [below for nested schema](#nestedatt--spec--hosting_providers--status--os_images))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--hosting_providers--status--pricing))
 - `state` (String)
+- `vm_offers` (Attributes List) (see [below for nested schema](#nestedatt--spec--hosting_providers--status--vm_offers))
+- `volume_offers` (Attributes List) (see [below for nested schema](#nestedatt--spec--hosting_providers--status--volume_offers))
 
 <a id="nestedatt--spec--hosting_providers--status--created_by_user"></a>
 ### Nested Schema for `spec.hosting_providers.status.created_by_user`
@@ -1024,6 +1027,20 @@ Optional:
 
 
 
+<a id="nestedatt--spec--hosting_providers--status--os_images"></a>
+### Nested Schema for `spec.hosting_providers.status.os_images`
+
+Optional:
+
+- `description` (String)
+- `id` (String)
+- `is_default` (Boolean)
+- `min_disk_size_gib` (Number)
+- `os_name` (String)
+- `os_type` (String)
+- `os_version` (Number)
+
+
 <a id="nestedatt--spec--hosting_providers--status--pricing"></a>
 ### Nested Schema for `spec.hosting_providers.status.pricing`
 
@@ -1032,6 +1049,38 @@ Optional:
 - `day` (Number)
 - `hour` (Number)
 - `month` (Number)
+
+
+<a id="nestedatt--spec--hosting_providers--status--vm_offers"></a>
+### Nested Schema for `spec.hosting_providers.status.vm_offers`
+
+Optional:
+
+- `comment` (String)
+- `cpu_threads` (Number)
+- `generation_comment` (String)
+- `generation_id` (String)
+- `id` (String)
+- `price_currency` (String)
+- `price_per_hour` (Number)
+- `ram_gib` (Number)
+
+
+<a id="nestedatt--spec--hosting_providers--status--volume_offers"></a>
+### Nested Schema for `spec.hosting_providers.status.volume_offers`
+
+Optional:
+
+- `comment` (String)
+- `id` (String)
+- `max_size_gib` (Number)
+- `min_size_gib` (Number)
+- `price_currency` (String)
+- `price_per_hour_per_gib` (Number)
+- `read_iops` (Number)
+- `read_throughput_mib` (Number)
+- `write_iops` (Number)
+- `write_throughput_mib` (Number)
 
 
 
@@ -1082,6 +1131,7 @@ Optional:
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--image_schedules--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--image_schedules--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--image_schedules--status--pricing))
+- `runs` (Attributes List) (see [below for nested schema](#nestedatt--spec--image_schedules--status--runs))
 - `state` (String)
 
 <a id="nestedatt--spec--image_schedules--status--created_by_user"></a>
@@ -1121,6 +1171,20 @@ Optional:
 - `day` (Number)
 - `hour` (Number)
 - `month` (Number)
+
+
+<a id="nestedatt--spec--image_schedules--status--runs"></a>
+### Nested Schema for `spec.image_schedules.status.runs`
+
+Optional:
+
+- `completion_time` (String)
+- `create_time` (String)
+- `id` (String)
+- `image_id` (String)
+- `start_time` (String)
+- `status` (String)
+- `vm_id` (String)
 
 
 
@@ -1172,7 +1236,7 @@ Optional:
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--images--status--pricing))
 - `size_bytes` (Number)
 - `state` (String)
-- `volumes` (String)
+- `volumes` (Attributes List) (see [below for nested schema](#nestedatt--spec--images--status--volumes))
 
 <a id="nestedatt--spec--images--status--created_by_user"></a>
 ### Nested Schema for `spec.images.status.created_by_user`
@@ -1211,6 +1275,17 @@ Optional:
 - `day` (Number)
 - `hour` (Number)
 - `month` (Number)
+
+
+<a id="nestedatt--spec--images--status--volumes"></a>
+### Nested Schema for `spec.images.status.volumes`
+
+Optional:
+
+- `device_index` (Number)
+- `offer_id` (String)
+- `os_image_id` (String)
+- `size_bytes` (Number)
 
 
 
@@ -1362,7 +1437,7 @@ Optional:
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--kubernetes_node_groups--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--kubernetes_node_groups--status--last_change_request))
-- `nodes` (String)
+- `nodes` (Attributes List) (see [below for nested schema](#nestedatt--spec--kubernetes_node_groups--status--nodes))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--kubernetes_node_groups--status--pricing))
 - `state` (String)
 
@@ -1393,6 +1468,17 @@ Optional:
 - `id` (String)
 - `name` (String)
 
+
+
+<a id="nestedatt--spec--kubernetes_node_groups--status--nodes"></a>
+### Nested Schema for `spec.kubernetes_node_groups.status.nodes`
+
+Optional:
+
+- `private_ipv4` (String)
+- `private_ipv6` (String)
+- `public_ipv4` (String)
+- `public_ipv6` (String)
 
 
 <a id="nestedatt--spec--kubernetes_node_groups--status--pricing"></a>
@@ -3865,8 +3951,10 @@ Optional:
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--quotas--status--created_by_user))
 - `current_value` (Number)
+- `held_value` (Number)
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--quotas--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--quotas--status--pricing))
+- `reconciled_value` (Number)
 - `state` (String)
 
 <a id="nestedatt--spec--quotas--status--created_by_user"></a>

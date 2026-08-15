@@ -39,7 +39,7 @@ func (d *ImageDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"size_bytes": schema.Int64Attribute{Computed: true}, "volumes": schema.StringAttribute{Computed: true}, "is_vm_image": schema.BoolAttribute{Computed: true}}),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"is_vm_image": schema.BoolAttribute{Computed: true}, "size_bytes": schema.Int64Attribute{Computed: true}, "volumes": listObjDatasourceSchema(imageStatusVolumesObjFields)}),
 	}}
 }
 
@@ -95,14 +95,14 @@ func (d *ImageDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	state.Spec.VolumeId = getString(spec, "volumeId")
 	state.Status = buildInfoObj(apiData,
 		map[string]attr.Type{
-			"size_bytes":  types.Int64Type,
-			"volumes":     types.StringType,
 			"is_vm_image": types.BoolType,
+			"size_bytes":  types.Int64Type,
+			"volumes":     attrTypeOf("list_object", imageStatusVolumesObjFields),
 		},
 		map[string]attr.Value{
-			"size_bytes":  getInt64FromInfo(apiData, "sizeBytes"),
-			"volumes":     getStringFromInfo(apiData, "volumes"),
 			"is_vm_image": getBoolFromInfo(apiData, "isVmImage"),
+			"size_bytes":  getInt64FromInfo(apiData, "sizeBytes"),
+			"volumes":     getListObjFromInfo(apiData, "volumes", imageStatusVolumesObjFields),
 		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

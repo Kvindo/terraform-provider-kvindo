@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -41,7 +42,7 @@ func (d *VmCommandScheduleDataSource) Schema(_ context.Context, _ datasource.Sch
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(nil),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"runs": listObjDatasourceSchema(vmCommandScheduleStatusRunsObjFields)}),
 	}}
 }
 
@@ -98,6 +99,12 @@ func (d *VmCommandScheduleDataSource) Read(ctx context.Context, req datasource.R
 	state.Spec.Enabled = getBool(spec, "enabled")
 	state.Spec.Schedule = getString(spec, "schedule")
 	state.Spec.ScheduleFormat = getString(spec, "scheduleFormat")
-	state.Status = simpleStateInfoObj(apiData)
+	state.Status = buildInfoObj(apiData,
+		map[string]attr.Type{
+			"runs": attrTypeOf("list_object", vmCommandScheduleStatusRunsObjFields),
+		},
+		map[string]attr.Value{
+			"runs": getListObjFromInfo(apiData, "runs", vmCommandScheduleStatusRunsObjFields),
+		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

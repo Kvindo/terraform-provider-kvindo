@@ -17,6 +17,8 @@ import (
 
 var _ = fmt.Sprintf
 
+var kubernetesNodeGroupStatusNodesObjFields = []objField{{TF: "private_ipv4", API: "privateIpV4", Kind: "string"}, {TF: "private_ipv6", API: "privateIpV6", Kind: "string"}, {TF: "public_ipv4", API: "publicIpV4", Kind: "string"}, {TF: "public_ipv6", API: "publicIpV6", Kind: "string"}}
+
 type KubernetesNodeGroupSpecModel struct {
 	CreatePublicIpv4 types.Bool   `tfsdk:"create_public_ipv4"`
 	DesiredNodeCount types.Int64  `tfsdk:"desired_node_count"`
@@ -58,7 +60,7 @@ func KubernetesNodeGroupResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Required: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(map[string]schema.Attribute{"nodes": schema.StringAttribute{Computed: true}}),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"nodes": listObjStatusSchema(kubernetesNodeGroupStatusNodesObjFields)}),
 	}
 }
 
@@ -124,10 +126,10 @@ func populateKubernetesNodeGroupState(ctx context.Context, data map[string]inter
 	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
 	state.Status = buildInfoObj(data,
 		map[string]attr.Type{
-			"nodes": types.StringType,
+			"nodes": attrTypeOf("list_object", kubernetesNodeGroupStatusNodesObjFields),
 		},
 		map[string]attr.Value{
-			"nodes": getStringFromInfo(data, "nodes"),
+			"nodes": getListObjFromInfo(data, "nodes", kubernetesNodeGroupStatusNodesObjFields),
 		})
 	return nil
 }

@@ -41,7 +41,7 @@ func (d *QuotaDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"current_value": schema.Int64Attribute{Computed: true}}),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"current_value": schema.Int64Attribute{Computed: true}, "held_value": schema.Int64Attribute{Computed: true}, "reconciled_value": schema.Int64Attribute{Computed: true}}),
 	}}
 }
 
@@ -99,10 +99,14 @@ func (d *QuotaDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	state.Spec.Resource = getString(spec, "resource")
 	state.Status = buildInfoObj(apiData,
 		map[string]attr.Type{
-			"current_value": types.Int64Type,
+			"current_value":    types.Int64Type,
+			"held_value":       types.Int64Type,
+			"reconciled_value": types.Int64Type,
 		},
 		map[string]attr.Value{
-			"current_value": getInt64FromInfo(apiData, "currentValue"),
+			"current_value":    getInt64FromInfo(apiData, "currentValue"),
+			"held_value":       getInt64FromInfo(apiData, "heldValue"),
+			"reconciled_value": getInt64FromInfo(apiData, "reconciledValue"),
 		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

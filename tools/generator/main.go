@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -111,6 +112,13 @@ var resourceNameOverride = map[string]string{
 // resource_vm.go from this generator will NOT reproduce it; re-apply that hand-edit (schema attr,
 // Create/Delete orchestration) after regenerating, the same way resource_transaction.go is
 // hand-migrated after touching the shared nested-object helpers.
+//
+// You no longer have to REMEMBER that, though: the write phase in main() diffs each file's
+// top-level declarations against what is about to replace it and refuses to write when any would
+// disappear, naming them. Losing hand-written code now takes an explicit --allow-clobber. This
+// comment stays because it explains WHY resource_vm.go is not simply in skipResources: the file
+// still needs to track real swagger drift for every one of its generated fields, so "never
+// regenerate it" would be the wrong trade — "regenerate deliberately, then re-apply" is right.
 
 // requiredSpecFields[resource][tf_field] = true marks a spec field Required.
 var requiredSpecFields = map[string]map[string]bool{
@@ -135,33 +143,33 @@ var requiredSpecFields = map[string]map[string]bool{
 	// vpc_id is deliberately NOT Required here: it and vpc_subnet_id are mutually exclusive
 	// (server-enforced) since the subnet-scoped attachment feature - see specFieldDescriptions
 	// below. Only route_table_id is unconditionally required.
-	"route_table_attachment": {"route_table_id": true},
-	"route_table_route":                                  {"route_table_id": true, "destination_cidr": true, "target_ip": true},
-	"s3_user":                                            {"bucket_id": true},
-	"s3_user_access_policy":                              {"policy_json": true},
-	"ssh_key":                                            {"public_key": true},
-	"ssh_private_key":                                    {"private_key": true},
-	"support_ticket_comment":                             {"ticket_id": true},
-	"user":                                               {"email": true},
-	"user_token":                                         {"user_id": true},
-	"volume_attachment":                                  {"volume_id": true, "vm_id": true},
-	"vpc_peering_external_peer":                          {"vpc_peering_id": true},
-	"vpc_peering_peer":                                   {"vpc_peering_id": true},
-	"vpc_subnet":                                         {"vpc_id": true, "ipv4_cidr": true},
+	"route_table_attachment":    {"route_table_id": true},
+	"route_table_route":         {"route_table_id": true, "destination_cidr": true, "target_ip": true},
+	"s3_user":                   {"bucket_id": true},
+	"s3_user_access_policy":     {"policy_json": true},
+	"ssh_key":                   {"public_key": true},
+	"ssh_private_key":           {"private_key": true},
+	"support_ticket_comment":    {"ticket_id": true},
+	"user":                      {"email": true},
+	"user_token":                {"user_id": true},
+	"volume_attachment":         {"volume_id": true, "vm_id": true},
+	"vpc_peering_external_peer": {"vpc_peering_id": true},
+	"vpc_peering_peer":          {"vpc_peering_id": true},
+	"vpc_subnet":                {"vpc_id": true, "ipv4_cidr": true},
 }
 
 // optionalOnlySpecFields[resource][tf_field] = true marks a spec field Optional (NOT Computed):
 // the server never defaults it, so making it Computed would produce spurious plan diffs.
 var optionalOnlySpecFields = map[string]map[string]bool{
-	"gitlab":                    {"floating_ip_id": true, "record_name": true},
-	"loadbalancer":              {"floating_ip_id": true},
-	"ollama":                    {"floating_ip_id": true},
-	"open_vpn":                  {"floating_ip_id": true},
-	"postgresql_standalone":     {"parameters_set_id": true, "floating_ip_id": true},
+	"gitlab":                {"floating_ip_id": true, "record_name": true},
+	"loadbalancer":          {"floating_ip_id": true},
+	"ollama":                {"floating_ip_id": true},
+	"open_vpn":              {"floating_ip_id": true},
+	"postgresql_standalone": {"parameters_set_id": true, "floating_ip_id": true},
 	// vpc_id/vpc_subnet_id are mutually exclusive (server-enforced) and neither is ever defaulted
 	// by the server, so Computed would produce spurious plan diffs - same reasoning as every
 	// other entry in this table.
-	"route_table_attachment": {"vpc_id": true, "vpc_subnet_id": true},
+	"route_table_attachment":    {"vpc_id": true, "vpc_subnet_id": true},
 	"vm":                        {"floating_ip_id": true, "security_group_ids": true},
 	"vpc":                       {"nat_floating_ip_id": true},
 	"vpc_peering_external_peer": {"ssh_private_key_id": true},
@@ -205,9 +213,91 @@ var baseInfoFields = map[string]bool{
 	"lastChangeRequest": true, "pricing": true,
 }
 
+// topLevelDeclRe matches a Go top-level declaration's name: `func Foo`, `func (r *X) Foo`,
+// `var Foo`, `type Foo`. Deliberately name-based rather than AST-based: the comparison only needs
+// to answer "did a declaration that exists on disk disappear from the generated output", and a
+// regex keeps this tool dependency-free and tolerant of the unformatted source the generator emits.
+var topLevelDeclRe = regexp.MustCompile(`(?m)^(?:func\s+(?:\([^)]*\)\s*)?|var\s+|type\s+)(\w+)`)
+
+func topLevelDeclNames(src string) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range topLevelDeclRe.FindAllStringSubmatch(src, -1) {
+		out[m[1]] = true
+	}
+	return out
+}
+
+// quotedKeyRe matches a Go map key written as a string literal: the `"foo"` in `"foo": value`.
+// In a generated file that is every schema attribute name (snake_case, what a practitioner writes
+// in HCL) and every API field name (camelCase, what goes on the wire) — precisely the content that
+// disappearing silently changes the provider's user-visible surface.
+var quotedKeyRe = regexp.MustCompile(`"([A-Za-z_][A-Za-z0-9_]*)"\s*:`)
+
+func quotedKeyNames(src string) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range quotedKeyRe.FindAllStringSubmatch(src, -1) {
+		out[m[1]] = true
+	}
+	return out
+}
+
+func missingFrom(oldSet, newSet map[string]bool) []string {
+	var lost []string
+	for name := range oldSet {
+		if !newSet[name] {
+			lost = append(lost, name)
+		}
+	}
+	sort.Strings(lost)
+	return lost
+}
+
+// lostContent returns what the file at path has that the content about to replace it does not:
+// top-level declarations, and quoted map keys.
+//
+// Both axes are needed, and neither subsumes the other. Declarations catch a whole hand-written
+// helper being deleted (resource_vm.go's buildBootVolumeAttachmentPlan). Keys catch hand-written
+// content living INSIDE a function that survives — the case a declaration-only check misses
+// entirely. Real instance, found 2026-08-16 while adopting genuine additive drift:
+// datasource_vm.go would have lost the bootstrap_command status attributes duration_ms/output/
+// return_code while losing zero declarations, so the declaration check alone waved it through.
+//
+// Comparing SETS rather than diff lines is deliberate: these files pack long single-line attribute
+// maps, so a reformatted line shows the same key on both the - and + side and a line-level read
+// reports it as simultaneously lost and gained. Set membership is the only reading that survives
+// reformatting.
+//
+// Empty when the file doesn't exist yet (a brand-new resource).
+func lostContent(path, newContent string) (decls, keys []string) {
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil // new file, nothing to lose
+	}
+	old := string(existing)
+	return missingFrom(topLevelDeclNames(old), topLevelDeclNames(newContent)),
+		missingFrom(quotedKeyNames(old), quotedKeyNames(newContent))
+}
+
+type pendingWrite struct {
+	path    string
+	content string
+	kind    string
+}
+
 func main() {
 	swaggerPath := flag.String("swagger", "../../kvindo-api.json", "Path to swagger.json")
 	outputDir := flag.String("output", "../../internal/provider", "Output directory for generated files")
+	// allowClobber exists because some generated files legitimately accumulate hand-written code the
+	// generator cannot reproduce (resource_vm.go's boot_volume_attachment is Terraform-side only —
+	// there is no swagger field to derive it from). The documented workflow is "regenerate, then
+	// re-apply the hand-edits". That workflow is fine; what was NOT fine is that a regen used to
+	// perform the destructive half SILENTLY: a full regen wiped ~139 lines of resource_vm.go
+	// (4 whole functions plus the boot_volume_attachment schema/orchestration) with no error, no
+	// warning, and no diff shown - a real feature regression if committed, and one that already
+	// happened once during the 2026-07-11 OnOffSchedule rename. Now the destructive path is opt-in
+	// and prints exactly what it would destroy first.
+	allowClobber := flag.Bool("allow-clobber", false,
+		"overwrite generated files even when doing so would delete hand-written top-level declarations")
 	flag.Parse()
 
 	data, err := os.ReadFile(*swaggerPath)
@@ -225,32 +315,88 @@ func main() {
 	resources := extractResources(spec)
 	fmt.Printf("Found %d resources\n", len(resources))
 
+	// Two phases on purpose: build every file in memory and vet it BEFORE touching disk, so a
+	// rejected run leaves the tree exactly as it found it rather than half-rewritten.
+	var pending []pendingWrite
 	for _, r := range resources {
-		resContent := generateResourceFile(r)
-		resPath := filepath.Join(*outputDir, "resource_"+r.Name+".go")
-		if err := os.WriteFile(resPath, []byte(resContent), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", resPath, err)
-			os.Exit(1)
-		}
-		fmt.Printf("Generated resource: %s\n", resPath)
+		pending = append(pending,
+			pendingWrite{filepath.Join(*outputDir, "resource_"+r.Name+".go"), generateResourceFile(r), "resource"},
+			pendingWrite{filepath.Join(*outputDir, "datasource_"+r.Name+".go"), generateDatasourceFile(r), "datasource"},
+		)
+	}
+	pending = append(pending,
+		pendingWrite{filepath.Join(*outputDir, "provider.go"), generateProviderFile(resources), "provider"})
 
-		dsContent := generateDatasourceFile(r)
-		dsPath := filepath.Join(*outputDir, "datasource_"+r.Name+".go")
-		if err := os.WriteFile(dsPath, []byte(dsContent), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", dsPath, err)
-			os.Exit(1)
+	type clobber struct {
+		path  string
+		decls []string
+		keys  []string
+	}
+	var clobbers []clobber
+	for _, p := range pending {
+		decls, keys := lostContent(p.path, p.content)
+		if len(decls) > 0 || len(keys) > 0 {
+			clobbers = append(clobbers, clobber{p.path, decls, keys})
 		}
-		fmt.Printf("Generated datasource: %s\n", dsPath)
 	}
 
-	// Regenerate provider.go
-	providerContent := generateProviderFile(resources)
-	providerPath := filepath.Join(*outputDir, "provider.go")
-	if err := os.WriteFile(providerPath, []byte(providerContent), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing provider.go: %v\n", err)
-		os.Exit(1)
+	if len(clobbers) > 0 {
+		totalDecls, totalKeys := 0, 0
+		for _, c := range clobbers {
+			totalDecls += len(c.decls)
+			totalKeys += len(c.keys)
+		}
+		verb := "Refusing to write"
+		if *allowClobber {
+			verb = "Overwriting (--allow-clobber)"
+		}
+		fmt.Fprintf(os.Stderr,
+			"\n%s: %d generated file(s) would lose %d top-level declaration(s) and %d map key(s)\n"+
+				"(schema attribute / API field names) the generator cannot reproduce from swagger.\n\n",
+			verb, len(clobbers), totalDecls, totalKeys)
+		for _, c := range clobbers {
+			fmt.Fprintf(os.Stderr, "  %s\n", c.path)
+			for _, name := range c.decls {
+				fmt.Fprintf(os.Stderr, "      - declaration  %s\n", name)
+			}
+			for _, name := range c.keys {
+				fmt.Fprintf(os.Stderr, "      - key          %q\n", name)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "\n%s\n",
+			"=====================================================================\n"+
+				" FIX THE GENERATOR BEFORE RELEASING.\n"+
+				" If a generated file needs something swagger can't express, encode\n"+
+				" it in the generator's override tables so a regen PRODUCES the file\n"+
+				" you need - do not keep hand-patching the output after every regen.\n"+
+				"=====================================================================")
+		fmt.Fprintf(os.Stderr,
+			"\nThe override tables live at the top of this file:\n"+
+				"  requiredSpecFields / optionalOnlySpecFields  - Required/Optional/Computed shape\n"+
+				"  sensitiveSpecFields / sensitiveStatusFields  - Sensitive: true\n"+
+				"  specFieldDescriptions                        - per-field schema Description\n"+
+				"  resourceNameOverride                         - path-derived name -> resource name\n"+
+				"  skipResources                                - do not generate this resource at all\n"+
+				"\nA declaration that genuinely cannot be table-driven (real example:\n"+
+				"resource_vm.go's boot_volume_attachment, a Terraform-side-only feature with no\n"+
+				"backend field behind it) is the ONLY case for --allow-clobber: re-run with it,\n"+
+				"then re-apply the listed declarations by hand and re-run the tests before\n"+
+				"committing. Silently losing them is how the 2026-07-11 OnOffSchedule rename\n"+
+				"reverted boot_volume_attachment with no error and no warning.\n")
+		if !*allowClobber {
+			fmt.Fprintf(os.Stderr, "\nNothing was written.\n")
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "\nRe-apply the declarations listed above before committing.\n\n")
 	}
-	fmt.Printf("Generated provider: %s\n", providerPath)
+
+	for _, p := range pending {
+		if err := os.WriteFile(p.path, []byte(p.content), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", p.path, err)
+			os.Exit(1)
+		}
+		fmt.Printf("Generated %s: %s\n", p.kind, p.path)
+	}
 
 	fmt.Println("Generation complete!")
 }

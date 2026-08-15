@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
@@ -15,6 +16,8 @@ import (
 )
 
 var _ = fmt.Sprintf
+
+var vmCommandScheduleStatusRunsObjFields = []objField{{TF: "completion_time", API: "completionTime", Kind: "string"}, {TF: "create_time", API: "createTime", Kind: "string"}, {TF: "duration_ms", API: "durationMs", Kind: "int64"}, {TF: "id", API: "id", Kind: "string"}, {TF: "output", API: "output", Kind: "string"}, {TF: "return_code", API: "returnCode", Kind: "int64"}, {TF: "start_time", API: "startTime", Kind: "string"}, {TF: "status", API: "status", Kind: "string"}, {TF: "vm_id", API: "vmId", Kind: "string"}}
 
 type VmCommandScheduleSpecModel struct {
 	Command               types.String `tfsdk:"command"`
@@ -51,7 +54,7 @@ func VmCommandScheduleResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(nil),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"runs": listObjStatusSchema(vmCommandScheduleStatusRunsObjFields)}),
 	}
 }
 
@@ -103,7 +106,13 @@ func populateVmCommandScheduleState(ctx context.Context, data map[string]interfa
 	state.Spec.Enabled = getBool(spec, "enabled")
 	state.Spec.Schedule = getString(spec, "schedule")
 	state.Spec.ScheduleFormat = getString(spec, "scheduleFormat")
-	state.Status = simpleStateInfoObj(data)
+	state.Status = buildInfoObj(data,
+		map[string]attr.Type{
+			"runs": attrTypeOf("list_object", vmCommandScheduleStatusRunsObjFields),
+		},
+		map[string]attr.Value{
+			"runs": getListObjFromInfo(data, "runs", vmCommandScheduleStatusRunsObjFields),
+		})
 	return nil
 }
 

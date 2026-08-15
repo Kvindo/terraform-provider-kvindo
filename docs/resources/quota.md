@@ -80,8 +80,10 @@ Read-Only:
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--status--created_by_user))
 - `current_value` (Number)
+- `held_value` (Number)
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--status--last_change_request))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--status--pricing))
+- `reconciled_value` (Number)
 - `state` (String)
 
 <a id="nestedatt--status--created_by_user"></a>

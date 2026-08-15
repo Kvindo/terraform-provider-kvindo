@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
@@ -17,6 +18,12 @@ import (
 )
 
 var _ = fmt.Sprintf
+
+var hostingProviderStatusOsImagesObjFields = []objField{{TF: "description", API: "description", Kind: "string"}, {TF: "id", API: "id", Kind: "string"}, {TF: "is_default", API: "isDefault", Kind: "bool"}, {TF: "min_disk_size_gib", API: "minDiskSizeGiB", Kind: "int64"}, {TF: "os_name", API: "osName", Kind: "string"}, {TF: "os_type", API: "osType", Kind: "string"}, {TF: "os_version", API: "osVersion", Kind: "float64"}}
+
+var hostingProviderStatusVmOffersObjFields = []objField{{TF: "comment", API: "comment", Kind: "string"}, {TF: "cpu_threads", API: "cpuThreads", Kind: "int64"}, {TF: "generation_comment", API: "generationComment", Kind: "string"}, {TF: "generation_id", API: "generationId", Kind: "string"}, {TF: "id", API: "id", Kind: "string"}, {TF: "price_currency", API: "priceCurrency", Kind: "string"}, {TF: "price_per_hour", API: "pricePerHour", Kind: "float64"}, {TF: "ram_gib", API: "ramGiB", Kind: "int64"}}
+
+var hostingProviderStatusVolumeOffersObjFields = []objField{{TF: "comment", API: "comment", Kind: "string"}, {TF: "id", API: "id", Kind: "string"}, {TF: "max_size_gib", API: "maxSizeGiB", Kind: "int64"}, {TF: "min_size_gib", API: "minSizeGiB", Kind: "int64"}, {TF: "price_currency", API: "priceCurrency", Kind: "string"}, {TF: "price_per_hour_per_gib", API: "pricePerHourPerGiB", Kind: "float64"}, {TF: "read_iops", API: "readIops", Kind: "int64"}, {TF: "read_throughput_mib", API: "readThroughputMiB", Kind: "int64"}, {TF: "write_iops", API: "writeIops", Kind: "int64"}, {TF: "write_throughput_mib", API: "writeThroughputMiB", Kind: "int64"}}
 
 type HostingProviderSpecModel struct {
 	City            types.String  `tfsdk:"city"`
@@ -59,7 +66,7 @@ func HostingProviderResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(nil),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"os_images": listObjStatusSchema(hostingProviderStatusOsImagesObjFields), "vm_offers": listObjStatusSchema(hostingProviderStatusVmOffersObjFields), "volume_offers": listObjStatusSchema(hostingProviderStatusVolumeOffersObjFields)}),
 	}
 }
 
@@ -123,7 +130,17 @@ func populateHostingProviderState(ctx context.Context, data map[string]interface
 	state.Spec.Disabled = getBool(spec, "disabled")
 	state.Spec.KeyFeatures = getStringList(ctx, spec, "keyFeatures")
 	state.Spec.Sla = getFloat64(spec, "sla")
-	state.Status = simpleStateInfoObj(data)
+	state.Status = buildInfoObj(data,
+		map[string]attr.Type{
+			"os_images":     attrTypeOf("list_object", hostingProviderStatusOsImagesObjFields),
+			"vm_offers":     attrTypeOf("list_object", hostingProviderStatusVmOffersObjFields),
+			"volume_offers": attrTypeOf("list_object", hostingProviderStatusVolumeOffersObjFields),
+		},
+		map[string]attr.Value{
+			"os_images":     getListObjFromInfo(data, "osImages", hostingProviderStatusOsImagesObjFields),
+			"vm_offers":     getListObjFromInfo(data, "vmOffers", hostingProviderStatusVmOffersObjFields),
+			"volume_offers": getListObjFromInfo(data, "volumeOffers", hostingProviderStatusVolumeOffersObjFields),
+		})
 	return nil
 }
 

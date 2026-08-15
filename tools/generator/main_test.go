@@ -93,3 +93,83 @@ func TestExtractFields_SpecLessResourceYieldsNoFields(t *testing.T) {
 		t.Errorf("spec-less resource should yield no fields, got %+v", fields)
 	}
 }
+
+// The clobber guard exists because a regen used to overwrite generated files unconditionally,
+// silently deleting hand-written code they had accumulated. It compares two axes, and this test
+// pins why BOTH are needed.
+//
+// The declaration axis alone was shipped first and proved insufficient within the day:
+// datasource_vm.go would have lost the bootstrap_command status attributes (duration_ms, output,
+// return_code) while losing zero top-level declarations, because they live inside a function the
+// regen keeps. Only the key axis catches that.
+func TestLostContent_BothAxesAreNecessary(t *testing.T) {
+	// A helper deleted wholesale — the declaration axis catches it, the key axis does not.
+	oldDecl := "package provider\n\nfunc buildBootVolumeAttachmentPlan() {}\n"
+	newDecl := "package provider\n"
+	if got := missingFrom(topLevelDeclNames(oldDecl), topLevelDeclNames(newDecl)); len(got) != 1 || got[0] != "buildBootVolumeAttachmentPlan" {
+		t.Errorf("declaration axis: want [buildBootVolumeAttachmentPlan], got %v", got)
+	}
+
+	// Attributes deleted from INSIDE a surviving function — the real datasource_vm.go shape.
+	// The declaration axis sees nothing; the key axis must catch all three.
+	oldKeys := `package provider
+func (d *VmDataSource) Schema() {
+	m := map[string]schema.Attribute{
+		"bootstrap_command": schema.SingleNestedAttribute{Attributes: map[string]schema.Attribute{
+			"return_code": schema.Int64Attribute{Computed: true},
+			"output":      schema.StringAttribute{Computed: true},
+			"duration_ms": schema.Int64Attribute{Computed: true},
+		}},
+	}
+}
+`
+	newKeys := `package provider
+func (d *VmDataSource) Schema() {
+	m := map[string]schema.Attribute{
+		"bootstrap_command": schema.SingleNestedAttribute{},
+	}
+}
+`
+	if got := missingFrom(topLevelDeclNames(oldKeys), topLevelDeclNames(newKeys)); len(got) != 0 {
+		t.Errorf("declaration axis should see nothing here, got %v", got)
+	}
+	gotKeys := missingFrom(quotedKeyNames(oldKeys), quotedKeyNames(newKeys))
+	want := map[string]bool{"duration_ms": true, "output": true, "return_code": true}
+	if len(gotKeys) != len(want) {
+		t.Fatalf("key axis: want %d lost keys, got %v", len(want), gotKeys)
+	}
+	for _, k := range gotKeys {
+		if !want[k] {
+			t.Errorf("key axis: unexpected lost key %q", k)
+		}
+	}
+}
+
+// Reformatting must not trip the guard. These files pack long single-line attribute maps, so a
+// line-level diff reports a merely-rewrapped key as both removed and added; set comparison is the
+// only reading that survives it. A false positive here would train people to reach for
+// --allow-clobber reflexively, which defeats the whole guard.
+func TestLostContent_ReformattingIsNotALoss(t *testing.T) {
+	oneLine := `package provider
+var x = map[string]A{"alpha": A{}, "beta": B{}, "gamma": C{}}
+`
+	wrapped := `package provider
+var x = map[string]A{
+	"gamma": C{},
+	"alpha": A{},
+	"beta":  B{},
+}
+`
+	if got := missingFrom(quotedKeyNames(oneLine), quotedKeyNames(wrapped)); len(got) != 0 {
+		t.Errorf("reordering/rewrapping must not report losses, got %v", got)
+	}
+	// Adding a key is likewise not a loss.
+	added := wrapped + `var y = map[string]A{"delta": D{}}` + "\n"
+	if got := missingFrom(quotedKeyNames(oneLine), quotedKeyNames(added)); len(got) != 0 {
+		t.Errorf("pure additions must not report losses, got %v", got)
+	}
+	// camelCase API field names are tracked too, not just snake_case schema keys.
+	if !quotedKeyNames(`x := map[string]any{"returnCode": 1}`)["returnCode"] {
+		t.Error("camelCase API field names must be tracked")
+	}
+}

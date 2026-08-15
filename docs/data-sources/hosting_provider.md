@@ -73,8 +73,11 @@ Read-Only:
 - `create_time` (String)
 - `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--status--created_by_user))
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--status--last_change_request))
+- `os_images` (Attributes List) (see [below for nested schema](#nestedatt--status--os_images))
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--status--pricing))
 - `state` (String)
+- `vm_offers` (Attributes List) (see [below for nested schema](#nestedatt--status--vm_offers))
+- `volume_offers` (Attributes List) (see [below for nested schema](#nestedatt--status--volume_offers))
 
 <a id="nestedatt--status--created_by_user"></a>
 ### Nested Schema for `status.created_by_user`
@@ -105,6 +108,20 @@ Read-Only:
 
 
 
+<a id="nestedatt--status--os_images"></a>
+### Nested Schema for `status.os_images`
+
+Read-Only:
+
+- `description` (String)
+- `id` (String)
+- `is_default` (Boolean)
+- `min_disk_size_gib` (Number)
+- `os_name` (String)
+- `os_type` (String)
+- `os_version` (Number)
+
+
 <a id="nestedatt--status--pricing"></a>
 ### Nested Schema for `status.pricing`
 
@@ -113,3 +130,35 @@ Read-Only:
 - `day` (Number)
 - `hour` (Number)
 - `month` (Number)
+
+
+<a id="nestedatt--status--vm_offers"></a>
+### Nested Schema for `status.vm_offers`
+
+Read-Only:
+
+- `comment` (String)
+- `cpu_threads` (Number)
+- `generation_comment` (String)
+- `generation_id` (String)
+- `id` (String)
+- `price_currency` (String)
+- `price_per_hour` (Number)
+- `ram_gib` (Number)
+
+
+<a id="nestedatt--status--volume_offers"></a>
+### Nested Schema for `status.volume_offers`
+
+Read-Only:
+
+- `comment` (String)
+- `id` (String)
+- `max_size_gib` (Number)
+- `min_size_gib` (Number)
+- `price_currency` (String)
+- `price_per_hour_per_gib` (Number)
+- `read_iops` (Number)
+- `read_throughput_mib` (Number)
+- `write_iops` (Number)
+- `write_throughput_mib` (Number)

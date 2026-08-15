@@ -49,7 +49,7 @@ func QuotaResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(map[string]schema.Attribute{"current_value": schema.Int64Attribute{Computed: true}}),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"current_value": schema.Int64Attribute{Computed: true}, "held_value": schema.Int64Attribute{Computed: true}, "reconciled_value": schema.Int64Attribute{Computed: true}}),
 	}
 }
 
@@ -99,10 +99,14 @@ func populateQuotaState(ctx context.Context, data map[string]interface{}, state 
 	state.Spec.Resource = getString(spec, "resource")
 	state.Status = buildInfoObj(data,
 		map[string]attr.Type{
-			"current_value": types.Int64Type,
+			"current_value":    types.Int64Type,
+			"held_value":       types.Int64Type,
+			"reconciled_value": types.Int64Type,
 		},
 		map[string]attr.Value{
-			"current_value": getInt64FromInfo(data, "currentValue"),
+			"current_value":    getInt64FromInfo(data, "currentValue"),
+			"held_value":       getInt64FromInfo(data, "heldValue"),
+			"reconciled_value": getInt64FromInfo(data, "reconciledValue"),
 		})
 	return nil
 }

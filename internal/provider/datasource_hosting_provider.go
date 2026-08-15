@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -44,7 +45,7 @@ func (d *HostingProviderDataSource) Schema(_ context.Context, _ datasource.Schem
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(nil),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"os_images": listObjDatasourceSchema(hostingProviderStatusOsImagesObjFields), "vm_offers": listObjDatasourceSchema(hostingProviderStatusVmOffersObjFields), "volume_offers": listObjDatasourceSchema(hostingProviderStatusVolumeOffersObjFields)}),
 	}}
 }
 
@@ -104,6 +105,16 @@ func (d *HostingProviderDataSource) Read(ctx context.Context, req datasource.Rea
 	state.Spec.Disabled = getBool(spec, "disabled")
 	state.Spec.KeyFeatures = getStringList(ctx, spec, "keyFeatures")
 	state.Spec.Sla = getFloat64(spec, "sla")
-	state.Status = simpleStateInfoObj(apiData)
+	state.Status = buildInfoObj(apiData,
+		map[string]attr.Type{
+			"os_images":     attrTypeOf("list_object", hostingProviderStatusOsImagesObjFields),
+			"vm_offers":     attrTypeOf("list_object", hostingProviderStatusVmOffersObjFields),
+			"volume_offers": attrTypeOf("list_object", hostingProviderStatusVolumeOffersObjFields),
+		},
+		map[string]attr.Value{
+			"os_images":     getListObjFromInfo(apiData, "osImages", hostingProviderStatusOsImagesObjFields),
+			"vm_offers":     getListObjFromInfo(apiData, "vmOffers", hostingProviderStatusVmOffersObjFields),
+			"volume_offers": getListObjFromInfo(apiData, "volumeOffers", hostingProviderStatusVolumeOffersObjFields),
+		})
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

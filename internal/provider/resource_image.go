@@ -15,6 +15,8 @@ import (
 
 var _ = fmt.Sprintf
 
+var imageStatusVolumesObjFields = []objField{{TF: "device_index", API: "deviceIndex", Kind: "int64"}, {TF: "offer_id", API: "offerId", Kind: "string"}, {TF: "os_image_id", API: "osImageId", Kind: "string"}, {TF: "size_bytes", API: "sizeBytes", Kind: "int64"}}
+
 type ImageSpecModel struct {
 	VmId     types.String `tfsdk:"vm_id"`
 	VolumeId types.String `tfsdk:"volume_id"`
@@ -44,7 +46,7 @@ func ImageResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(map[string]schema.Attribute{"size_bytes": schema.Int64Attribute{Computed: true}, "volumes": schema.StringAttribute{Computed: true}, "is_vm_image": schema.BoolAttribute{Computed: true}}),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"is_vm_image": schema.BoolAttribute{Computed: true}, "size_bytes": schema.Int64Attribute{Computed: true}, "volumes": listObjStatusSchema(imageStatusVolumesObjFields)}),
 	}
 }
 
@@ -86,14 +88,14 @@ func populateImageState(ctx context.Context, data map[string]interface{}, state 
 	state.Spec.VolumeId = getString(spec, "volumeId")
 	state.Status = buildInfoObj(data,
 		map[string]attr.Type{
-			"size_bytes":  types.Int64Type,
-			"volumes":     types.StringType,
 			"is_vm_image": types.BoolType,
+			"size_bytes":  types.Int64Type,
+			"volumes":     attrTypeOf("list_object", imageStatusVolumesObjFields),
 		},
 		map[string]attr.Value{
-			"size_bytes":  getInt64FromInfo(data, "sizeBytes"),
-			"volumes":     getStringFromInfo(data, "volumes"),
 			"is_vm_image": getBoolFromInfo(data, "isVmImage"),
+			"size_bytes":  getInt64FromInfo(data, "sizeBytes"),
+			"volumes":     getListObjFromInfo(data, "volumes", imageStatusVolumesObjFields),
 		})
 	return nil
 }

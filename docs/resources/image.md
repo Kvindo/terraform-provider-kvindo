@@ -133,7 +133,7 @@ Read-Only:
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--status--pricing))
 - `size_bytes` (Number)
 - `state` (String)
-- `volumes` (String)
+- `volumes` (Attributes List) (see [below for nested schema](#nestedatt--status--volumes))
 
 <a id="nestedatt--status--created_by_user"></a>
 ### Nested Schema for `status.created_by_user`
@@ -172,3 +172,14 @@ Read-Only:
 - `day` (Number)
 - `hour` (Number)
 - `month` (Number)
+
+
+<a id="nestedatt--status--volumes"></a>
+### Nested Schema for `status.volumes`
+
+Read-Only:
+
+- `device_index` (Number)
+- `offer_id` (String)
+- `os_image_id` (String)
+- `size_bytes` (Number)
