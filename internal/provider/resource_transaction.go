@@ -88,6 +88,8 @@ type TransactionSpecModel struct {
 	Vms                                            types.Map  `tfsdk:"vms"`
 	SecurityGroups                                 types.Map  `tfsdk:"security_groups"`
 	Etcds                                          types.Map  `tfsdk:"etcds"`
+	Valkeys                                        types.Map  `tfsdk:"valkeys"`
+	ValkeyParametersSets                           types.Map  `tfsdk:"valkey_parameters_sets"`
 }
 
 // ---------------------------------------------------------------------------

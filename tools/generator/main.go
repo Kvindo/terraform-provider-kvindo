@@ -176,6 +176,7 @@ var sensitiveSpecFields = map[string]map[string]bool{
 	"ollama":                {"root_password": true},
 	"postgresql_standalone": {"root_password": true},
 	"ssh_private_key":       {"private_key": true},
+	"valkey":                {"root_password": true},
 }
 
 // specFieldDescriptions[resource][tf_field] = the field's schema Description. tfplugindocs
@@ -398,9 +399,18 @@ func extractFields(schema SchemaObject, schemas map[string]SchemaObject) (fields
 	// specProps falls back to props — which, after the envelopeFieldNames skip below, yields no
 	// fields, correctly.
 	specProps := props
+	// Once the spec $ref is unwrapped, specProps are the spec's OWN fields, and none of them is
+	// an envelope key — so envelopeFieldNames must NOT be applied to them. Applying it anyway
+	// silently drops any spec field whose name happens to collide with an envelope key. Real
+	// instance: SupportTicketSpec.kind (the only spec.kind in the whole API) vanished from
+	// resource_support_ticket.go on every full regen and had to be hand-re-added each time.
+	// The filter is still required in the spec-less fallback below, where specProps == props are
+	// genuinely the envelope's own keys (see the comment above).
+	specUnwrapped := false
 	if specProp, ok := props["spec"]; ok && specProp.Ref != "" {
 		if specSchema, ok := schemas[extractRefName(specProp.Ref)]; ok {
 			specProps = specSchema.Properties
+			specUnwrapped = true
 		}
 	}
 
@@ -465,7 +475,7 @@ func extractFields(schema SchemaObject, schemas map[string]SchemaObject) (fields
 	}
 
 	for apiName, prop := range specProps {
-		if commonFieldNames[apiName] || envelopeFieldNames[apiName] || strings.HasPrefix(apiName, "info") {
+		if commonFieldNames[apiName] || (!specUnwrapped && envelopeFieldNames[apiName]) || strings.HasPrefix(apiName, "info") {
 			continue
 		}
 

@@ -174,6 +174,8 @@ Optional:
 - `support_tickets` (Attributes Map) (see [below for nested schema](#nestedatt--spec--support_tickets))
 - `user_tokens` (Attributes Map) (see [below for nested schema](#nestedatt--spec--user_tokens))
 - `users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--users))
+- `valkey_parameters_sets` (Attributes Map) (see [below for nested schema](#nestedatt--spec--valkey_parameters_sets))
+- `valkeys` (Attributes Map) (see [below for nested schema](#nestedatt--spec--valkeys))
 - `vms` (Attributes Map) (see [below for nested schema](#nestedatt--spec--vms))
 - `volume_attachments` (Attributes Map) (see [below for nested schema](#nestedatt--spec--volume_attachments))
 - `volumes` (Attributes Map) (see [below for nested schema](#nestedatt--spec--volumes))
@@ -5233,6 +5235,238 @@ Optional:
 - `day` (Number)
 - `hour` (Number)
 - `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--valkey_parameters_sets"></a>
+### Nested Schema for `spec.valkey_parameters_sets`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_parameters_sets--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_parameters_sets--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_parameters_sets--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--valkey_parameters_sets--metadata"></a>
+### Nested Schema for `spec.valkey_parameters_sets.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--valkey_parameters_sets--spec"></a>
+### Nested Schema for `spec.valkey_parameters_sets.spec`
+
+Optional:
+
+- `parameters` (Map of String)
+
+
+<a id="nestedatt--spec--valkey_parameters_sets--status"></a>
+### Nested Schema for `spec.valkey_parameters_sets.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_parameters_sets--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_parameters_sets--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_parameters_sets--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--valkey_parameters_sets--status--created_by_user"></a>
+### Nested Schema for `spec.valkey_parameters_sets.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--valkey_parameters_sets--status--last_change_request"></a>
+### Nested Schema for `spec.valkey_parameters_sets.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_parameters_sets--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--valkey_parameters_sets--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.valkey_parameters_sets.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--valkey_parameters_sets--status--pricing"></a>
+### Nested Schema for `spec.valkey_parameters_sets.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--valkeys"></a>
+### Nested Schema for `spec.valkeys`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--valkeys--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--valkeys--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--valkeys--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--valkeys--metadata"></a>
+### Nested Schema for `spec.valkeys.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--valkeys--spec"></a>
+### Nested Schema for `spec.valkeys.spec`
+
+Optional:
+
+- `create_public_ipv4` (Boolean)
+- `parameters_set_id` (String)
+- `replicas_per_shard` (Number)
+- `root_password` (String, Sensitive)
+- `shards` (Attributes List) (see [below for nested schema](#nestedatt--spec--valkeys--spec--shards))
+- `use_fqdn` (Boolean)
+- `valkey_version` (String)
+- `vm_offer_id` (String)
+- `volume_offer_id` (String)
+- `volume_size_gib` (Number)
+
+<a id="nestedatt--spec--valkeys--spec--shards"></a>
+### Nested Schema for `spec.valkeys.spec.shards`
+
+Optional:
+
+- `id` (String)
+- `vpc_subnet_id` (String)
+
+
+
+<a id="nestedatt--spec--valkeys--status"></a>
+### Nested Schema for `spec.valkeys.status`
+
+Optional:
+
+- `anti_affinity_message` (String)
+- `anti_affinity_ok` (Boolean)
+- `cluster_endpoints` (String)
+- `cluster_state` (String)
+- `connection_uri` (String)
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--valkeys--status--created_by_user))
+- `dns_seed_fqdn` (String)
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--valkeys--status--last_change_request))
+- `nodes` (Attributes List) (see [below for nested schema](#nestedatt--spec--valkeys--status--nodes))
+- `password` (String)
+- `port` (Number)
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--valkeys--status--pricing))
+- `primary_endpoints` (String)
+- `shards` (Attributes List) (see [below for nested schema](#nestedatt--spec--valkeys--status--shards))
+- `state` (String)
+
+<a id="nestedatt--spec--valkeys--status--created_by_user"></a>
+### Nested Schema for `spec.valkeys.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--valkeys--status--last_change_request"></a>
+### Nested Schema for `spec.valkeys.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--valkeys--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--valkeys--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.valkeys.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--valkeys--status--nodes"></a>
+### Nested Schema for `spec.valkeys.status.nodes`
+
+Optional:
+
+- `announce_fqdn` (String)
+- `bus_port` (Number)
+- `id` (String)
+- `is_primary` (Boolean)
+- `node_id` (String)
+- `observed_role` (String)
+- `port` (Number)
+- `private_ipv4` (String)
+- `public_ipv4` (String)
+- `shard_index` (Number)
+
+
+<a id="nestedatt--spec--valkeys--status--pricing"></a>
+### Nested Schema for `spec.valkeys.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+<a id="nestedatt--spec--valkeys--status--shards"></a>
+### Nested Schema for `spec.valkeys.status.shards`
+
+Optional:
+
+- `index` (Number)
+- `primary_endpoint` (String)
+- `primary_instance_id` (String)
+- `replica_endpoints` (List of String)
+- `replica_instance_ids` (List of String)
+- `slot_end` (Number)
+- `slot_start` (Number)
 
 
 

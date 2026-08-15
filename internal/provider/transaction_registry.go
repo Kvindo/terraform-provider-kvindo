@@ -447,4 +447,20 @@ var txnSubs = []txnSub{
 		build:    txnBuild(buildEtcdRequestMap),
 		populate: txnPop[EtcdResourceModel](populateEtcdState, EtcdResourceSchemaAttrs),
 	},
+	// ParametersSets before Valkeys - dependency order, same as postgresql_parameters_sets/
+	// postgresql_standalones above.
+	{
+		tfKey: "valkey_parameters_sets", apiKey: "valkeyParametersSets", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.ValkeyParametersSets },
+		attrs:    ValkeyParametersSetResourceSchemaAttrs,
+		build:    txnBuild(buildValkeyParametersSetRequestMap),
+		populate: txnPop[ValkeyParametersSetResourceModel](populateValkeyParametersSetState, ValkeyParametersSetResourceSchemaAttrs),
+	},
+	{
+		tfKey: "valkeys", apiKey: "valkeys", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.Valkeys },
+		attrs:    ValkeyResourceSchemaAttrs,
+		build:    txnBuild(buildValkeyRequestMap),
+		populate: txnPop[ValkeyResourceModel](populateValkeyState, ValkeyResourceSchemaAttrs),
+	},
 }
