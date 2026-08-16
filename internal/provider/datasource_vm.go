@@ -32,6 +32,7 @@ func (d *VmDataSource) Metadata(_ context.Context, req datasource.MetadataReques
 func (d *VmDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	specAttrs := map[string]schema.Attribute{
 		"bootstrap_command":              objDatasourceSchema(vmBootstrapCommandObjFields),
+		"command_schedule_ids":           schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"floating_ip_id":                 schema.StringAttribute{Computed: true},
 		"image_boot_volume_device_index": schema.Int64Attribute{Computed: true},
 		"image_id":                       schema.StringAttribute{Computed: true},
@@ -39,7 +40,6 @@ func (d *VmDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, res
 		"offer_id":                       schema.StringAttribute{Computed: true},
 		"on_off_schedule_ids":            schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"os_type":                        schema.StringAttribute{Computed: true},
-		"command_schedule_ids":           schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"security_group_ids":             schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"ssh_key_ids":                    schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"vm_state":                       schema.StringAttribute{Computed: true},
@@ -50,13 +50,7 @@ func (d *VmDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, res
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status": commonInfoDatasourceSchema(map[string]schema.Attribute{
-			"bootstrap_command": schema.SingleNestedAttribute{Computed: true, Attributes: map[string]schema.Attribute{
-				"return_code": schema.Int64Attribute{Computed: true},
-				"output":      schema.StringAttribute{Computed: true},
-				"duration_ms": schema.Int64Attribute{Computed: true},
-			}},
-			"private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}, "windows_administrator_password": schema.StringAttribute{Computed: true, Sensitive: true}}),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"bootstrap_command": objDatasourceSchema(vmStatusBootstrapCommandObjFields), "private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}, "windows_administrator_password": schema.StringAttribute{Computed: true, Sensitive: true}}),
 	}}
 }
 
@@ -109,6 +103,7 @@ func (d *VmDataSource) Read(ctx context.Context, req datasource.ReadRequest, res
 	state.Spec = &VmSpecModel{}
 	spec := getSpec(apiData)
 	state.Spec.BootstrapCommand = objFromAPI(objMap(spec, "bootstrapCommand"), vmBootstrapCommandObjFields)
+	state.Spec.CommandScheduleIds = getStringList(ctx, spec, "commandScheduleIds")
 	state.Spec.FloatingIpId = getString(spec, "floatingIpId")
 	state.Spec.ImageBootVolumeDeviceIndex = getInt64(spec, "imageBootVolumeDeviceIndex")
 	state.Spec.ImageId = getString(spec, "imageId")
@@ -116,14 +111,13 @@ func (d *VmDataSource) Read(ctx context.Context, req datasource.ReadRequest, res
 	state.Spec.OfferId = getString(spec, "offerId")
 	state.Spec.OnOffScheduleIds = getStringList(ctx, spec, "onOffScheduleIds")
 	state.Spec.OsType = getString(spec, "osType")
-	state.Spec.CommandScheduleIds = getStringList(ctx, spec, "commandScheduleIds")
 	state.Spec.SecurityGroupIds = getStringList(ctx, spec, "securityGroupIds")
 	state.Spec.SshKeyIds = getStringList(ctx, spec, "sshKeyIds")
 	state.Spec.VmState = getString(spec, "vmState")
 	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
 	state.Status = buildInfoObj(apiData,
 		map[string]attr.Type{
-			"bootstrap_command":              types.ObjectType{AttrTypes: vmBootstrapCommandInfoAttrTypes},
+			"bootstrap_command":              attrTypeOf("object", vmStatusBootstrapCommandObjFields),
 			"private_ipv4":                   types.StringType,
 			"private_ipv6":                   types.StringType,
 			"public_ipv4":                    types.StringType,
@@ -131,7 +125,7 @@ func (d *VmDataSource) Read(ctx context.Context, req datasource.ReadRequest, res
 			"windows_administrator_password": types.StringType,
 		},
 		map[string]attr.Value{
-			"bootstrap_command":              buildVmBootstrapCommandInfoObj(apiData),
+			"bootstrap_command":              getObjFromInfo(apiData, "bootstrapCommand", vmStatusBootstrapCommandObjFields),
 			"private_ipv4":                   getStringFromInfo(apiData, "privateIpv4"),
 			"private_ipv6":                   getStringFromInfo(apiData, "privateIpv6"),
 			"public_ipv4":                    getStringFromInfo(apiData, "publicIpv4"),

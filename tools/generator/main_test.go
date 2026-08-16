@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // camelToSnake must keep IP-version suffixes as one segment (public_ipv4, not public_ip_v4) so the
 // generated Terraform schema keys match the platform-wide convention. Regression guard for the
@@ -171,5 +174,88 @@ var x = map[string]A{
 	// camelCase API field names are tracked too, not just snake_case schema keys.
 	if !quotedKeyNames(`x := map[string]any{"returnCode": 1}`)["returnCode"] {
 		t.Error("camelCase API field names must be tracked")
+	}
+}
+
+// vmLikeResourceDef is a minimal stand-in for the real "vm" ResourceDef swagger extraction would
+// produce: one ordinary swagger-driven field, matching the shape emitVmCreateDelete is written
+// against. boot_volume_attachment itself is deliberately absent from Fields — it has no swagger
+// counterpart at all (see vmBootVolumeAttachmentSchemaAttr's doc comment) and must appear purely
+// via the r.Name == "vm" special case in generateResourceFile/emitSpecModel/emitResourceImports.
+func vmLikeResourceDef() ResourceDef {
+	return ResourceDef{
+		Name:    "vm",
+		APIPath: "/api/v1/vm",
+		Fields: []FieldDef{
+			{TFName: "os_type", APIName: "osType", FieldType: "string"},
+		},
+	}
+}
+
+// Regression guard for the resource_vm.go regeneration hazard the clobber guard exists to catch:
+// before this fix, regenerating resource_vm.go silently dropped the whole hand-written
+// boot_volume_attachment feature (schema field, its 3 helper functions, and most of Create/
+// Delete's orchestration logic) — no error, no warning. Verified against live dev swagger via a
+// full generator run (see this session's manual verification) to reproduce the committed file
+// exactly, modulo cosmetic field ordering; this test pins the specific markers that regen must
+// keep reproducing, independent of any live swagger fetch.
+func TestGenerateResourceFile_VmSpecialCase_ReproducesBootVolumeAttachment(t *testing.T) {
+	got := generateResourceFile(vmLikeResourceDef())
+
+	mustContain := []string{
+		// boot_volume_attachment schema attribute, with its own (not just its parent's) stability
+		// plan modifier.
+		`"boot_volume_attachment": schema.SingleNestedAttribute{`,
+		`PlanModifiers: []planmodifier.Object{objectplanmodifier.UseStateForUnknown()}`,
+		`"attachment_id": schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}`,
+		`"volume_id":     schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}`,
+		// the model field and the 3 hand-written helpers/vars.
+		`BootVolumeAttachment types.Object`,
+		"var bootVolumeAttachmentAttrTypes",
+		"func resolvedVmState(",
+		"func vmCreateRequiresBootVolumeAttachment(",
+		"func buildBootVolumeAttachmentPlan(",
+		// Create's extra validation + behind-the-scenes attachment creation.
+		"Missing boot_volume_attachment",
+		"Boot Volume Attachment Create Error",
+		// Delete's extra cleanup.
+		"Boot Volume Attachment Delete Error",
+		"Boot Volume Attachment Delete Poll Error",
+	}
+	for _, marker := range mustContain {
+		if !strings.Contains(got, marker) {
+			t.Errorf("vm-generated resource file missing expected content: %s", marker)
+		}
+	}
+
+	// The ordinary swagger-driven field must still go through the normal generic path untouched.
+	if !strings.Contains(got, `"os_type": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}`) {
+		t.Error("vm's ordinary swagger-driven field (os_type) was not generated via the normal path")
+	}
+}
+
+// The vm special case must not leak into any other resource's generated file.
+func TestGenerateResourceFile_NonVmResource_HasNoBootVolumeAttachment(t *testing.T) {
+	other := vmLikeResourceDef()
+	other.Name = "volume"
+	other.APIPath = "/api/v1/volume"
+
+	got := generateResourceFile(other)
+	leaked := []string{
+		"boot_volume_attachment",
+		"bootVolumeAttachmentAttrTypes",
+		"resolvedVmState",
+		"vmCreateRequiresBootVolumeAttachment",
+		"buildBootVolumeAttachmentPlan",
+		"objectplanmodifier",
+	}
+	for _, marker := range leaked {
+		if strings.Contains(got, marker) {
+			t.Errorf("non-vm resource file unexpectedly contains vm-specific content: %s", marker)
+		}
+	}
+	// And it must still get a normal generated Delete (vm is the only resource that skips it).
+	if !strings.Contains(got, "func (r *VolumeResource) Delete(") {
+		t.Error("non-vm resource is missing its normal generated Delete method")
 	}
 }

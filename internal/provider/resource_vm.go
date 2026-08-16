@@ -20,39 +20,12 @@ var _ = fmt.Sprintf
 
 var vmBootstrapCommandObjFields = []objField{{TF: "command", API: "command", Kind: "string"}}
 
-// vmBootstrapCommandInfoAttrTypes/buildVmBootstrapCommandInfoObj mirror buildUserInfoObj/buildPricingObj
-// in resource_common.go: a nested status object, null when the VM has no bootstrap_command set (the
-// C# API omits status.bootstrapCommand entirely in that case rather than sending null-valued fields).
-var vmBootstrapCommandInfoAttrTypes = map[string]attr.Type{
-	"return_code": types.Int64Type, "output": types.StringType, "duration_ms": types.Int64Type,
-}
-
-func buildVmBootstrapCommandInfoObj(data map[string]interface{}) types.Object {
-	raw, ok := infoFieldRaw(data, "bootstrapCommand")
-	m, mapOk := raw.(map[string]interface{})
-	if !ok || !mapOk {
-		return types.ObjectNull(vmBootstrapCommandInfoAttrTypes)
-	}
-	obj, _ := types.ObjectValue(vmBootstrapCommandInfoAttrTypes, map[string]attr.Value{
-		"return_code": getInt64(m, "returnCode"),
-		"output":      getString(m, "output"),
-		"duration_ms": getInt64(m, "durationMs"),
-	})
-	return obj
-}
-
-// boot_volume_attachment has no backend/swagger counterpart: the Kvindo API has no such field on
-// /api/v1/vm. It is a purely Terraform-side convenience that creates a kvindo_volume_attachment
-// behind the scenes (see VmResource.Create/Delete) so a running VM + its boot volume can be
-// expressed in one apply, without the vm_id-references-itself dependency cycle a hand-written
-// kvindo_volume_attachment resource would otherwise create. Never wired into
-// buildVmRequestMap/populateVmState. attachment_id is our own bookkeeping (the attachment we
-// create), never user-set.
-var bootVolumeAttachmentAttrTypes = map[string]attr.Type{"volume_id": types.StringType, "attachment_id": types.StringType}
+var vmStatusBootstrapCommandObjFields = []objField{{TF: "duration_ms", API: "durationMs", Kind: "int64"}, {TF: "output", API: "output", Kind: "string"}, {TF: "return_code", API: "returnCode", Kind: "int64"}}
 
 type VmSpecModel struct {
-	BootstrapCommand           types.Object `tfsdk:"bootstrap_command"`
 	BootVolumeAttachment       types.Object `tfsdk:"boot_volume_attachment"`
+	BootstrapCommand           types.Object `tfsdk:"bootstrap_command"`
+	CommandScheduleIds         types.List   `tfsdk:"command_schedule_ids"`
 	FloatingIpId               types.String `tfsdk:"floating_ip_id"`
 	ImageBootVolumeDeviceIndex types.Int64  `tfsdk:"image_boot_volume_device_index"`
 	ImageId                    types.String `tfsdk:"image_id"`
@@ -60,7 +33,6 @@ type VmSpecModel struct {
 	OfferId                    types.String `tfsdk:"offer_id"`
 	OnOffScheduleIds           types.List   `tfsdk:"on_off_schedule_ids"`
 	OsType                     types.String `tfsdk:"os_type"`
-	CommandScheduleIds         types.List   `tfsdk:"command_schedule_ids"`
 	SecurityGroupIds           types.List   `tfsdk:"security_group_ids"`
 	SshKeyIds                  types.List   `tfsdk:"ssh_key_ids"`
 	VmState                    types.String `tfsdk:"vm_state"`
@@ -84,7 +56,6 @@ func (r *VmResource) Metadata(_ context.Context, req resource.MetadataRequest, r
 
 func VmResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"bootstrap_command": objResourceSchema(vmBootstrapCommandObjFields),
 		"boot_volume_attachment": schema.SingleNestedAttribute{
 			Optional:      true,
 			Computed:      true,
@@ -94,6 +65,8 @@ func VmResourceSchemaAttrs() map[string]schema.Attribute {
 				"attachment_id": schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 			},
 		},
+		"bootstrap_command":              objResourceSchema(vmBootstrapCommandObjFields),
+		"command_schedule_ids":           schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
 		"floating_ip_id":                 schema.StringAttribute{Optional: true},
 		"image_boot_volume_device_index": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
 		"image_id":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -101,7 +74,6 @@ func VmResourceSchemaAttrs() map[string]schema.Attribute {
 		"offer_id":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"on_off_schedule_ids":            schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
 		"os_type":                        schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"command_schedule_ids":           schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
 		"security_group_ids":             schema.ListAttribute{Optional: true, ElementType: types.StringType},
 		"ssh_key_ids":                    schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
 		"vm_state":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -111,13 +83,7 @@ func VmResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status": commonInfoSchema(map[string]schema.Attribute{
-			"bootstrap_command": schema.SingleNestedAttribute{Computed: true, Attributes: map[string]schema.Attribute{
-				"return_code": schema.Int64Attribute{Computed: true},
-				"output":      schema.StringAttribute{Computed: true},
-				"duration_ms": schema.Int64Attribute{Computed: true},
-			}},
-			"private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}, "windows_administrator_password": schema.StringAttribute{Computed: true, Sensitive: true}}),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"bootstrap_command": objStatusSchema(vmStatusBootstrapCommandObjFields), "private_ipv4": schema.StringAttribute{Computed: true}, "private_ipv6": schema.StringAttribute{Computed: true}, "public_ipv4": schema.StringAttribute{Computed: true}, "public_ipv6": schema.StringAttribute{Computed: true}, "windows_administrator_password": schema.StringAttribute{Computed: true, Sensitive: true}}),
 	}
 }
 
@@ -143,6 +109,9 @@ func buildVmRequestMap(ctx context.Context, plan VmResourceModel) map[string]int
 	if !plan.Spec.BootstrapCommand.IsNull() && !plan.Spec.BootstrapCommand.IsUnknown() {
 		spec["bootstrapCommand"] = objToAPI(plan.Spec.BootstrapCommand, vmBootstrapCommandObjFields)
 	}
+	if !plan.Spec.CommandScheduleIds.IsNull() && !plan.Spec.CommandScheduleIds.IsUnknown() {
+		spec["commandScheduleIds"] = stringListToInterface(ctx, plan.Spec.CommandScheduleIds)
+	}
 	if !plan.Spec.FloatingIpId.IsNull() && !plan.Spec.FloatingIpId.IsUnknown() {
 		spec["floatingIpId"] = plan.Spec.FloatingIpId.ValueString()
 	}
@@ -163,9 +132,6 @@ func buildVmRequestMap(ctx context.Context, plan VmResourceModel) map[string]int
 	}
 	if !plan.Spec.OsType.IsNull() && !plan.Spec.OsType.IsUnknown() {
 		spec["osType"] = plan.Spec.OsType.ValueString()
-	}
-	if !plan.Spec.CommandScheduleIds.IsNull() && !plan.Spec.CommandScheduleIds.IsUnknown() {
-		spec["commandScheduleIds"] = stringListToInterface(ctx, plan.Spec.CommandScheduleIds)
 	}
 	if !plan.Spec.SecurityGroupIds.IsNull() && !plan.Spec.SecurityGroupIds.IsUnknown() {
 		spec["securityGroupIds"] = stringListToInterface(ctx, plan.Spec.SecurityGroupIds)
@@ -189,6 +155,7 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 	state.ID = state.Metadata.ID
 	spec := getSpec(data)
 	state.Spec.BootstrapCommand = objFromAPI(objMap(spec, "bootstrapCommand"), vmBootstrapCommandObjFields)
+	state.Spec.CommandScheduleIds = getStringList(ctx, spec, "commandScheduleIds")
 	state.Spec.FloatingIpId = getString(spec, "floatingIpId")
 	state.Spec.ImageBootVolumeDeviceIndex = getInt64(spec, "imageBootVolumeDeviceIndex")
 	state.Spec.ImageId = getString(spec, "imageId")
@@ -196,14 +163,13 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 	state.Spec.OfferId = getString(spec, "offerId")
 	state.Spec.OnOffScheduleIds = getStringList(ctx, spec, "onOffScheduleIds")
 	state.Spec.OsType = getString(spec, "osType")
-	state.Spec.CommandScheduleIds = getStringList(ctx, spec, "commandScheduleIds")
 	state.Spec.SecurityGroupIds = getStringList(ctx, spec, "securityGroupIds")
 	state.Spec.SshKeyIds = getStringList(ctx, spec, "sshKeyIds")
 	state.Spec.VmState = getString(spec, "vmState")
 	state.Spec.VpcSubnetId = getString(spec, "vpcSubnetId")
 	state.Status = buildInfoObj(data,
 		map[string]attr.Type{
-			"bootstrap_command":              types.ObjectType{AttrTypes: vmBootstrapCommandInfoAttrTypes},
+			"bootstrap_command":              attrTypeOf("object", vmStatusBootstrapCommandObjFields),
 			"private_ipv4":                   types.StringType,
 			"private_ipv6":                   types.StringType,
 			"public_ipv4":                    types.StringType,
@@ -211,7 +177,7 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 			"windows_administrator_password": types.StringType,
 		},
 		map[string]attr.Value{
-			"bootstrap_command":              buildVmBootstrapCommandInfoObj(data),
+			"bootstrap_command":              getObjFromInfo(data, "bootstrapCommand", vmStatusBootstrapCommandObjFields),
 			"private_ipv4":                   getStringFromInfo(data, "privateIpv4"),
 			"private_ipv6":                   getStringFromInfo(data, "privateIpv6"),
 			"public_ipv4":                    getStringFromInfo(data, "publicIpv4"),
@@ -220,6 +186,11 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 		})
 	return nil
 }
+
+// bootVolumeAttachmentAttrTypes/resolvedVmState/vmCreateRequiresBootVolumeAttachment/
+// buildBootVolumeAttachmentPlan back boot_volume_attachment's Create/Delete orchestration below —
+// see vmBootVolumeAttachmentSchemaAttr's doc comment for why this can't be table-driven.
+var bootVolumeAttachmentAttrTypes = map[string]attr.Type{"volume_id": types.StringType, "attachment_id": types.StringType}
 
 // resolvedVmState returns the vm_state the backend will end up applying, mirroring the default
 // ("running") that OrganizationVmResourceChangeRequest.CreateFromResourceAsync applies server-side.
@@ -335,6 +306,40 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
+func (r *VmResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state VmResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	modResp, err := r.client.Delete(ctx, "/api/v1/vm", state.ID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Delete Error", err.Error())
+		return
+	}
+	if err := r.client.PollUntilDone(ctx, "/api/v1/vm", modResp.RequestId); err != nil {
+		resp.Diagnostics.AddError("Delete Poll Error", err.Error())
+		return
+	}
+
+	// Clean up the boot volume_attachment created behind the scenes at Create() time, if any.
+	// Safe to do after the VM delete: the attachment reconciler's delete path explicitly
+	// tolerates the VM already being gone.
+	if !state.Spec.BootVolumeAttachment.IsNull() && !state.Spec.BootVolumeAttachment.IsUnknown() {
+		if attachmentIdVal, ok := state.Spec.BootVolumeAttachment.Attributes()["attachment_id"].(types.String); ok && !attachmentIdVal.IsNull() && attachmentIdVal.ValueString() != "" {
+			attModResp, err := r.client.Delete(ctx, "/api/v1/volume-attachment", attachmentIdVal.ValueString())
+			if err != nil {
+				resp.Diagnostics.AddError("Boot Volume Attachment Delete Error", err.Error())
+				return
+			}
+			if err := r.client.PollUntilDone(ctx, "/api/v1/volume-attachment", attModResp.RequestId); err != nil {
+				resp.Diagnostics.AddError("Boot Volume Attachment Delete Poll Error", err.Error())
+				return
+			}
+		}
+	}
+}
+
 func (r *VmResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state VmResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
@@ -389,40 +394,6 @@ func (r *VmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
-}
-
-func (r *VmResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state VmResourceModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	modResp, err := r.client.Delete(ctx, "/api/v1/vm", state.ID.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Delete Error", err.Error())
-		return
-	}
-	if err := r.client.PollUntilDone(ctx, "/api/v1/vm", modResp.RequestId); err != nil {
-		resp.Diagnostics.AddError("Delete Poll Error", err.Error())
-		return
-	}
-
-	// Clean up the boot volume_attachment created behind the scenes at Create() time, if any.
-	// Safe to do after the VM delete: the attachment reconciler's delete path explicitly
-	// tolerates the VM already being gone.
-	if !state.Spec.BootVolumeAttachment.IsNull() && !state.Spec.BootVolumeAttachment.IsUnknown() {
-		if attachmentIdVal, ok := state.Spec.BootVolumeAttachment.Attributes()["attachment_id"].(types.String); ok && !attachmentIdVal.IsNull() && attachmentIdVal.ValueString() != "" {
-			attModResp, err := r.client.Delete(ctx, "/api/v1/volume-attachment", attachmentIdVal.ValueString())
-			if err != nil {
-				resp.Diagnostics.AddError("Boot Volume Attachment Delete Error", err.Error())
-				return
-			}
-			if err := r.client.PollUntilDone(ctx, "/api/v1/volume-attachment", attModResp.RequestId); err != nil {
-				resp.Diagnostics.AddError("Boot Volume Attachment Delete Poll Error", err.Error())
-				return
-			}
-		}
-	}
 }
 
 func (r *VmResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {

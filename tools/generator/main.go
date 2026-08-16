@@ -892,8 +892,10 @@ func hasRequiredSpec(r ResourceDef) bool {
 // emitImports writes the import block for a resource file based on which features are used.
 func emitResourceImports(sb *strings.Builder, r ResourceDef) {
 	// attr is only needed for the status-extras buildInfoObj literals; nested objects are handled
-	// by runtime helpers in nested_objects.go.
-	needsAttr := len(r.StatusExtra) > 0
+	// by runtime helpers in nested_objects.go. Vm always needs it too, for boot_volume_attachment's
+	// hand-written bootVolumeAttachmentAttrTypes (see generateResourceFile's vm special case) —
+	// even on a swagger snapshot where every OTHER status field happens to be absent.
+	needsAttr := len(r.StatusExtra) > 0 || r.Name == "vm"
 	needsBool, needsInt64, needsFloat64, needsListString, needsMapString := false, false, false, false, false
 	// Plan modifiers are emitted only for top-level Optional+Computed scalar/list_string/map_string
 	// spec fields; nested object/list_object schemas are built at runtime without per-field
@@ -939,6 +941,10 @@ func emitResourceImports(sb *strings.Builder, r ResourceDef) {
 	if needsMapString {
 		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier\"\n")
 	}
+	if r.Name == "vm" {
+		// boot_volume_attachment's own PlanModifiers (see generateResourceFile) need this.
+		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier\"\n")
+	}
 	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier\"\n")
 	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier\"\n")
 	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/types\"\n")
@@ -949,10 +955,15 @@ func emitResourceImports(sb *strings.Builder, r ResourceDef) {
 
 // emitSpecModel writes the per-resource spec struct (omitted when there are no spec fields).
 func emitSpecModel(sb *strings.Builder, sn string, r ResourceDef) {
-	if len(r.Fields) == 0 {
+	if len(r.Fields) == 0 && r.Name != "vm" {
 		return
 	}
 	sb.WriteString(fmt.Sprintf("type %sSpecModel struct {\n", sn))
+	// boot_volume_attachment has no swagger field at all (see generateResourceFile's vm special
+	// case) — spliced in unconditionally for "vm", not anchored to any other field's presence.
+	if r.Name == "vm" {
+		sb.WriteString("\tBootVolumeAttachment types.Object `tfsdk:\"boot_volume_attachment\"`\n")
+	}
 	for _, f := range r.Fields {
 		sb.WriteString(fmt.Sprintf("\t%s %s `tfsdk:%q`\n", toTitle(f.TFName), typeToGoType(f.FieldType), f.TFName))
 	}
@@ -1042,9 +1053,196 @@ func emitStatusAssign(sb *strings.Builder, r ResourceDef, dataVar string) {
 	sb.WriteString("\t\t})\n")
 }
 
+// vmBootVolumeAttachmentSchemaAttr is the boot_volume_attachment spec attribute literal, spliced
+// into VmResourceSchemaAttrs' specAttrs map (see generateResourceFile's vm special case).
+// boot_volume_attachment has no backend/swagger counterpart at all — the Kvindo API has no such
+// field on /api/v1/vm — so unlike bootstrap_command's status shape (which the generic
+// objStatusSchema path now derives straight from swagger), this can never become table-driven;
+// it's a purely Terraform-side convenience that creates a kvindo_volume_attachment behind the
+// scenes (see emitVmCreateDelete) so a running VM + its boot volume can be expressed in one apply.
+const vmBootVolumeAttachmentSchemaAttr = "\t\t\"boot_volume_attachment\": schema.SingleNestedAttribute{\n" +
+	"\t\t\tOptional:      true,\n" +
+	"\t\t\tComputed:      true,\n" +
+	"\t\t\tPlanModifiers: []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},\n" +
+	"\t\t\tAttributes: map[string]schema.Attribute{\n" +
+	"\t\t\t\t\"volume_id\":     schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},\n" +
+	"\t\t\t\t\"attachment_id\": schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},\n" +
+	"\t\t\t},\n" +
+	"\t\t},\n"
+
+// emitVmCreateDelete writes the vm resource's hand-written Create/Delete, replacing the generic
+// emission generateResourceFile would otherwise produce. Unlike every other resource, creating a
+// Vm can also create a companion kvindo_volume_attachment behind the scenes (boot_volume_attachment
+// has no backend field of its own — see vmBootVolumeAttachmentSchemaAttr), and deleting a Vm must
+// clean that companion attachment back up. Read/Update/ImportState need no such override — they
+// stay on the standard generated path (Update in particular has never touched boot_volume_attachment
+// at all — that's Create-time-only orchestration).
+func emitVmCreateDelete(sb *strings.Builder, r ResourceDef) {
+	sb.WriteString(`// bootVolumeAttachmentAttrTypes/resolvedVmState/vmCreateRequiresBootVolumeAttachment/
+// buildBootVolumeAttachmentPlan back boot_volume_attachment's Create/Delete orchestration below —
+// see vmBootVolumeAttachmentSchemaAttr's doc comment for why this can't be table-driven.
+var bootVolumeAttachmentAttrTypes = map[string]attr.Type{"volume_id": types.StringType, "attachment_id": types.StringType}
+
+// resolvedVmState returns the vm_state the backend will end up applying, mirroring the default
+// ("running") that OrganizationVmResourceChangeRequest.CreateFromResourceAsync applies server-side.
+func resolvedVmState(spec VmSpecModel) string {
+	if spec.VmState.IsNull() || spec.VmState.IsUnknown() || spec.VmState.ValueString() == "" {
+		return "running"
+	}
+	return spec.VmState.ValueString()
+}
+
+// vmCreateRequiresBootVolumeAttachment reports whether Create() must fail fast because the VM
+// would be created running with no way for the backend to ever attach a boot volume. Mirrors the
+// backend's own create-time gate (OrganizationVmReconciler's Queued check): a from-scratch
+// running VM with no boot volume attachment would otherwise just poll forever until our own
+// client-side timeout. Only applies to Create — an already-existing VM (Update) may already have
+// its boot volume attached via a separately managed kvindo_volume_attachment resource.
+func vmCreateRequiresBootVolumeAttachment(spec VmSpecModel) bool {
+	hasBootVolumeAttachment := !spec.BootVolumeAttachment.IsNull() && !spec.BootVolumeAttachment.IsUnknown()
+	return !hasBootVolumeAttachment && resolvedVmState(spec) == "running"
+}
+
+// buildBootVolumeAttachmentPlan constructs the kvindo_volume_attachment created behind the scenes
+// by VmResource.Create so a running VM + its boot volume can be expressed in one apply.
+func buildBootVolumeAttachmentPlan(vmPlan VmResourceModel, vmId, attachmentId, volumeId string) VolumeAttachmentResourceModel {
+	return VolumeAttachmentResourceModel{
+		ID: types.StringValue(attachmentId),
+		Metadata: metadataModel{
+			Name:        types.StringValue(vmPlan.Metadata.Name.ValueString() + "-boot"),
+			Description: types.StringNull(),
+			FolderID:    vmPlan.Metadata.FolderID,
+			Labels:      types.MapNull(types.StringType),
+		},
+		Spec: VolumeAttachmentSpecModel{
+			VmId:          types.StringValue(vmId),
+			VolumeId:      types.StringValue(volumeId),
+			VmDeviceIndex: types.Int64Value(0),
+		},
+	}
+}
+
+`)
+	apiPath := r.APIPath
+	sb.WriteString(fmt.Sprintf(`func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan VmResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	hasBootVolumeAttachment := !plan.Spec.BootVolumeAttachment.IsNull() && !plan.Spec.BootVolumeAttachment.IsUnknown()
+	if vmCreateRequiresBootVolumeAttachment(plan.Spec) {
+		resp.Diagnostics.AddError(
+			"Missing boot_volume_attachment",
+			"spec.boot_volume_attachment.volume_id must be set to create a VM in state \"running\", "+
+				"unless it is already attached via a separately managed kvindo_volume_attachment resource.",
+		)
+		return
+	}
+
+	plan.ID = types.StringValue(newULID())
+	body := buildVmRequestMap(ctx, plan)
+	modResp, err := r.client.Put(ctx, %q, body)
+	if err != nil {
+		resp.Diagnostics.AddError("Create Error", err.Error())
+		return
+	}
+	resourceId := modResp.ResourceId
+	if resourceId == "" {
+		resourceId = plan.ID.ValueString()
+	}
+
+	var attachmentId string
+	if hasBootVolumeAttachment {
+		bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
+		volumeId := bootVolAttrs["volume_id"].(types.String).ValueString()
+		attachmentId = newULID()
+		// Create the boot volume_attachment behind the scenes, right after the VM's DB row is
+		// committed (the PUT above already returned, so it exists) but before polling the VM to
+		// done — the VM reconciler's own Queued gate waits for exactly this row instead of
+		// failing, so ordering here just needs "soon", not "before".
+		attPlan := buildBootVolumeAttachmentPlan(plan, resourceId, attachmentId, volumeId)
+		attBody := buildVolumeAttachmentRequestMap(ctx, attPlan)
+		if _, err := r.client.Put(ctx, "/api/v1/volume-attachment", attBody); err != nil {
+			resp.Diagnostics.AddError("Boot Volume Attachment Create Error", err.Error())
+			return
+		}
+	}
+
+	if err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil {
+		resp.Diagnostics.AddError("Create Poll Error", err.Error())
+		return
+	}
+	apiData, err := r.client.Get(ctx, %q, resourceId)
+	if err != nil {
+		resp.Diagnostics.AddError("Read After Create Error", err.Error())
+		return
+	}
+	if apiData == nil {
+		resp.Diagnostics.AddError("Read After Create Error", "resource not found after creation")
+		return
+	}
+	if hasBootVolumeAttachment {
+		bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
+		obj, diags := types.ObjectValue(bootVolumeAttachmentAttrTypes, map[string]attr.Value{
+			"volume_id":     bootVolAttrs["volume_id"],
+			"attachment_id": types.StringValue(attachmentId),
+		})
+		resp.Diagnostics.Append(diags...)
+		plan.Spec.BootVolumeAttachment = obj
+	}
+	if err := populateVmState(ctx, apiData, &plan); err != nil {
+		resp.Diagnostics.AddError("State Error", err.Error())
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+}
+
+`, apiPath, apiPath, apiPath))
+
+	sb.WriteString(fmt.Sprintf(`func (r *VmResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state VmResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	modResp, err := r.client.Delete(ctx, %q, state.ID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Delete Error", err.Error())
+		return
+	}
+	if err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil {
+		resp.Diagnostics.AddError("Delete Poll Error", err.Error())
+		return
+	}
+
+	// Clean up the boot volume_attachment created behind the scenes at Create() time, if any.
+	// Safe to do after the VM delete: the attachment reconciler's delete path explicitly
+	// tolerates the VM already being gone.
+	if !state.Spec.BootVolumeAttachment.IsNull() && !state.Spec.BootVolumeAttachment.IsUnknown() {
+		if attachmentIdVal, ok := state.Spec.BootVolumeAttachment.Attributes()["attachment_id"].(types.String); ok && !attachmentIdVal.IsNull() && attachmentIdVal.ValueString() != "" {
+			attModResp, err := r.client.Delete(ctx, "/api/v1/volume-attachment", attachmentIdVal.ValueString())
+			if err != nil {
+				resp.Diagnostics.AddError("Boot Volume Attachment Delete Error", err.Error())
+				return
+			}
+			if err := r.client.PollUntilDone(ctx, "/api/v1/volume-attachment", attModResp.RequestId); err != nil {
+				resp.Diagnostics.AddError("Boot Volume Attachment Delete Poll Error", err.Error())
+				return
+			}
+		}
+	}
+}
+
+`, apiPath, apiPath))
+}
+
 func generateResourceFile(r ResourceDef) string {
 	sn := structName(r.Name)
-	hasSpec := len(r.Fields) > 0
+	// vm always has a spec block for boot_volume_attachment, even in the hypothetical case where
+	// swagger someday declares zero real spec fields on /api/v1/vm.
+	hasSpec := len(r.Fields) > 0 || r.Name == "vm"
 	var sb strings.Builder
 
 	emitResourceImports(&sb, r)
@@ -1073,6 +1271,13 @@ func generateResourceFile(r ResourceDef) string {
 	sb.WriteString(fmt.Sprintf("func %sResourceSchemaAttrs() map[string]schema.Attribute {\n", sn))
 	if hasSpec {
 		sb.WriteString("\tspecAttrs := map[string]schema.Attribute{\n")
+		// boot_volume_attachment has no swagger field at all — it's a purely Terraform-side
+		// convenience with no backend field on /api/v1/vm to derive it from (see
+		// emitVmCreateDelete). Spliced in unconditionally for "vm", not anchored to any other
+		// field's presence.
+		if r.Name == "vm" {
+			sb.WriteString(vmBootVolumeAttachmentSchemaAttr)
+		}
 		for _, f := range r.Fields {
 			var expr string
 			switch f.FieldType {
@@ -1135,22 +1340,28 @@ func generateResourceFile(r ResourceDef) string {
 	emitStatusAssign(&sb, r, "data")
 	sb.WriteString("\treturn nil\n}\n\n")
 
-	// Create
-	sb.WriteString(fmt.Sprintf("func (r *%sResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {\n", sn))
-	sb.WriteString(fmt.Sprintf("\tvar plan %sResourceModel\n", sn))
-	sb.WriteString("\tresp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)\n")
-	sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
-	sb.WriteString("\tplan.ID = types.StringValue(newULID())\n")
-	sb.WriteString(fmt.Sprintf("\tbody := build%sRequestMap(ctx, plan)\n", sn))
-	sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Put(ctx, %q, body)\n", r.APIPath))
-	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Create Error\", err.Error()); return }\n")
-	sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil { resp.Diagnostics.AddError(\"Create Poll Error\", err.Error()); return }\n", r.APIPath))
-	sb.WriteString("\tresourceId := modResp.ResourceId\n\tif resourceId == \"\" { resourceId = plan.ID.ValueString() }\n")
-	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, resourceId)\n", r.APIPath))
-	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read After Create Error\", err.Error()); return }\n")
-	sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Read After Create Error\", \"resource not found after creation\"); return }\n")
-	sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
-	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n}\n\n")
+	// Create — vm overrides this entirely (see emitVmCreateDelete): creating a Vm can also create
+	// a companion kvindo_volume_attachment behind the scenes for boot_volume_attachment, which has
+	// no backend field of its own for the standard per-field request/response loop to drive.
+	if r.Name != "vm" {
+		sb.WriteString(fmt.Sprintf("func (r *%sResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {\n", sn))
+		sb.WriteString(fmt.Sprintf("\tvar plan %sResourceModel\n", sn))
+		sb.WriteString("\tresp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)\n")
+		sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
+		sb.WriteString("\tplan.ID = types.StringValue(newULID())\n")
+		sb.WriteString(fmt.Sprintf("\tbody := build%sRequestMap(ctx, plan)\n", sn))
+		sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Put(ctx, %q, body)\n", r.APIPath))
+		sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Create Error\", err.Error()); return }\n")
+		sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil { resp.Diagnostics.AddError(\"Create Poll Error\", err.Error()); return }\n", r.APIPath))
+		sb.WriteString("\tresourceId := modResp.ResourceId\n\tif resourceId == \"\" { resourceId = plan.ID.ValueString() }\n")
+		sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, resourceId)\n", r.APIPath))
+		sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read After Create Error\", err.Error()); return }\n")
+		sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Read After Create Error\", \"resource not found after creation\"); return }\n")
+		sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+		sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n}\n\n")
+	} else {
+		emitVmCreateDelete(&sb, r)
+	}
 
 	// Read
 	sb.WriteString(fmt.Sprintf("func (r *%sResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {\n", sn))
@@ -1180,14 +1391,16 @@ func generateResourceFile(r ResourceDef) string {
 	sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
 	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n}\n\n")
 
-	// Delete
-	sb.WriteString(fmt.Sprintf("func (r *%sResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {\n", sn))
-	sb.WriteString(fmt.Sprintf("\tvar state %sResourceModel\n", sn))
-	sb.WriteString("\tresp.Diagnostics.Append(req.State.Get(ctx, &state)...)\n")
-	sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
-	sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Delete(ctx, %q, state.ID.ValueString())\n", r.APIPath))
-	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Delete Error\", err.Error()); return }\n")
-	sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil { resp.Diagnostics.AddError(\"Delete Poll Error\", err.Error()); return }\n}\n\n", r.APIPath))
+	// Delete — vm's own Delete was already emitted by emitVmCreateDelete above, alongside Create.
+	if r.Name != "vm" {
+		sb.WriteString(fmt.Sprintf("func (r *%sResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {\n", sn))
+		sb.WriteString(fmt.Sprintf("\tvar state %sResourceModel\n", sn))
+		sb.WriteString("\tresp.Diagnostics.Append(req.State.Get(ctx, &state)...)\n")
+		sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
+		sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Delete(ctx, %q, state.ID.ValueString())\n", r.APIPath))
+		sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Delete Error\", err.Error()); return }\n")
+		sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil { resp.Diagnostics.AddError(\"Delete Poll Error\", err.Error()); return }\n}\n\n", r.APIPath))
+	}
 
 	// ImportState
 	sb.WriteString(fmt.Sprintf("func (r *%sResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {\n", sn))
