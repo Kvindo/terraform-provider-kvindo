@@ -225,7 +225,6 @@ The provider implements the following resources and data sources:
 
 ### Databases
 - `kvindo_postgresql_parameters_set` / `data.kvindo_postgresql_parameters_set`
-- `kvindo_postgresql_standalone` / `data.kvindo_postgresql_standalone`
 
 ### Object Storage
 - `kvindo_s3_bucket` / `data.kvindo_s3_bucket`

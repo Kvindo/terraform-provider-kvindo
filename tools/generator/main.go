@@ -161,11 +161,10 @@ var requiredSpecFields = map[string]map[string]bool{
 // optionalOnlySpecFields[resource][tf_field] = true marks a spec field Optional (NOT Computed):
 // the server never defaults it, so making it Computed would produce spurious plan diffs.
 var optionalOnlySpecFields = map[string]map[string]bool{
-	"gitlab":                {"floating_ip_id": true, "record_name": true},
-	"loadbalancer":          {"floating_ip_id": true},
-	"ollama":                {"floating_ip_id": true},
-	"open_vpn":              {"floating_ip_id": true},
-	"postgresql_standalone": {"parameters_set_id": true, "floating_ip_id": true},
+	"gitlab":       {"floating_ip_id": true, "record_name": true},
+	"loadbalancer": {"floating_ip_id": true},
+	"ollama":       {"floating_ip_id": true},
+	"open_vpn":     {"floating_ip_id": true},
 	// vpc_id/vpc_subnet_id are mutually exclusive (server-enforced) and neither is ever defaulted
 	// by the server, so Computed would produce spurious plan diffs - same reasoning as every
 	// other entry in this table.
@@ -178,13 +177,12 @@ var optionalOnlySpecFields = map[string]map[string]bool{
 // sensitiveSpecFields[resource][tf_field] = true marks a spec field Sensitive. The swagger
 // keyword heuristic over-matches (it would mark public_key etc.), so sensitivity is explicit.
 var sensitiveSpecFields = map[string]map[string]bool{
-	"certificate":           {"private_key_pem": true},
-	"etcd":                  {"root_password": true},
-	"gitlab":                {"root_password": true},
-	"ollama":                {"root_password": true},
-	"postgresql_standalone": {"root_password": true},
-	"ssh_private_key":       {"private_key": true},
-	"valkey":                {"root_password": true},
+	"certificate":     {"private_key_pem": true},
+	"etcd":            {"root_password": true},
+	"gitlab":          {"root_password": true},
+	"ollama":          {"root_password": true},
+	"ssh_private_key": {"private_key": true},
+	"valkey":          {"root_password": true},
 }
 
 // specFieldDescriptions[resource][tf_field] = the field's schema Description. tfplugindocs

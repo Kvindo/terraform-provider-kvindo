@@ -113,7 +113,6 @@ groups fields into the `metadata` / `spec` / `status` blocks.
 - `kvindo_kubernetes_user` / `kvindo_kubernetes_user_role`
 
 ### Databases
-- `kvindo_postgresql_standalone` — PostgreSQL Standalone instance
 - `kvindo_postgresql_parameters_set` — PostgreSQL parameter configuration
 
 ### VPN
@@ -148,7 +147,6 @@ returns. The most useful field per type:
 | Most resources | `state` |
 | `kvindo_s3_bucket` | `state`, `endpoint_url` |
 | `kvindo_s3_user` | `state`, `access_key`, `secret_key` |
-| `kvindo_postgresql_standalone` | `state`, `root_user_name`, `public_ip_v4`, `private_ip_v4`, `port` |
 | `kvindo_vm` | `state`, `private_ipv4`, `public_ipv4`, `private_ipv6`, `public_ipv6`, `windows_administrator_password` |
 | `kvindo_floating_ip` | `state`, `public_ip_v4` |
 | `kvindo_loadbalancer`, `kvindo_vpc_peering_peer` | `state`, `public_ip_v4`, `public_ip_v6`, `private_ip_v4`, `private_ip_v6` |
@@ -325,26 +323,6 @@ resource "kvindo_kubernetes_node_group" "workers" {
 }
 
 output "kube_api_server" { value = kvindo_kubernetes.main.status.api_server_url }
-```
-
-## Example: Managed PostgreSQL
-
-```hcl
-resource "kvindo_postgresql_standalone" "db" {
-  metadata = { name = "app-db", folder_id = kvindo_folder.main.id }
-  spec = {
-    vpc_subnet_id   = kvindo_vpc_subnet.main.id
-    version         = "16"          # see swagger for supported versions
-    tier            = "standard"
-    root_password   = var.db_root_password   # write-only — the API never returns this
-    vm_offer_id     = var.vm_offer_id
-    volume_offer_id = var.volume_offer_id
-    volume_size_gib = 20
-  }
-}
-
-output "db_host" { value = kvindo_postgresql_standalone.db.status.private_ip_v4 }
-output "db_port" { value = kvindo_postgresql_standalone.db.status.port }
 ```
 
 ## Resource Lifecycle

@@ -76,7 +76,6 @@ type TransactionSpecModel struct {
 	Loadbalancers                                  types.Map  `tfsdk:"loadbalancers"`
 	Kubernetes                                     types.Map  `tfsdk:"kubernetes"`
 	KubernetesUsers                                types.Map  `tfsdk:"kubernetes_users"`
-	PostgresqlStandalones                          types.Map  `tfsdk:"postgresql_standalones"`
 	OpenVpnUsers                                   types.Map  `tfsdk:"open_vpn_users"`
 	BillingAccounts                                types.Map  `tfsdk:"billing_accounts"`
 	Quotas                                         types.Map  `tfsdk:"quotas"`

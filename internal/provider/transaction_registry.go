@@ -364,13 +364,6 @@ var txnSubs = []txnSub{
 		populate: txnPop[KubernetesUserResourceModel](populateKubernetesUserState, KubernetesUserResourceSchemaAttrs),
 	},
 	{
-		tfKey: "postgresql_standalones", apiKey: "postgreSqlStandalones", gate: "",
-		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.PostgresqlStandalones },
-		attrs:    PostgresqlStandaloneResourceSchemaAttrs,
-		build:    txnBuild(buildPostgresqlStandaloneRequestMap),
-		populate: txnPop[PostgresqlStandaloneResourceModel](populatePostgresqlStandaloneState, PostgresqlStandaloneResourceSchemaAttrs),
-	},
-	{
 		tfKey: "open_vpn_users", apiKey: "openVpnUsers", gate: "",
 		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.OpenVpnUsers },
 		attrs:    OpenVpnUserResourceSchemaAttrs,
@@ -447,8 +440,8 @@ var txnSubs = []txnSub{
 		build:    txnBuild(buildEtcdRequestMap),
 		populate: txnPop[EtcdResourceModel](populateEtcdState, EtcdResourceSchemaAttrs),
 	},
-	// ParametersSets before Valkeys - dependency order, same as postgresql_parameters_sets/
-	// postgresql_standalones above.
+	// ParametersSets before Valkeys - dependency order, same as postgresql_parameters_sets
+	// above.
 	{
 		tfKey: "valkey_parameters_sets", apiKey: "valkeyParametersSets", gate: "",
 		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.ValkeyParametersSets },
