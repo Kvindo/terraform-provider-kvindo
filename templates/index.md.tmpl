@@ -40,4 +40,21 @@ terraform {
 The API token can also be supplied via the `KVINDO_TOKEN` environment variable, and the endpoint
 via `KVINDO_ENDPOINT` (defaults to `https://cloud-api.kvindo.com`).
 
+### Authenticating via a `kc` CLI profile
+
+If you already use the [`kc` CLI](https://github.com/Kvindo/kc-cli) and have run `kc login`, you
+can point the provider at a named `kc` profile instead of copying its token into your Terraform
+config:
+
+```terraform
+provider "kvindo" {
+  cli_profile = "prod" # reads ~/.kc/config/prod.yaml, written by `kc login`/`kc switch`
+}
+```
+
+`cli_profile` can also be set via the `KVINDO_CLI_PROFILE` environment variable. It only fills in
+`endpoint`/`token` when they aren't set directly (by attribute or by `KVINDO_ENDPOINT`/
+`KVINDO_TOKEN`), so it's safe to leave in a shared config while overriding credentials per-shell
+when needed.
+
 {{ .SchemaMarkdown | trimspace }}

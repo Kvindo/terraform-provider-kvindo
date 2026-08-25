@@ -18,8 +18,9 @@ var _ provider.Provider = &KvindoProvider{}
 
 type KvindoProvider struct{ version string }
 type KvindoProviderModel struct {
-	Endpoint types.String `tfsdk:"endpoint"`
-	Token    types.String `tfsdk:"token"`
+	Endpoint   types.String `tfsdk:"endpoint"`
+	Token      types.String `tfsdk:"token"`
+	CliProfile types.String `tfsdk:"cli_profile"`
 }
 
 func New(version string) func() provider.Provider {
@@ -35,8 +36,9 @@ func (p *KvindoProvider) Schema(_ context.Context, _ provider.SchemaRequest, res
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "The Kvindo Cloud provider manages [Kvindo Cloud](https://cloud.kvindo.com) infrastructure as code: VMs, S3 object storage, Kubernetes clusters, load balancers, VPCs, VPNs, managed PostgreSQL, networking, and IAM.",
 		Attributes: map[string]schema.Attribute{
-			"endpoint": schema.StringAttribute{Optional: true, Description: "API endpoint, defaults to https://cloud-api.kvindo.com"},
-			"token":    schema.StringAttribute{Optional: true, Sensitive: true, Description: "API bearer token"},
+			"endpoint":    schema.StringAttribute{Optional: true, Description: "API endpoint, defaults to https://cloud-api.kvindo.com"},
+			"token":       schema.StringAttribute{Optional: true, Sensitive: true, Description: "API bearer token"},
+			"cli_profile": schema.StringAttribute{Optional: true, Description: "Name of a kc CLI profile (~/.kc/config/<name>.yaml, written by `kc login`/`kc switch`) to source endpoint/token from when they aren't set directly. Lower precedence than endpoint/token and their KVINDO_ENDPOINT/KVINDO_TOKEN env vars. Can also be set via KVINDO_CLI_PROFILE."},
 		}}
 }
 
@@ -46,21 +48,37 @@ func (p *KvindoProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	profileName := ""
+	if !config.CliProfile.IsNull() && !config.CliProfile.IsUnknown() && config.CliProfile.ValueString() != "" {
+		profileName = config.CliProfile.ValueString()
+	} else if v := os.Getenv("KVINDO_CLI_PROFILE"); v != "" {
+		profileName = v
+	}
+	var profile kcProfile
+	if profileName != "" {
+		profile = loadKcProfile(profileName)
+	}
+
 	endpoint := defaultEndpoint
-	if !config.Endpoint.IsNull() && !config.Endpoint.IsUnknown() && config.Endpoint.ValueString() != "" {
-		endpoint = config.Endpoint.ValueString()
-	} else if v := os.Getenv("KVINDO_ENDPOINT"); v != "" {
+	if profile.Server != "" {
+		endpoint = profile.Server
+	}
+	if v := os.Getenv("KVINDO_ENDPOINT"); v != "" {
 		endpoint = v
 	}
-	token := ""
-	if !config.Token.IsNull() && !config.Token.IsUnknown() {
+	if !config.Endpoint.IsNull() && !config.Endpoint.IsUnknown() && config.Endpoint.ValueString() != "" {
+		endpoint = config.Endpoint.ValueString()
+	}
+
+	token := profile.Token
+	if v := os.Getenv("KVINDO_TOKEN"); v != "" {
+		token = v
+	}
+	if !config.Token.IsNull() && !config.Token.IsUnknown() && config.Token.ValueString() != "" {
 		token = config.Token.ValueString()
 	}
 	if token == "" {
-		token = os.Getenv("KVINDO_TOKEN")
-	}
-	if token == "" {
-		resp.Diagnostics.AddError("Missing API Token", "Set token in provider config or KVINDO_TOKEN env var")
+		resp.Diagnostics.AddError("Missing API Token", "Set token in provider config, KVINDO_TOKEN env var, or cli_profile (~/.kc/config/<name>.yaml)")
 		return
 	}
 	pd := &KvindoProviderData{Client: client.New(endpoint, token, p.version)}

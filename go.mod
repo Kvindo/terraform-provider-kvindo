@@ -7,6 +7,7 @@ require (
 	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-log v0.10.0
 	github.com/oklog/ulid/v2 v2.1.1
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
