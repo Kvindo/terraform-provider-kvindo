@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/kvindo/terraform-provider-kvindo/internal/client"
 )
 
@@ -122,13 +123,22 @@ func (r *KubernetesResource) Create(ctx context.Context, req resource.CreateRequ
 		resp.Diagnostics.AddError("Create Error", err.Error())
 		return
 	}
-	if err := r.client.PollUntilDone(ctx, "/api/v1/kubernetes", modResp.RequestId); err != nil {
-		resp.Diagnostics.AddError("Create Poll Error", err.Error())
-		return
-	}
 	resourceId := modResp.ResourceId
 	if resourceId == "" {
 		resourceId = plan.ID.ValueString()
+	}
+	if err := r.client.PollUntilDone(ctx, "/api/v1/kubernetes", modResp.RequestId); err != nil {
+		if recoverData, getErr := r.client.Get(ctx, "/api/v1/kubernetes", resourceId); getErr == nil && recoverData != nil {
+			if popErr := populateKubernetesState(ctx, recoverData, &plan); popErr == nil {
+				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+			} else {
+				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
+			}
+		} else if getErr != nil {
+			tflog.Warn(ctx, "Create Poll Error: recovery Get also failed", map[string]interface{}{"error": getErr.Error()})
+		}
+		resp.Diagnostics.AddError("Create Poll Error", err.Error())
+		return
 	}
 	apiData, err := r.client.Get(ctx, "/api/v1/kubernetes", resourceId)
 	if err != nil {

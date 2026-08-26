@@ -13,12 +13,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/kvindo/terraform-provider-kvindo/internal/client"
 )
 
 var _ = fmt.Sprintf
 
 var vmBootstrapCommandObjFields = []objField{{TF: "command", API: "command", Kind: "string"}}
+
+var vmBootVolumeAttachmentObjFields = []objField{{TF: "volume_id", API: "volumeId", Kind: "string"}, {TF: "attachment_id", API: "attachmentId", Kind: "string"}}
 
 var vmStatusBootstrapCommandObjFields = []objField{{TF: "duration_ms", API: "durationMs", Kind: "int64"}, {TF: "output", API: "output", Kind: "string"}, {TF: "return_code", API: "returnCode", Kind: "int64"}}
 
@@ -155,6 +158,13 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 	state.ID = state.Metadata.ID
 	spec := getSpec(data)
 	state.Spec.BootstrapCommand = objFromAPI(objMap(spec, "bootstrapCommand"), vmBootstrapCommandObjFields)
+	// The API never returns a bootVolumeAttachment field on a plain read (it's a create-time-only
+	// convenience the provider translates into a real, separately-tracked kvindo_volume_attachment
+	// resource — see buildBootVolumeAttachmentPlan below). Left unset, the Go zero-value types.Object{}
+	// reads back as an untyped empty object, which the framework then rejects against this attribute's
+	// declared (volume_id, attachment_id) type during Read/Import ("Expected ... Received
+	// types.ObjectType[]"). objFromAPI on an always-absent key returns a properly-typed null instead.
+	state.Spec.BootVolumeAttachment = objFromAPI(objMap(spec, "bootVolumeAttachment"), vmBootVolumeAttachmentObjFields)
 	state.Spec.CommandScheduleIds = getStringList(ctx, spec, "commandScheduleIds")
 	state.Spec.FloatingIpId = getString(spec, "floatingIpId")
 	state.Spec.ImageBootVolumeDeviceIndex = getInt64(spec, "imageBootVolumeDeviceIndex")
@@ -272,12 +282,41 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		attPlan := buildBootVolumeAttachmentPlan(plan, resourceId, attachmentId, volumeId)
 		attBody := buildVolumeAttachmentRequestMap(ctx, attPlan)
 		if _, err := r.client.Put(ctx, "/api/v1/volume-attachment", attBody); err != nil {
+			// The VM's own Put() above already succeeded — recover its state so it isn't
+			// orphaned too, even though the attachment itself was never created.
+			if recoverData, getErr := r.client.Get(ctx, "/api/v1/vm", resourceId); getErr == nil && recoverData != nil {
+				if popErr := populateVmState(ctx, recoverData, &plan); popErr == nil {
+					resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+				} else {
+					tflog.Warn(ctx, "Boot Volume Attachment Create Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
+				}
+			} else if getErr != nil {
+				tflog.Warn(ctx, "Boot Volume Attachment Create Error: recovery Get also failed", map[string]interface{}{"error": getErr.Error()})
+			}
 			resp.Diagnostics.AddError("Boot Volume Attachment Create Error", err.Error())
 			return
 		}
 	}
 
 	if err := r.client.PollUntilDone(ctx, "/api/v1/vm", modResp.RequestId); err != nil {
+		if recoverData, getErr := r.client.Get(ctx, "/api/v1/vm", resourceId); getErr == nil && recoverData != nil {
+			if hasBootVolumeAttachment {
+				bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
+				obj, diags := types.ObjectValue(bootVolumeAttachmentAttrTypes, map[string]attr.Value{
+					"volume_id":     bootVolAttrs["volume_id"],
+					"attachment_id": types.StringValue(attachmentId),
+				})
+				resp.Diagnostics.Append(diags...)
+				plan.Spec.BootVolumeAttachment = obj
+			}
+			if popErr := populateVmState(ctx, recoverData, &plan); popErr == nil {
+				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+			} else {
+				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
+			}
+		} else if getErr != nil {
+			tflog.Warn(ctx, "Create Poll Error: recovery Get also failed", map[string]interface{}{"error": getErr.Error()})
+		}
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}

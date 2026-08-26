@@ -317,6 +317,25 @@ func TestPopulateVmState_SecurityGroupIdsEmpty(t *testing.T) {
 	}
 }
 
+// A plain read/import never gets a bootVolumeAttachment field back from the API (it's a
+// create-time-only convenience the provider turns into a real, separately-tracked
+// kvindo_volume_attachment resource) — populateVmState must still produce a properly-typed null,
+// not the Go zero-value types.Object{}, or Import crashes with a framework type-mismatch error.
+func TestPopulateVmState_BootVolumeAttachmentAbsent_IsTypedNull(t *testing.T) {
+	data := makeVmApiData(map[string]interface{}{}, map[string]interface{}{"state": "stable"})
+	var state VmResourceModel
+	if err := populateVmState(context.Background(), data, &state); err != nil {
+		t.Fatalf("populateVmState error: %v", err)
+	}
+	if !state.Spec.BootVolumeAttachment.IsNull() {
+		t.Fatalf("expected boot_volume_attachment to be null, got %v", state.Spec.BootVolumeAttachment)
+	}
+	if !state.Spec.BootVolumeAttachment.AttributeTypes(context.Background())["volume_id"].Equal(types.StringType) {
+		t.Errorf("boot_volume_attachment null value has wrong/untyped attribute set: %v",
+			state.Spec.BootVolumeAttachment.AttributeTypes(context.Background()))
+	}
+}
+
 // status uses case-insensitive lookup: wire returns lowercase keys, generator emits camelCase.
 func TestPopulateVmState_WindowsPassword_CaseInsensitive(t *testing.T) {
 	data := makeVmApiData(

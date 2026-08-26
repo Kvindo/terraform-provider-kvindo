@@ -924,6 +924,9 @@ func emitResourceImports(sb *strings.Builder, r ResourceDef) {
 	}
 	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource\"\n")
 	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema\"\n")
+	// Used by Create()'s poll-failure recovery path to log a swallowed inner error (Get/populate
+	// failing during best-effort state recovery) without adding a second user-facing diagnostic.
+	sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-log/tflog\"\n")
 	if needsBool {
 		sb.WriteString("\t\"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier\"\n")
 	}
@@ -1163,12 +1166,41 @@ func buildBootVolumeAttachmentPlan(vmPlan VmResourceModel, vmId, attachmentId, v
 		attPlan := buildBootVolumeAttachmentPlan(plan, resourceId, attachmentId, volumeId)
 		attBody := buildVolumeAttachmentRequestMap(ctx, attPlan)
 		if _, err := r.client.Put(ctx, "/api/v1/volume-attachment", attBody); err != nil {
+			// The VM's own Put() above already succeeded — recover its state so it isn't
+			// orphaned too, even though the attachment itself was never created.
+			if recoverData, getErr := r.client.Get(ctx, %q, resourceId); getErr == nil && recoverData != nil {
+				if popErr := populateVmState(ctx, recoverData, &plan); popErr == nil {
+					resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+				} else {
+					tflog.Warn(ctx, "Boot Volume Attachment Create Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
+				}
+			} else if getErr != nil {
+				tflog.Warn(ctx, "Boot Volume Attachment Create Error: recovery Get also failed", map[string]interface{}{"error": getErr.Error()})
+			}
 			resp.Diagnostics.AddError("Boot Volume Attachment Create Error", err.Error())
 			return
 		}
 	}
 
 	if err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil {
+		if recoverData, getErr := r.client.Get(ctx, %q, resourceId); getErr == nil && recoverData != nil {
+			if hasBootVolumeAttachment {
+				bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
+				obj, diags := types.ObjectValue(bootVolumeAttachmentAttrTypes, map[string]attr.Value{
+					"volume_id":     bootVolAttrs["volume_id"],
+					"attachment_id": types.StringValue(attachmentId),
+				})
+				resp.Diagnostics.Append(diags...)
+				plan.Spec.BootVolumeAttachment = obj
+			}
+			if popErr := populateVmState(ctx, recoverData, &plan); popErr == nil {
+				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+			} else {
+				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
+			}
+		} else if getErr != nil {
+			tflog.Warn(ctx, "Create Poll Error: recovery Get also failed", map[string]interface{}{"error": getErr.Error()})
+		}
 		resp.Diagnostics.AddError("Create Poll Error", err.Error())
 		return
 	}
@@ -1197,7 +1229,7 @@ func buildBootVolumeAttachmentPlan(vmPlan VmResourceModel, vmId, attachmentId, v
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
-`, apiPath, apiPath, apiPath))
+`, apiPath, apiPath, apiPath, apiPath, apiPath))
 
 	sb.WriteString(fmt.Sprintf(`func (r *VmResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state VmResourceModel
@@ -1350,8 +1382,19 @@ func generateResourceFile(r ResourceDef) string {
 		sb.WriteString(fmt.Sprintf("\tbody := build%sRequestMap(ctx, plan)\n", sn))
 		sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Put(ctx, %q, body)\n", r.APIPath))
 		sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Create Error\", err.Error()); return }\n")
-		sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil { resp.Diagnostics.AddError(\"Create Poll Error\", err.Error()); return }\n", r.APIPath))
 		sb.WriteString("\tresourceId := modResp.ResourceId\n\tif resourceId == \"\" { resourceId = plan.ID.ValueString() }\n")
+		sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil {\n", r.APIPath))
+		sb.WriteString(fmt.Sprintf("\t\tif recoverData, getErr := r.client.Get(ctx, %q, resourceId); getErr == nil && recoverData != nil {\n", r.APIPath))
+		sb.WriteString(fmt.Sprintf("\t\t\tif popErr := populate%sState(ctx, recoverData, &plan); popErr == nil {\n", sn))
+		sb.WriteString("\t\t\t\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n")
+		sb.WriteString("\t\t\t} else {\n")
+		sb.WriteString("\t\t\t\ttflog.Warn(ctx, \"Create Poll Error: recovery state population also failed\", map[string]interface{}{\"error\": popErr.Error()})\n")
+		sb.WriteString("\t\t\t}\n")
+		sb.WriteString("\t\t} else if getErr != nil {\n")
+		sb.WriteString("\t\t\ttflog.Warn(ctx, \"Create Poll Error: recovery Get also failed\", map[string]interface{}{\"error\": getErr.Error()})\n")
+		sb.WriteString("\t\t}\n")
+		sb.WriteString("\t\tresp.Diagnostics.AddError(\"Create Poll Error\", err.Error())\n")
+		sb.WriteString("\t\treturn\n\t}\n")
 		sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, resourceId)\n", r.APIPath))
 		sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read After Create Error\", err.Error()); return }\n")
 		sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Read After Create Error\", \"resource not found after creation\"); return }\n")

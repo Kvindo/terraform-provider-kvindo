@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/kvindo/terraform-provider-kvindo/internal/client"
 )
 
@@ -358,14 +359,26 @@ func (r *TransactionResource) Create(ctx context.Context, req resource.CreateReq
 		resp.Diagnostics.AddError("Create Error", errDetail)
 		return
 	}
-	if err := r.client.PollUntilDone(ctx, "/api/v1/transaction", modResp.RequestId); err != nil {
-		resp.Diagnostics.AddError("Create Poll Error", err.Error())
-		return
-	}
-
 	txnID := modResp.ResourceId
 	if txnID == "" {
 		txnID = plan.ID.ValueString()
+	}
+
+	if err := r.client.PollUntilDone(ctx, "/api/v1/transaction", modResp.RequestId); err != nil {
+		// The transaction's own Put() above already succeeded — recover its state so it isn't
+		// orphaned, same shape as every other resource's Create() (see
+		// reference_tf_provider_create_poll_failure_orphans_resource).
+		if recoverData, getErr := r.client.Get(ctx, "/api/v1/transaction", txnID); getErr == nil && recoverData != nil {
+			if popErr := r.populateState(ctx, recoverData, &plan); popErr == nil {
+				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+			} else {
+				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
+			}
+		} else if getErr != nil {
+			tflog.Warn(ctx, "Create Poll Error: recovery Get also failed", map[string]interface{}{"error": getErr.Error()})
+		}
+		resp.Diagnostics.AddError("Create Poll Error", err.Error())
+		return
 	}
 
 	if !hasUsers {
@@ -388,6 +401,7 @@ func (r *TransactionResource) Create(ctx context.Context, req resource.CreateReq
 	// PUT will fail with 422 if any sub-resource is still Scheduling.
 	if err := waitForSubResourcesStable(ctx, r.client, txnID); err != nil {
 		cleanupTransaction(ctx, r.client, txnID)
+		r.recoverIfStillExistsAfterCleanup(ctx, txnID, &plan, resp)
 		resp.Diagnostics.AddError("Phase1 Sub-Resource Wait Error", err.Error())
 		return
 	}
@@ -415,11 +429,13 @@ func (r *TransactionResource) Create(ctx context.Context, req resource.CreateReq
 	modResp2, err := r.client.Put(ctx, "/api/v1/transaction", body2)
 	if err != nil {
 		cleanupTransaction(ctx, r.client, txnID)
+		r.recoverIfStillExistsAfterCleanup(ctx, txnID, &plan, resp)
 		resp.Diagnostics.AddError("Create Phase2 Error", err.Error())
 		return
 	}
 	if err := r.client.PollUntilDone(ctx, "/api/v1/transaction", modResp2.RequestId); err != nil {
 		cleanupTransaction(ctx, r.client, txnID)
+		r.recoverIfStillExistsAfterCleanup(ctx, txnID, &plan, resp)
 		resp.Diagnostics.AddError("Create Phase2 Poll Error", err.Error())
 		return
 	}
@@ -615,6 +631,31 @@ func deleteAnyExistingResource(ctx context.Context, c *client.Client, resType, i
 			return
 		case <-time.After(10 * time.Second):
 		}
+	}
+}
+
+// recoverIfStillExistsAfterCleanup verifies, via a fresh live GET, whether cleanupTransaction
+// actually removed everything — its own deletes/polls are best-effort and swallow errors
+// internally, so a partial failure there would otherwise leave a real, live transaction with
+// zero Terraform state. If it's genuinely gone, this is a no-op (correct — nothing to track).
+// If it's still there, the transaction is recovered into state (tainted-equivalent) instead of
+// being silently orphaned. Does not inspect individual sub-resources (s3Buckets/
+// s3UserAccessPolicies/folders) — a sub-resource cleanupTransaction failed to delete while the
+// transaction container itself was removed is a separate, pre-existing gap in cleanupTransaction
+// itself, not something this closes.
+func (r *TransactionResource) recoverIfStillExistsAfterCleanup(ctx context.Context, txnID string, plan *TransactionResourceModel, resp *resource.CreateResponse) {
+	recoverData, getErr := r.client.Get(ctx, "/api/v1/transaction", txnID)
+	if getErr != nil {
+		tflog.Warn(ctx, "post-cleanup verification Get failed", map[string]interface{}{"error": getErr.Error()})
+		return
+	}
+	if recoverData == nil {
+		return
+	}
+	if popErr := r.populateState(ctx, recoverData, plan); popErr == nil {
+		resp.Diagnostics.Append(resp.State.Set(ctx, *plan)...)
+	} else {
+		tflog.Warn(ctx, "post-cleanup recovery state population failed", map[string]interface{}{"error": popErr.Error()})
 	}
 }
 
