@@ -5346,7 +5346,6 @@ Optional:
 - `create_public_ipv4` (Boolean)
 - `parameters_set_id` (String)
 - `replicas_per_shard` (Number)
-- `root_password` (String, Sensitive)
 - `shards` (Attributes List) (see [below for nested schema](#nestedatt--spec--valkeys--spec--shards))
 - `use_fqdn` (Boolean)
 - `valkey_version` (String)
@@ -5359,7 +5358,7 @@ Optional:
 
 Optional:
 
-- `id` (String)
+- `name` (String)
 - `vpc_subnet_id` (String)
 
 
@@ -5379,7 +5378,6 @@ Optional:
 - `dns_seed_fqdn` (String)
 - `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--valkeys--status--last_change_request))
 - `nodes` (Attributes List) (see [below for nested schema](#nestedatt--spec--valkeys--status--nodes))
-- `password` (String)
 - `port` (Number)
 - `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--valkeys--status--pricing))
 - `primary_endpoints` (String)

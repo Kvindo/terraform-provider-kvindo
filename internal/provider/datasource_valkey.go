@@ -34,7 +34,6 @@ func (d *ValkeyDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 		"create_public_ipv4": schema.BoolAttribute{Computed: true},
 		"parameters_set_id":  schema.StringAttribute{Computed: true},
 		"replicas_per_shard": schema.Int64Attribute{Computed: true},
-		"root_password":      schema.StringAttribute{Computed: true, Sensitive: true},
 		"shards":             listObjDatasourceSchema(valkeyShardsObjFields),
 		"use_fqdn":           schema.BoolAttribute{Computed: true},
 		"valkey_version":     schema.StringAttribute{Computed: true},
@@ -47,7 +46,7 @@ func (d *ValkeyDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 		"name":     schema.StringAttribute{Optional: true, Computed: true, Description: "Name of the resource to look up. Set exactly one of `id` or `name`."},
 		"metadata": metadataDatasourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Computed: true, Attributes: specAttrs},
-		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"anti_affinity_message": schema.StringAttribute{Computed: true}, "anti_affinity_ok": schema.BoolAttribute{Computed: true}, "cluster_endpoints": schema.StringAttribute{Computed: true}, "cluster_state": schema.StringAttribute{Computed: true}, "connection_uri": schema.StringAttribute{Computed: true}, "dns_seed_fqdn": schema.StringAttribute{Computed: true}, "nodes": listObjDatasourceSchema(valkeyStatusNodesObjFields), "password": schema.StringAttribute{Computed: true}, "port": schema.Int64Attribute{Computed: true}, "primary_endpoints": schema.StringAttribute{Computed: true}, "shards": listObjDatasourceSchema(valkeyStatusShardsObjFields)}),
+		"status":   commonInfoDatasourceSchema(map[string]schema.Attribute{"anti_affinity_message": schema.StringAttribute{Computed: true}, "anti_affinity_ok": schema.BoolAttribute{Computed: true}, "cluster_endpoints": schema.StringAttribute{Computed: true}, "cluster_state": schema.StringAttribute{Computed: true}, "connection_uri": schema.StringAttribute{Computed: true}, "dns_seed_fqdn": schema.StringAttribute{Computed: true}, "nodes": listObjDatasourceSchema(valkeyStatusNodesObjFields), "port": schema.Int64Attribute{Computed: true}, "primary_endpoints": schema.StringAttribute{Computed: true}, "shards": listObjDatasourceSchema(valkeyStatusShardsObjFields)}),
 	}}
 }
 
@@ -102,7 +101,6 @@ func (d *ValkeyDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	state.Spec.CreatePublicIpv4 = getBool(spec, "createPublicIpv4")
 	state.Spec.ParametersSetId = getString(spec, "parametersSetId")
 	state.Spec.ReplicasPerShard = getInt64(spec, "replicasPerShard")
-	state.Spec.RootPassword = getString(spec, "rootPassword")
 	state.Spec.Shards = listObjFromAPI(objList(spec, "shards"), valkeyShardsObjFields)
 	state.Spec.UseFqdn = getBool(spec, "useFqdn")
 	state.Spec.ValkeyVersion = getString(spec, "valkeyVersion")
@@ -118,7 +116,6 @@ func (d *ValkeyDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 			"connection_uri":        types.StringType,
 			"dns_seed_fqdn":         types.StringType,
 			"nodes":                 attrTypeOf("list_object", valkeyStatusNodesObjFields),
-			"password":              types.StringType,
 			"port":                  types.Int64Type,
 			"primary_endpoints":     types.StringType,
 			"shards":                attrTypeOf("list_object", valkeyStatusShardsObjFields),
@@ -131,7 +128,6 @@ func (d *ValkeyDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 			"connection_uri":        getStringFromInfo(apiData, "connectionUri"),
 			"dns_seed_fqdn":         getStringFromInfo(apiData, "dnsSeedFqdn"),
 			"nodes":                 getListObjFromInfo(apiData, "nodes", valkeyStatusNodesObjFields),
-			"password":              getStringFromInfo(apiData, "password"),
 			"port":                  getInt64FromInfo(apiData, "port"),
 			"primary_endpoints":     getStringFromInfo(apiData, "primaryEndpoints"),
 			"shards":                getListObjFromInfo(apiData, "shards", valkeyStatusShardsObjFields),

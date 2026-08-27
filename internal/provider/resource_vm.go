@@ -270,10 +270,11 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		resourceId = plan.ID.ValueString()
 	}
 
-	var attachmentId string
+	var attachmentId, bootVolumeId string
 	if hasBootVolumeAttachment {
 		bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
 		volumeId := bootVolAttrs["volume_id"].(types.String).ValueString()
+		bootVolumeId = volumeId
 		attachmentId = newULID()
 		// Create the boot volume_attachment behind the scenes, right after the VM's DB row is
 		// committed (the PUT above already returned, so it exists) but before polling the VM to
@@ -298,18 +299,33 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		}
 	}
 
+	// bootVolumeId/attachmentId (plain strings captured above, before any populateVmState call) must
+	// be (re-)applied to plan.Spec.BootVolumeAttachment strictly AFTER populateVmState runs —
+	// populateVmState unconditionally overwrites that field from the API response, which never
+	// carries a bootVolumeAttachment key (see its own doc comment above), so calling it after setting
+	// the field clobbers the correct value back to null. This exact ordering bug reliably failed
+	// Apply_DocsVmsExampleMock_CreatesAndDestroys with "Provider produced inconsistent result after
+	// apply: .spec.boot_volume_attachment: was cty.ObjectVal(...), but now null". The closure MUST
+	// read only the captured plain strings, never plan.Spec.BootVolumeAttachment itself — that field
+	// is exactly what populateVmState just nulled, so re-reading it here (an earlier, reverted
+	// version of this fix did exactly that) panics inside types.ObjectValue on the resulting nil
+	// attribute value.
+	setBootVolumeAttachment := func() {
+		if !hasBootVolumeAttachment {
+			return
+		}
+		obj, diags := types.ObjectValue(bootVolumeAttachmentAttrTypes, map[string]attr.Value{
+			"volume_id":     types.StringValue(bootVolumeId),
+			"attachment_id": types.StringValue(attachmentId),
+		})
+		resp.Diagnostics.Append(diags...)
+		plan.Spec.BootVolumeAttachment = obj
+	}
+
 	if err := r.client.PollUntilDone(ctx, "/api/v1/vm", modResp.RequestId); err != nil {
 		if recoverData, getErr := r.client.Get(ctx, "/api/v1/vm", resourceId); getErr == nil && recoverData != nil {
-			if hasBootVolumeAttachment {
-				bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
-				obj, diags := types.ObjectValue(bootVolumeAttachmentAttrTypes, map[string]attr.Value{
-					"volume_id":     bootVolAttrs["volume_id"],
-					"attachment_id": types.StringValue(attachmentId),
-				})
-				resp.Diagnostics.Append(diags...)
-				plan.Spec.BootVolumeAttachment = obj
-			}
 			if popErr := populateVmState(ctx, recoverData, &plan); popErr == nil {
+				setBootVolumeAttachment()
 				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 			} else {
 				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
@@ -329,19 +345,11 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		resp.Diagnostics.AddError("Read After Create Error", "resource not found after creation")
 		return
 	}
-	if hasBootVolumeAttachment {
-		bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
-		obj, diags := types.ObjectValue(bootVolumeAttachmentAttrTypes, map[string]attr.Value{
-			"volume_id":     bootVolAttrs["volume_id"],
-			"attachment_id": types.StringValue(attachmentId),
-		})
-		resp.Diagnostics.Append(diags...)
-		plan.Spec.BootVolumeAttachment = obj
-	}
 	if err := populateVmState(ctx, apiData, &plan); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	setBootVolumeAttachment()
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -394,10 +402,17 @@ func (r *VmResource) Read(ctx context.Context, req resource.ReadRequest, resp *r
 		resp.State.RemoveResource(ctx)
 		return
 	}
+	// boot_volume_attachment is immutable once set (volume_id is RequiresReplace) and the API never
+	// echoes it back on a plain read, so populateVmState always nulls it — capture the existing
+	// state's value first and restore it after, or every refresh permanently drops it, forcing a
+	// spurious destroy+recreate on the very next plan. Same pattern as Create()'s own fix; without
+	// this, Create()'s fix alone still fails - just one step later than before.
+	existingBootVolumeAttachment := state.Spec.BootVolumeAttachment
 	if err := populateVmState(ctx, apiData, &state); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	state.Spec.BootVolumeAttachment = existingBootVolumeAttachment
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
@@ -428,10 +443,15 @@ func (r *VmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
+	// Same boot_volume_attachment preservation as Read() above — populateVmState always nulls it,
+	// and by the time Update() runs (as opposed to a replace) volume_id can't have changed anyway
+	// (RequiresReplace), so plan's own incoming value is exactly what should survive.
+	existingBootVolumeAttachment := plan.Spec.BootVolumeAttachment
 	if err := populateVmState(ctx, apiData, &plan); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	plan.Spec.BootVolumeAttachment = existingBootVolumeAttachment
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 

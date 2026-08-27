@@ -18,7 +18,7 @@ import (
 
 var _ = fmt.Sprintf
 
-var valkeyShardsObjFields = []objField{{TF: "id", API: "id", Kind: "string"}, {TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string"}}
+var valkeyShardsObjFields = []objField{{TF: "name", API: "name", Kind: "string"}, {TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string"}}
 
 var valkeyStatusNodesObjFields = []objField{{TF: "announce_fqdn", API: "announceFqdn", Kind: "string"}, {TF: "bus_port", API: "busPort", Kind: "int64"}, {TF: "id", API: "id", Kind: "string"}, {TF: "is_primary", API: "isPrimary", Kind: "bool"}, {TF: "node_id", API: "nodeId", Kind: "string"}, {TF: "observed_role", API: "observedRole", Kind: "string"}, {TF: "port", API: "port", Kind: "int64"}, {TF: "private_ipv4", API: "privateIpV4", Kind: "string"}, {TF: "public_ipv4", API: "publicIpV4", Kind: "string"}, {TF: "shard_index", API: "shardIndex", Kind: "int64"}}
 
@@ -28,7 +28,6 @@ type ValkeySpecModel struct {
 	CreatePublicIpv4 types.Bool   `tfsdk:"create_public_ipv4"`
 	ParametersSetId  types.String `tfsdk:"parameters_set_id"`
 	ReplicasPerShard types.Int64  `tfsdk:"replicas_per_shard"`
-	RootPassword     types.String `tfsdk:"root_password"`
 	Shards           types.List   `tfsdk:"shards"`
 	UseFqdn          types.Bool   `tfsdk:"use_fqdn"`
 	ValkeyVersion    types.String `tfsdk:"valkey_version"`
@@ -57,7 +56,6 @@ func ValkeyResourceSchemaAttrs() map[string]schema.Attribute {
 		"create_public_ipv4": schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
 		"parameters_set_id":  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"replicas_per_shard": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
-		"root_password":      schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"shards":             listObjResourceSchema(valkeyShardsObjFields),
 		"use_fqdn":           schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
 		"valkey_version":     schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -69,7 +67,7 @@ func ValkeyResourceSchemaAttrs() map[string]schema.Attribute {
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"metadata": metadataResourceSchema(),
 		"spec":     schema.SingleNestedAttribute{Optional: true, Computed: true, Attributes: specAttrs},
-		"status":   commonInfoSchema(map[string]schema.Attribute{"anti_affinity_message": schema.StringAttribute{Computed: true}, "anti_affinity_ok": schema.BoolAttribute{Computed: true}, "cluster_endpoints": schema.StringAttribute{Computed: true}, "cluster_state": schema.StringAttribute{Computed: true}, "connection_uri": schema.StringAttribute{Computed: true}, "dns_seed_fqdn": schema.StringAttribute{Computed: true}, "nodes": listObjStatusSchema(valkeyStatusNodesObjFields), "password": schema.StringAttribute{Computed: true}, "port": schema.Int64Attribute{Computed: true}, "primary_endpoints": schema.StringAttribute{Computed: true}, "shards": listObjStatusSchema(valkeyStatusShardsObjFields)}),
+		"status":   commonInfoSchema(map[string]schema.Attribute{"anti_affinity_message": schema.StringAttribute{Computed: true}, "anti_affinity_ok": schema.BoolAttribute{Computed: true}, "cluster_endpoints": schema.StringAttribute{Computed: true}, "cluster_state": schema.StringAttribute{Computed: true}, "connection_uri": schema.StringAttribute{Computed: true}, "dns_seed_fqdn": schema.StringAttribute{Computed: true}, "nodes": listObjStatusSchema(valkeyStatusNodesObjFields), "port": schema.Int64Attribute{Computed: true}, "primary_endpoints": schema.StringAttribute{Computed: true}, "shards": listObjStatusSchema(valkeyStatusShardsObjFields)}),
 	}
 }
 
@@ -101,9 +99,6 @@ func buildValkeyRequestMap(ctx context.Context, plan ValkeyResourceModel) map[st
 	if !plan.Spec.ReplicasPerShard.IsNull() && !plan.Spec.ReplicasPerShard.IsUnknown() {
 		spec["replicasPerShard"] = plan.Spec.ReplicasPerShard.ValueInt64()
 	}
-	if !plan.Spec.RootPassword.IsNull() && !plan.Spec.RootPassword.IsUnknown() {
-		spec["rootPassword"] = plan.Spec.RootPassword.ValueString()
-	}
 	if !plan.Spec.Shards.IsNull() && !plan.Spec.Shards.IsUnknown() {
 		spec["shards"] = listObjToAPI(plan.Spec.Shards, valkeyShardsObjFields)
 	}
@@ -134,7 +129,6 @@ func populateValkeyState(ctx context.Context, data map[string]interface{}, state
 	state.Spec.CreatePublicIpv4 = getBool(spec, "createPublicIpv4")
 	state.Spec.ParametersSetId = getString(spec, "parametersSetId")
 	state.Spec.ReplicasPerShard = getInt64(spec, "replicasPerShard")
-	state.Spec.RootPassword = getString(spec, "rootPassword")
 	state.Spec.Shards = listObjFromAPI(objList(spec, "shards"), valkeyShardsObjFields)
 	state.Spec.UseFqdn = getBool(spec, "useFqdn")
 	state.Spec.ValkeyVersion = getString(spec, "valkeyVersion")
@@ -150,7 +144,6 @@ func populateValkeyState(ctx context.Context, data map[string]interface{}, state
 			"connection_uri":        types.StringType,
 			"dns_seed_fqdn":         types.StringType,
 			"nodes":                 attrTypeOf("list_object", valkeyStatusNodesObjFields),
-			"password":              types.StringType,
 			"port":                  types.Int64Type,
 			"primary_endpoints":     types.StringType,
 			"shards":                attrTypeOf("list_object", valkeyStatusShardsObjFields),
@@ -163,7 +156,6 @@ func populateValkeyState(ctx context.Context, data map[string]interface{}, state
 			"connection_uri":        getStringFromInfo(data, "connectionUri"),
 			"dns_seed_fqdn":         getStringFromInfo(data, "dnsSeedFqdn"),
 			"nodes":                 getListObjFromInfo(data, "nodes", valkeyStatusNodesObjFields),
-			"password":              getStringFromInfo(data, "password"),
 			"port":                  getInt64FromInfo(data, "port"),
 			"primary_endpoints":     getStringFromInfo(data, "primaryEndpoints"),
 			"shards":                getListObjFromInfo(data, "shards", valkeyStatusShardsObjFields),

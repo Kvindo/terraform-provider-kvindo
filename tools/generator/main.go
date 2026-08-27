@@ -100,6 +100,13 @@ var skipResources = map[string]bool{
 	"etcd_node_group": true, "grafana": true, "nat_gateway": true,
 	"postgresql": true, "postgresql_node_group": true, "victoria_metrics": true,
 	"transaction": true,
+	// "postgresql_role"/"postgresql_database" are real, newly-live swagger routes (the clustered
+	// PostgreSql resource's Role/Database sub-resources) surfaced by an unrelated full regen while
+	// adding valkey_user - deliberately deferred to their own task (matching the docs site's
+	// existing "planned for a later release" caveat on PostgreSqlRole/Database) rather than
+	// silently bundling two more new resources into this release. Remove this entry when that
+	// task is actually done.
+	"postgresql_role": true, "postgresql_database": true,
 }
 
 // resourceNameOverride maps a path-derived name to the provider's resource name.
@@ -152,6 +159,7 @@ var requiredSpecFields = map[string]map[string]bool{
 	"support_ticket_comment":    {"ticket_id": true},
 	"user":                      {"email": true},
 	"user_token":                {"user_id": true},
+	"valkey_user":               {"valkey_id": true},
 	"volume_attachment":         {"volume_id": true, "vm_id": true},
 	"vpc_peering_external_peer": {"vpc_peering_id": true},
 	"vpc_peering_peer":          {"vpc_peering_id": true},
@@ -169,6 +177,12 @@ var optionalOnlySpecFields = map[string]map[string]bool{
 	// by the server, so Computed would produce spurious plan diffs - same reasoning as every
 	// other entry in this table.
 	"route_table_attachment":    {"vpc_id": true, "vpc_subnet_id": true},
+	"valkey_user": {
+		// No server default for any of the three - empty/null means deny (Valkey ACL default-deny),
+		// not "server picked a value", so Computed would produce spurious plan diffs like every
+		// other entry in this table.
+		"categories": true, "channels": true, "key_patterns": true,
+	},
 	"vm":                        {"floating_ip_id": true, "security_group_ids": true},
 	"vpc":                       {"nat_floating_ip_id": true},
 	"vpc_peering_external_peer": {"ssh_private_key_id": true},
@@ -182,7 +196,7 @@ var sensitiveSpecFields = map[string]map[string]bool{
 	"gitlab":          {"root_password": true},
 	"ollama":          {"root_password": true},
 	"ssh_private_key": {"private_key": true},
-	"valkey":          {"root_password": true},
+	"valkey_user":     {"password": true},
 }
 
 // specFieldDescriptions[resource][tf_field] = the field's schema Description. tfplugindocs
@@ -194,6 +208,11 @@ var specFieldDescriptions = map[string]map[string]string{
 	"route_table_attachment": {
 		"vpc_id":        "Mutually exclusive with `vpc_subnet_id`. Attaches the route table to the whole VPC.",
 		"vpc_subnet_id": "Mutually exclusive with `vpc_id`. Attaches the route table to a single subnet only - its routes are policy-routed so they apply solely to that subnet's traffic.",
+	},
+	"valkey_user": {
+		"key_patterns": "Valkey ACL key-pattern globs, e.g. `cache:*`. Entered without the leading `~` - Kvindo Cloud adds it when applying the ACL. Empty/null denies all key access.",
+		"categories":   "Valkey ACL command categories, e.g. `read`, `write`. Entered without the leading `+@`. Not validated by Kvindo Cloud - an invalid category is rejected by Valkey's own ACL SETUSER at apply time.",
+		"channels":     "Valkey ACL pub/sub channel globs, e.g. `notify:*`. Entered without the leading `&`. Empty/null denies all pub/sub access.",
 	},
 }
 
@@ -1477,47 +1496,47 @@ func resourceAttrDef(f FieldDef) string {
 		return fmt.Sprintf("schema.StringAttribute{Optional: true, Computed: true%s%s, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}", sens, desc)
 	case "bool":
 		if f.Required {
-			return "schema.BoolAttribute{Required: true}"
+			return fmt.Sprintf("schema.BoolAttribute{Required: true%s}", desc)
 		}
 		if f.OptionalOnly {
-			return "schema.BoolAttribute{Optional: true}"
+			return fmt.Sprintf("schema.BoolAttribute{Optional: true%s}", desc)
 		}
-		return "schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}}"
+		return fmt.Sprintf("schema.BoolAttribute{Optional: true, Computed: true%s, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}}", desc)
 	case "int64":
 		if f.Required {
-			return "schema.Int64Attribute{Required: true}"
+			return fmt.Sprintf("schema.Int64Attribute{Required: true%s}", desc)
 		}
 		if f.OptionalOnly {
-			return "schema.Int64Attribute{Optional: true}"
+			return fmt.Sprintf("schema.Int64Attribute{Optional: true%s}", desc)
 		}
-		return "schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}}"
+		return fmt.Sprintf("schema.Int64Attribute{Optional: true, Computed: true%s, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}}", desc)
 	case "float64":
 		if f.Required {
-			return "schema.Float64Attribute{Required: true}"
+			return fmt.Sprintf("schema.Float64Attribute{Required: true%s}", desc)
 		}
 		if f.OptionalOnly {
-			return "schema.Float64Attribute{Optional: true}"
+			return fmt.Sprintf("schema.Float64Attribute{Optional: true%s}", desc)
 		}
-		return "schema.Float64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Float64{float64planmodifier.UseStateForUnknown()}}"
+		return fmt.Sprintf("schema.Float64Attribute{Optional: true, Computed: true%s, PlanModifiers: []planmodifier.Float64{float64planmodifier.UseStateForUnknown()}}", desc)
 	case "list_string":
 		if f.Required {
-			return "schema.ListAttribute{Required: true, ElementType: types.StringType}"
+			return fmt.Sprintf("schema.ListAttribute{Required: true, ElementType: types.StringType%s}", desc)
 		}
 		if f.OptionalOnly {
-			return "schema.ListAttribute{Optional: true, ElementType: types.StringType}"
+			return fmt.Sprintf("schema.ListAttribute{Optional: true, ElementType: types.StringType%s}", desc)
 		}
-		return "schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}}"
+		return fmt.Sprintf("schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType%s, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}}", desc)
 	case "map_string":
 		if f.Required {
-			return "schema.MapAttribute{Required: true, ElementType: types.StringType}"
+			return fmt.Sprintf("schema.MapAttribute{Required: true, ElementType: types.StringType%s}", desc)
 		}
 		if f.OptionalOnly {
-			return "schema.MapAttribute{Optional: true, ElementType: types.StringType}"
+			return fmt.Sprintf("schema.MapAttribute{Optional: true, ElementType: types.StringType%s}", desc)
 		}
-		return "schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()}}"
+		return fmt.Sprintf("schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType%s, PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()}}", desc)
 	case "list_object":
 		var b strings.Builder
-		b.WriteString("schema.ListNestedAttribute{Optional: true, Computed: true, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{")
+		b.WriteString(fmt.Sprintf("schema.ListNestedAttribute{Optional: true, Computed: true%s, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{", desc))
 		for _, of := range f.ObjFields {
 			b.WriteString(fmt.Sprintf("%q: %s,", of.TFName, resourceAttrDef(of)))
 		}
