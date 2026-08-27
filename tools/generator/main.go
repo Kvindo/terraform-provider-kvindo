@@ -98,15 +98,12 @@ var skipResources = map[string]bool{
 	// path to generate from either way. "etcd" itself was removed from this list 2026-08-12: it
 	// shipped as a real resource this session and is now generated normally below.
 	"etcd_node_group": true, "grafana": true, "nat_gateway": true,
-	"postgresql": true, "postgresql_node_group": true, "victoria_metrics": true,
+	// "postgresql_node_group" never existed as a real resource - confirmed live 2026-08-28 against
+	// dev swagger (no "node"+"group" PostgreSql route of any spelling) - PostgreSqlSpec.ShardGroups
+	// is inline on the one PostgreSql resource, same shape as etcd_node_group above. Kept skipped
+	// since swagger has no such path to generate from either way.
+	"postgresql_node_group": true, "victoria_metrics": true,
 	"transaction": true,
-	// "postgresql_role"/"postgresql_database" are real, newly-live swagger routes (the clustered
-	// PostgreSql resource's Role/Database sub-resources) surfaced by an unrelated full regen while
-	// adding valkey_user - deliberately deferred to their own task (matching the docs site's
-	// existing "planned for a later release" caveat on PostgreSqlRole/Database) rather than
-	// silently bundling two more new resources into this release. Remove this entry when that
-	// task is actually done.
-	"postgresql_role": true, "postgresql_database": true,
 }
 
 // resourceNameOverride maps a path-derived name to the provider's resource name.
@@ -146,6 +143,8 @@ var requiredSpecFields = map[string]map[string]bool{
 	"loadbalancer_udp_listener":                          {"loadbalancer_id": true},
 	"loadbalancer_udp_listener_rule":                     {"udp_listener_id": true},
 	"open_vpn_user":                                      {"open_vpn_id": true},
+	"postgresql_database":                                {"postgre_sql_id": true},
+	"postgresql_user":                                    {"postgre_sql_id": true},
 	"quota_change_request":                               {"quota_id": true, "new_quota_limit": true},
 	// vpc_id is deliberately NOT Required here: it and vpc_subnet_id are mutually exclusive
 	// (server-enforced) since the subnet-scoped attachment feature - see specFieldDescriptions
@@ -176,7 +175,10 @@ var optionalOnlySpecFields = map[string]map[string]bool{
 	// vpc_id/vpc_subnet_id are mutually exclusive (server-enforced) and neither is ever defaulted
 	// by the server, so Computed would produce spurious plan diffs - same reasoning as every
 	// other entry in this table.
-	"route_table_attachment":    {"vpc_id": true, "vpc_subnet_id": true},
+	"route_table_attachment": {"vpc_id": true, "vpc_subnet_id": true},
+	// Same "no server default, empty means nothing granted" reasoning as valkey_user below.
+	"postgresql_database": {"extensions": true},
+	"postgresql_user":     {"granted_database_ids": true},
 	"valkey_user": {
 		// No server default for any of the three - empty/null means deny (Valkey ACL default-deny),
 		// not "server picked a value", so Computed would produce spurious plan diffs like every
@@ -195,6 +197,7 @@ var sensitiveSpecFields = map[string]map[string]bool{
 	"etcd":            {"root_password": true},
 	"gitlab":          {"root_password": true},
 	"ollama":          {"root_password": true},
+	"postgresql_user": {"password": true},
 	"ssh_private_key": {"private_key": true},
 	"valkey_user":     {"password": true},
 }

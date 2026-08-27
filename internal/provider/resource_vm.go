@@ -157,7 +157,6 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 	}
 	state.ID = state.Metadata.ID
 	spec := getSpec(data)
-	state.Spec.BootstrapCommand = objFromAPI(objMap(spec, "bootstrapCommand"), vmBootstrapCommandObjFields)
 	// The API never returns a bootVolumeAttachment field on a plain read (it's a create-time-only
 	// convenience the provider translates into a real, separately-tracked kvindo_volume_attachment
 	// resource — see buildBootVolumeAttachmentPlan below). Left unset, the Go zero-value types.Object{}
@@ -165,6 +164,7 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 	// declared (volume_id, attachment_id) type during Read/Import ("Expected ... Received
 	// types.ObjectType[]"). objFromAPI on an always-absent key returns a properly-typed null instead.
 	state.Spec.BootVolumeAttachment = objFromAPI(objMap(spec, "bootVolumeAttachment"), vmBootVolumeAttachmentObjFields)
+	state.Spec.BootstrapCommand = objFromAPI(objMap(spec, "bootstrapCommand"), vmBootstrapCommandObjFields)
 	state.Spec.CommandScheduleIds = getStringList(ctx, spec, "commandScheduleIds")
 	state.Spec.FloatingIpId = getString(spec, "floatingIpId")
 	state.Spec.ImageBootVolumeDeviceIndex = getInt64(spec, "imageBootVolumeDeviceIndex")
