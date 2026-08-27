@@ -45,7 +45,7 @@ func (e *ApiError) Error() string {
 // NOTE: the API previously misspelled this field as "succeded"; it was corrected
 // to "succeeded" API-wide. This json tag must match the current API field exactly.
 type RequestStatusResponse struct {
-	Succeeded            bool   `json:"succeeded"`
+	Succeeded           bool   `json:"succeeded"`
 	ScheduledResourceId string `json:"scheduledResourceId"`
 	ErrorCode           string `json:"errorCode"`
 	ErrorMessage        string `json:"errorMessage"`
@@ -287,26 +287,9 @@ func (c *Client) Put(ctx context.Context, path string, body interface{}) (*Modif
 
 		switch apiErr.ErrorCode {
 		case "SubmitLockBusy":
-			// Nothing was created - retry the ORIGINAL request, not a poll on some id. Base wait
-			// comes from the server's hint (tunable server-side without a client release, and
-			// clamped defensively - a buggy or malicious server sending an absurd value can't stall
-			// the client for hours); grows per attempt (capped) so a sustained busy org backs off
-			// instead of hammering at a fixed interval, with full jitter so many waiters on the same
-			// busy lock spread out instead of clustering in a narrow window.
-			base := 3 * time.Second
-			if apiErr.RetryAfterSeconds != nil {
-				hint := time.Duration(*apiErr.RetryAfterSeconds) * time.Second
-				if hint >= 1*time.Second && hint <= 60*time.Second {
-					base = hint
-				}
-			}
+			// Nothing was created - retry the ORIGINAL request, not a poll on some id.
 			lockBusyAttempt++
-			multiplier := lockBusyAttempt
-			if multiplier > 5 {
-				multiplier = 5 // growth plateaus at 5x base after attempt 5; attempt counter itself is unbounded (only the wait is capped)
-			}
-			grown := base * time.Duration(multiplier)
-			wait := time.Duration(rand.Int63n(int64(grown))) // full jitter: [0, grown)
+			wait := lockBusyWait(lockBusyAttempt, apiErr.RetryAfterSeconds)
 			tflog.Debug(ctx, "SubmitLockBusy, retrying original request", map[string]interface{}{"path": path, "attempt": lockBusyAttempt, "waitMs": wait.Milliseconds()})
 			// context.WithTimeout instead of a bare time.After: if ctx is cancelled first, the timer
 			// is cleaned up via waitCancel() rather than leaking until wait naturally elapses.
@@ -332,6 +315,31 @@ func (c *Client) Put(ctx context.Context, path string, body interface{}) (*Modif
 			return nil, err
 		}
 	}
+}
+
+// lockBusyWait computes the jittered backoff for a "some org-wide lock is busy" retry - shared by
+// Put()'s SubmitLockBusy case and Delete()'s TransactionDeleteLockBusy case (two distinct server-
+// side locks, see CLAUDE.md's "QuotaSubmitLock: SubmitLockBusy Error Code" - but the same safe
+// backoff shape applies to both: nothing was created/deleted, so retrying the identical request is
+// always safe). Base wait comes from the server's Retry-After hint when present (tunable server-side
+// without a client release, clamped defensively so a buggy/malicious server can't stall the client
+// for hours); grows per attempt (capped at 5x) so sustained contention backs off instead of hammering
+// at a fixed interval, with full jitter so many waiters on the same busy lock spread out instead of
+// clustering in a narrow window.
+func lockBusyWait(attempt int, retryAfterSeconds *int) time.Duration {
+	base := 3 * time.Second
+	if retryAfterSeconds != nil {
+		hint := time.Duration(*retryAfterSeconds) * time.Second
+		if hint >= 1*time.Second && hint <= 60*time.Second {
+			base = hint
+		}
+	}
+	multiplier := attempt
+	if multiplier > 5 {
+		multiplier = 5 // growth plateaus at 5x base after attempt 5; attempt counter itself is unbounded (only the wait is capped)
+	}
+	grown := base * time.Duration(multiplier)
+	return time.Duration(rand.Int63n(int64(grown))) // full jitter: [0, grown)
 }
 
 // extractId pulls metadata.id out of the submitted request body - the id the client itself chose
@@ -394,13 +402,13 @@ func (c *Client) Get(ctx context.Context, path string, id string) (map[string]in
 }
 
 // Delete sends a DELETE request for a resource.
-func (c *Client) Delete(ctx context.Context, path string, id string) (*ModificationResponse, error) {
+func (c *Client) delete(ctx context.Context, path string, id string) (*ModificationResponse, error) {
 	req, err := c.newRequest(ctx, http.MethodDelete, path+"/"+id, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	data, statusCode, _, err := c.do(ctx, req)
+	data, statusCode, headers, err := c.do(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -410,6 +418,19 @@ func (c *Client) Delete(ctx context.Context, path string, id string) (*Modificat
 	}
 
 	if statusCode >= 400 {
+		// Same shape as put(): parse into a structured *ApiError (Retry-After header + JSON body)
+		// so Delete()'s retry loop below can classify the failure by ErrorCode, instead of a plain
+		// fmt.Errorf that a caller could only string-match.
+		var apiErr ApiError
+		apiErr.StatusCode = statusCode
+		if ra := headers.Get("Retry-After"); ra != "" {
+			if seconds, convErr := strconv.Atoi(ra); convErr == nil {
+				apiErr.RetryAfterSeconds = &seconds
+			}
+		}
+		if jsonErr := json.Unmarshal(data, &apiErr); jsonErr == nil && apiErr.ErrorCode != "" {
+			return nil, &apiErr
+		}
 		return nil, fmt.Errorf("DELETE %s/%s returned status %d: %s", path, id, statusCode, string(data))
 	}
 
@@ -423,6 +444,42 @@ func (c *Client) Delete(ctx context.Context, path string, id string) (*Modificat
 	}
 
 	return &result, nil
+}
+
+// Delete sends a DELETE request to remove a resource, retrying on TransactionDeleteLockBusy - the
+// org-wide Transaction-bundle delete lock was busy (another delete for the same org was already in
+// flight), nothing was deleted, and retrying the ORIGINAL request is always safe (delete is
+// idempotent by id - a 404 on retry is handled above as a no-op success). Deliberately narrower than
+// Put(): no transport-level (*url.Error) retry here yet, and no other ErrorCode is retried - see
+// CLAUDE.md's "Transaction-Bundle Delete Lock" entry for why this is a known, deliberate scope cut
+// rather than an oversight.
+func (c *Client) Delete(ctx context.Context, path string, id string) (*ModificationResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	lockBusyAttempt := 0
+
+	for {
+		result, err := c.delete(ctx, path, id)
+		if err == nil {
+			return result, nil
+		}
+		if ctx.Err() != nil {
+			tflog.Warn(ctx, "giving up on Delete retry loop", map[string]interface{}{"path": path, "id": id, "lastError": err.Error()})
+			return nil, fmt.Errorf("giving up after retrying for 10m, last error: %w", err)
+		}
+
+		var apiErr *ApiError
+		if !errors.As(err, &apiErr) || apiErr.ErrorCode != "TransactionDeleteLockBusy" {
+			return nil, err
+		}
+
+		lockBusyAttempt++
+		wait := lockBusyWait(lockBusyAttempt, apiErr.RetryAfterSeconds)
+		tflog.Debug(ctx, "TransactionDeleteLockBusy, retrying original request", map[string]interface{}{"path": path, "id": id, "attempt": lockBusyAttempt, "waitMs": wait.Milliseconds()})
+		waitCtx, waitCancel := context.WithTimeout(ctx, wait)
+		<-waitCtx.Done()
+		waitCancel()
+	}
 }
 
 // PollUntilDone polls the async request status endpoint until the operation succeeds or times out.
