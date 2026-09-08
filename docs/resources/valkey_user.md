@@ -94,7 +94,7 @@ Optional:
 - `channels` (List of String) Valkey ACL pub/sub channel globs, e.g. `notify:*`. Entered without the leading `&`. Empty/null denies all pub/sub access.
 - `enabled` (Boolean)
 - `key_patterns` (List of String) Valkey ACL key-pattern globs, e.g. `cache:*`. Entered without the leading `~` - Kvindo Cloud adds it when applying the ACL. Empty/null denies all key access.
-- `password` (String, Sensitive)
+- `password` (String, Sensitive) Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.
 
 
 <a id="nestedatt--status"></a>

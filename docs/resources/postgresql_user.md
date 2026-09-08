@@ -56,7 +56,7 @@ Optional:
 - `connection_limit` (Number)
 - `granted_database_ids` (List of String)
 - `login` (Boolean)
-- `password` (String, Sensitive)
+- `password` (String, Sensitive) Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.
 
 
 <a id="nestedatt--status"></a>

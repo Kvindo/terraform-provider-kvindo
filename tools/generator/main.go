@@ -202,6 +202,30 @@ var sensitiveSpecFields = map[string]map[string]bool{
 	"valkey_user":     {"password": true},
 }
 
+// writeOnlySensitiveSpecFields[resource][tf_field] = true marks a Sensitive+Optional+Computed
+// spec field whose value the backend's GET never returns (confirmed live 2026-09-08:
+// postgresql_user.password and valkey_user.password come back empty on GET; gitlab's
+// root_password does NOT have this issue - confirmed live to return its real value, so it's
+// deliberately not listed here, nor are etcd/ollama's root_password per the same expected
+// shape). populate<X>State's field assignment for one of these must preserve the model's
+// existing value instead of unconditionally overwriting it with the (empty) GET response when
+// populating a plan-derived model (Create/Update) - otherwise the first time anyone actually
+// configures a value, Terraform's post-apply consistency check fails with "Provider produced
+// unexpected new value: inconsistent values for sensitive attribute", even though the resource
+// itself was created/updated correctly server-side. Read() populating a genuine refreshed state
+// (not a plan) is unaffected and keeps trusting the API response as-is.
+var writeOnlySensitiveSpecFields = map[string]map[string]bool{
+	"postgresql_user": {"password": true},
+	"valkey_user":     {"password": true},
+}
+
+// hasWriteOnlySensitiveField reports whether r has any field needing the preserve-on-write
+// handling above - gates whether populate<X>State's generated signature grows the extra
+// preserveSensitive parameter at all, so every other resource's generated code is untouched.
+func hasWriteOnlySensitiveField(r ResourceDef) bool {
+	return len(writeOnlySensitiveSpecFields[r.Name]) > 0
+}
+
 // specFieldDescriptions[resource][tf_field] = the field's schema Description. tfplugindocs
 // generates docs straight from the compiled binary's schema, so a spec field with no Description
 // here renders with no explanation at all - only worth setting where the field's meaning isn't
@@ -216,6 +240,10 @@ var specFieldDescriptions = map[string]map[string]string{
 		"key_patterns": "Valkey ACL key-pattern globs, e.g. `cache:*`. Entered without the leading `~` - Kvindo Cloud adds it when applying the ACL. Empty/null denies all key access.",
 		"categories":   "Valkey ACL command categories, e.g. `read`, `write`. Entered without the leading `+@`. Not validated by Kvindo Cloud - an invalid category is rejected by Valkey's own ACL SETUSER at apply time.",
 		"channels":     "Valkey ACL pub/sub channel globs, e.g. `notify:*`. Entered without the leading `&`. Empty/null denies all pub/sub access.",
+		"password":     "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.",
+	},
+	"postgresql_user": {
+		"password": "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.",
 	},
 }
 
@@ -1380,13 +1408,25 @@ func generateResourceFile(r ResourceDef) string {
 	sb.WriteString("\treturn m\n}\n\n")
 
 	// Populate state
-	sb.WriteString(fmt.Sprintf("func populate%sState(ctx context.Context, data map[string]interface{}, state *%sResourceModel) error {\n", sn, sn))
+	writeOnly := writeOnlySensitiveSpecFields[r.Name]
+	if hasWriteOnlySensitiveField(r) {
+		sb.WriteString(fmt.Sprintf("func populate%sState(ctx context.Context, data map[string]interface{}, state *%sResourceModel, preserveSensitive bool) error {\n", sn, sn))
+	} else {
+		sb.WriteString(fmt.Sprintf("func populate%sState(ctx context.Context, data map[string]interface{}, state *%sResourceModel) error {\n", sn, sn))
+	}
 	sb.WriteString("\tif err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil { return err }\n")
 	sb.WriteString("\tstate.ID = state.Metadata.ID\n")
 	if hasSpec {
 		sb.WriteString("\tspec := getSpec(data)\n")
 		for _, f := range r.Fields {
-			writeSpecFieldFromResponse(&sb, sn, f)
+			if writeOnly[f.TFName] {
+				F := toTitle(f.TFName)
+				sb.WriteString(fmt.Sprintf("\tif !preserveSensitive || (state.Spec.%s.IsNull() || state.Spec.%s.IsUnknown()) {\n", F, F))
+				sb.WriteString(fmt.Sprintf("\t\tstate.Spec.%s = getString(spec, %q)\n", F, f.APIName))
+				sb.WriteString("\t}\n")
+			} else {
+				writeSpecFieldFromResponse(&sb, sn, f)
+			}
 		}
 	}
 	emitStatusAssign(&sb, r, "data")
@@ -1407,7 +1447,11 @@ func generateResourceFile(r ResourceDef) string {
 		sb.WriteString("\tresourceId := modResp.ResourceId\n\tif resourceId == \"\" { resourceId = plan.ID.ValueString() }\n")
 		sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil {\n", r.APIPath))
 		sb.WriteString(fmt.Sprintf("\t\tif recoverData, getErr := r.client.Get(ctx, %q, resourceId); getErr == nil && recoverData != nil {\n", r.APIPath))
-		sb.WriteString(fmt.Sprintf("\t\t\tif popErr := populate%sState(ctx, recoverData, &plan); popErr == nil {\n", sn))
+		if hasWriteOnlySensitiveField(r) {
+			sb.WriteString(fmt.Sprintf("\t\t\tif popErr := populate%sState(ctx, recoverData, &plan, true); popErr == nil {\n", sn))
+		} else {
+			sb.WriteString(fmt.Sprintf("\t\t\tif popErr := populate%sState(ctx, recoverData, &plan); popErr == nil {\n", sn))
+		}
 		sb.WriteString("\t\t\t\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n")
 		sb.WriteString("\t\t\t} else {\n")
 		sb.WriteString("\t\t\t\ttflog.Warn(ctx, \"Create Poll Error: recovery state population also failed\", map[string]interface{}{\"error\": popErr.Error()})\n")
@@ -1420,7 +1464,11 @@ func generateResourceFile(r ResourceDef) string {
 		sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, resourceId)\n", r.APIPath))
 		sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read After Create Error\", err.Error()); return }\n")
 		sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Read After Create Error\", \"resource not found after creation\"); return }\n")
-		sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+		if hasWriteOnlySensitiveField(r) {
+			sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan, true); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+		} else {
+			sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+		}
 		sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n}\n\n")
 	} else {
 		emitVmCreateDelete(&sb, r)
@@ -1434,7 +1482,11 @@ func generateResourceFile(r ResourceDef) string {
 	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, state.ID.ValueString())\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read Error\", err.Error()); return }\n")
 	sb.WriteString("\tif apiData == nil { resp.State.RemoveResource(ctx); return }\n")
-	sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &state); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+	if hasWriteOnlySensitiveField(r) {
+		sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &state, false); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+	} else {
+		sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &state); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+	}
 	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, state)...)\n}\n\n")
 
 	// Update
@@ -1451,7 +1503,11 @@ func generateResourceFile(r ResourceDef) string {
 	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, plan.ID.ValueString())\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read After Update Error\", err.Error()); return }\n")
 	sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Read After Update Error\", \"not found\"); return }\n")
-	sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+	if hasWriteOnlySensitiveField(r) {
+		sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan, true); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+	} else {
+		sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+	}
 	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n}\n\n")
 
 	// Delete — vm's own Delete was already emitted by emitVmCreateDelete above, alongside Create.
@@ -1472,7 +1528,11 @@ func generateResourceFile(r ResourceDef) string {
 	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, req.ID)\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Import Error\", err.Error()); return }\n")
 	sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Import Error\", \"not found\"); return }\n")
-	sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &state); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+	if hasWriteOnlySensitiveField(r) {
+		sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &state, false); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+	} else {
+		sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &state); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+	}
 	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, state)...)\n}\n")
 
 	return sb.String()

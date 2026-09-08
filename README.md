@@ -90,6 +90,7 @@ groups fields into the `metadata` / `spec` / `status` blocks.
 - `kvindo_volume` / `kvindo_volume_attachment` — Block storage
 - `kvindo_image` / `kvindo_image_schedule` — Custom images and snapshots
 - `kvindo_ssh_key` / `kvindo_ssh_private_key` / `kvindo_certificate`
+- `kvindo_on_off_schedule` / `kvindo_vm_command_schedule` — Cron-scheduled VM power actions / commands
 
 ### Networking
 - `kvindo_vpc` / `kvindo_vpc_subnet`
@@ -113,7 +114,17 @@ groups fields into the `metadata` / `spec` / `status` blocks.
 - `kvindo_kubernetes_user` / `kvindo_kubernetes_user_role`
 
 ### Databases
+- `kvindo_postgresql` — Managed PostgreSQL cluster (Citus-sharded, Patroni-HA)
+- `kvindo_postgresql_database` / `kvindo_postgresql_user` — Databases and login roles inside a cluster
 - `kvindo_postgresql_parameters_set` — PostgreSQL parameter configuration
+
+### Etcd
+- `kvindo_etcd` — Managed etcd cluster
+
+### Valkey
+- `kvindo_valkey` — Managed Valkey cluster
+- `kvindo_valkey_user` — ACL user inside a cluster
+- `kvindo_valkey_parameters_set` — Valkey parameter configuration
 
 ### VPN
 - `kvindo_open_vpn` / `kvindo_open_vpn_user` / `kvindo_open_vpn_user_settings`

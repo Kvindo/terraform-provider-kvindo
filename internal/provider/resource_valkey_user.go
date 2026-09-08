@@ -46,7 +46,7 @@ func ValkeyUserResourceSchemaAttrs() map[string]schema.Attribute {
 		"channels":     schema.ListAttribute{Optional: true, ElementType: types.StringType, Description: "Valkey ACL pub/sub channel globs, e.g. `notify:*`. Entered without the leading `&`. Empty/null denies all pub/sub access."},
 		"enabled":      schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
 		"key_patterns": schema.ListAttribute{Optional: true, ElementType: types.StringType, Description: "Valkey ACL key-pattern globs, e.g. `cache:*`. Entered without the leading `~` - Kvindo Cloud adds it when applying the ACL. Empty/null denies all key access."},
-		"password":     schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"password":     schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, Description: "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"valkey_id":    schema.StringAttribute{Required: true},
 	}
 	return map[string]schema.Attribute{
@@ -97,7 +97,7 @@ func buildValkeyUserRequestMap(ctx context.Context, plan ValkeyUserResourceModel
 	return m
 }
 
-func populateValkeyUserState(ctx context.Context, data map[string]interface{}, state *ValkeyUserResourceModel) error {
+func populateValkeyUserState(ctx context.Context, data map[string]interface{}, state *ValkeyUserResourceModel, preserveSensitive bool) error {
 	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
@@ -107,7 +107,9 @@ func populateValkeyUserState(ctx context.Context, data map[string]interface{}, s
 	state.Spec.Channels = getStringList(ctx, spec, "channels")
 	state.Spec.Enabled = getBool(spec, "enabled")
 	state.Spec.KeyPatterns = getStringList(ctx, spec, "keyPatterns")
-	state.Spec.Password = getString(spec, "password")
+	if !preserveSensitive || (state.Spec.Password.IsNull() || state.Spec.Password.IsUnknown()) {
+		state.Spec.Password = getString(spec, "password")
+	}
 	state.Spec.ValkeyId = getString(spec, "valkeyId")
 	state.Status = simpleStateInfoObj(data)
 	return nil
@@ -132,7 +134,7 @@ func (r *ValkeyUserResource) Create(ctx context.Context, req resource.CreateRequ
 	}
 	if err := r.client.PollUntilDone(ctx, "/api/v1/valkey-user", modResp.RequestId); err != nil {
 		if recoverData, getErr := r.client.Get(ctx, "/api/v1/valkey-user", resourceId); getErr == nil && recoverData != nil {
-			if popErr := populateValkeyUserState(ctx, recoverData, &plan); popErr == nil {
+			if popErr := populateValkeyUserState(ctx, recoverData, &plan, true); popErr == nil {
 				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 			} else {
 				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
@@ -152,7 +154,7 @@ func (r *ValkeyUserResource) Create(ctx context.Context, req resource.CreateRequ
 		resp.Diagnostics.AddError("Read After Create Error", "resource not found after creation")
 		return
 	}
-	if err := populateValkeyUserState(ctx, apiData, &plan); err != nil {
+	if err := populateValkeyUserState(ctx, apiData, &plan, true); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
@@ -174,7 +176,7 @@ func (r *ValkeyUserResource) Read(ctx context.Context, req resource.ReadRequest,
 		resp.State.RemoveResource(ctx)
 		return
 	}
-	if err := populateValkeyUserState(ctx, apiData, &state); err != nil {
+	if err := populateValkeyUserState(ctx, apiData, &state, false); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
@@ -208,7 +210,7 @@ func (r *ValkeyUserResource) Update(ctx context.Context, req resource.UpdateRequ
 		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
-	if err := populateValkeyUserState(ctx, apiData, &plan); err != nil {
+	if err := populateValkeyUserState(ctx, apiData, &plan, true); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
@@ -244,7 +246,7 @@ func (r *ValkeyUserResource) ImportState(ctx context.Context, req resource.Impor
 		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
-	if err := populateValkeyUserState(ctx, apiData, &state); err != nil {
+	if err := populateValkeyUserState(ctx, apiData, &state, false); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}

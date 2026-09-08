@@ -45,7 +45,7 @@ func PostgresqlUserResourceSchemaAttrs() map[string]schema.Attribute {
 		"connection_limit":     schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
 		"granted_database_ids": schema.ListAttribute{Optional: true, ElementType: types.StringType},
 		"login":                schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
-		"password":             schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"password":             schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, Description: "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"postgre_sql_id":       schema.StringAttribute{Required: true},
 	}
 	return map[string]schema.Attribute{
@@ -93,7 +93,7 @@ func buildPostgresqlUserRequestMap(ctx context.Context, plan PostgresqlUserResou
 	return m
 }
 
-func populatePostgresqlUserState(ctx context.Context, data map[string]interface{}, state *PostgresqlUserResourceModel) error {
+func populatePostgresqlUserState(ctx context.Context, data map[string]interface{}, state *PostgresqlUserResourceModel, preserveSensitive bool) error {
 	if err := setCommonFieldsNested(ctx, data, &state.Metadata); err != nil {
 		return err
 	}
@@ -102,7 +102,9 @@ func populatePostgresqlUserState(ctx context.Context, data map[string]interface{
 	state.Spec.ConnectionLimit = getInt64(spec, "connectionLimit")
 	state.Spec.GrantedDatabaseIds = getStringList(ctx, spec, "grantedDatabaseIds")
 	state.Spec.Login = getBool(spec, "login")
-	state.Spec.Password = getString(spec, "password")
+	if !preserveSensitive || (state.Spec.Password.IsNull() || state.Spec.Password.IsUnknown()) {
+		state.Spec.Password = getString(spec, "password")
+	}
 	state.Spec.PostgreSqlId = getString(spec, "postgreSqlId")
 	state.Status = simpleStateInfoObj(data)
 	return nil
@@ -127,7 +129,7 @@ func (r *PostgresqlUserResource) Create(ctx context.Context, req resource.Create
 	}
 	if err := r.client.PollUntilDone(ctx, "/api/v1/postgresql-user", modResp.RequestId); err != nil {
 		if recoverData, getErr := r.client.Get(ctx, "/api/v1/postgresql-user", resourceId); getErr == nil && recoverData != nil {
-			if popErr := populatePostgresqlUserState(ctx, recoverData, &plan); popErr == nil {
+			if popErr := populatePostgresqlUserState(ctx, recoverData, &plan, true); popErr == nil {
 				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 			} else {
 				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
@@ -147,7 +149,7 @@ func (r *PostgresqlUserResource) Create(ctx context.Context, req resource.Create
 		resp.Diagnostics.AddError("Read After Create Error", "resource not found after creation")
 		return
 	}
-	if err := populatePostgresqlUserState(ctx, apiData, &plan); err != nil {
+	if err := populatePostgresqlUserState(ctx, apiData, &plan, true); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
@@ -169,7 +171,7 @@ func (r *PostgresqlUserResource) Read(ctx context.Context, req resource.ReadRequ
 		resp.State.RemoveResource(ctx)
 		return
 	}
-	if err := populatePostgresqlUserState(ctx, apiData, &state); err != nil {
+	if err := populatePostgresqlUserState(ctx, apiData, &state, false); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
@@ -203,7 +205,7 @@ func (r *PostgresqlUserResource) Update(ctx context.Context, req resource.Update
 		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
-	if err := populatePostgresqlUserState(ctx, apiData, &plan); err != nil {
+	if err := populatePostgresqlUserState(ctx, apiData, &plan, true); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
@@ -239,7 +241,7 @@ func (r *PostgresqlUserResource) ImportState(ctx context.Context, req resource.I
 		resp.Diagnostics.AddError("Import Error", "not found")
 		return
 	}
-	if err := populatePostgresqlUserState(ctx, apiData, &state); err != nil {
+	if err := populatePostgresqlUserState(ctx, apiData, &state, false); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
