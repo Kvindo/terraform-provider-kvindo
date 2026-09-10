@@ -21,8 +21,6 @@ var _ = fmt.Sprintf
 
 var vmBootstrapCommandObjFields = []objField{{TF: "command", API: "command", Kind: "string"}}
 
-var vmBootVolumeAttachmentObjFields = []objField{{TF: "volume_id", API: "volumeId", Kind: "string"}, {TF: "attachment_id", API: "attachmentId", Kind: "string"}}
-
 var vmStatusBootstrapCommandObjFields = []objField{{TF: "duration_ms", API: "durationMs", Kind: "int64"}, {TF: "output", API: "output", Kind: "string"}, {TF: "return_code", API: "returnCode", Kind: "int64"}}
 
 type VmSpecModel struct {
@@ -202,6 +200,10 @@ func populateVmState(ctx context.Context, data map[string]interface{}, state *Vm
 // see vmBootVolumeAttachmentSchemaAttr's doc comment for why this can't be table-driven.
 var bootVolumeAttachmentAttrTypes = map[string]attr.Type{"volume_id": types.StringType, "attachment_id": types.StringType}
 
+// vmBootVolumeAttachmentObjFields backs populateVmState's objFromAPI read of boot_volume_attachment
+// (see that call's own doc comment) — same non-swagger-backed reasoning as the declarations above.
+var vmBootVolumeAttachmentObjFields = []objField{{TF: "volume_id", API: "volumeId", Kind: "string"}, {TF: "attachment_id", API: "attachmentId", Kind: "string"}}
+
 // resolvedVmState returns the vm_state the backend will end up applying, mirroring the default
 // ("running") that OrganizationVmResourceChangeRequest.CreateFromResourceAsync applies server-side.
 func resolvedVmState(spec VmSpecModel) string {
@@ -247,6 +249,7 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	origSecurityGroupIds := plan.Spec.SecurityGroupIds
 
 	hasBootVolumeAttachment := !plan.Spec.BootVolumeAttachment.IsNull() && !plan.Spec.BootVolumeAttachment.IsUnknown()
 	if vmCreateRequiresBootVolumeAttachment(plan.Spec) {
@@ -287,6 +290,7 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 			// orphaned too, even though the attachment itself was never created.
 			if recoverData, getErr := r.client.Get(ctx, "/api/v1/vm", resourceId); getErr == nil && recoverData != nil {
 				if popErr := populateVmState(ctx, recoverData, &plan); popErr == nil {
+					plan.Spec.SecurityGroupIds = origSecurityGroupIds
 					resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 				} else {
 					tflog.Warn(ctx, "Boot Volume Attachment Create Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
@@ -326,6 +330,7 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		if recoverData, getErr := r.client.Get(ctx, "/api/v1/vm", resourceId); getErr == nil && recoverData != nil {
 			if popErr := populateVmState(ctx, recoverData, &plan); popErr == nil {
 				setBootVolumeAttachment()
+				plan.Spec.SecurityGroupIds = origSecurityGroupIds
 				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 			} else {
 				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
@@ -350,6 +355,7 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		return
 	}
 	setBootVolumeAttachment()
+	plan.Spec.SecurityGroupIds = origSecurityGroupIds
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -393,6 +399,13 @@ func (r *VmResource) Read(ctx context.Context, req resource.ReadRequest, resp *r
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	// boot_volume_attachment is immutable once set (volume_id is RequiresReplace) and the API never
+	// echoes it back on a plain read, so populateVmState always nulls it — capture the existing
+	// state's value first and restore it after, or every refresh permanently drops it, forcing a
+	// spurious destroy+recreate on the very next plan. Same pattern as Create()'s own fix; without
+	// this, Create()'s fix alone still fails - just one step later than before.
+	existingBootVolumeAttachment := state.Spec.BootVolumeAttachment
+	origSecurityGroupIds := state.Spec.SecurityGroupIds
 	apiData, err := r.client.Get(ctx, "/api/v1/vm", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -402,17 +415,12 @@ func (r *VmResource) Read(ctx context.Context, req resource.ReadRequest, resp *r
 		resp.State.RemoveResource(ctx)
 		return
 	}
-	// boot_volume_attachment is immutable once set (volume_id is RequiresReplace) and the API never
-	// echoes it back on a plain read, so populateVmState always nulls it — capture the existing
-	// state's value first and restore it after, or every refresh permanently drops it, forcing a
-	// spurious destroy+recreate on the very next plan. Same pattern as Create()'s own fix; without
-	// this, Create()'s fix alone still fails - just one step later than before.
-	existingBootVolumeAttachment := state.Spec.BootVolumeAttachment
 	if err := populateVmState(ctx, apiData, &state); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	state.Spec.BootVolumeAttachment = existingBootVolumeAttachment
+	state.Spec.SecurityGroupIds = origSecurityGroupIds
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
@@ -424,6 +432,11 @@ func (r *VmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		return
 	}
 	plan.ID = state.ID
+	// Same boot_volume_attachment preservation as Read() above — populateVmState always nulls it,
+	// and by the time Update() runs (as opposed to a replace) volume_id can't have changed anyway
+	// (RequiresReplace), so plan's own incoming value is exactly what should survive.
+	existingBootVolumeAttachment := plan.Spec.BootVolumeAttachment
+	origSecurityGroupIds := plan.Spec.SecurityGroupIds
 	body := buildVmRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/vm", body)
 	if err != nil {
@@ -443,15 +456,12 @@ func (r *VmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		resp.Diagnostics.AddError("Read After Update Error", "not found")
 		return
 	}
-	// Same boot_volume_attachment preservation as Read() above — populateVmState always nulls it,
-	// and by the time Update() runs (as opposed to a replace) volume_id can't have changed anyway
-	// (RequiresReplace), so plan's own incoming value is exactly what should survive.
-	existingBootVolumeAttachment := plan.Spec.BootVolumeAttachment
 	if err := populateVmState(ctx, apiData, &plan); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
 	plan.Spec.BootVolumeAttachment = existingBootVolumeAttachment
+	plan.Spec.SecurityGroupIds = origSecurityGroupIds
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 

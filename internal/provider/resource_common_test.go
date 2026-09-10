@@ -564,3 +564,112 @@ func TestPopulateFolderState_InfoNullFieldsWhenStatusEmpty(t *testing.T) {
 		t.Error("last_change_request should be null when not in status")
 	}
 }
+
+// ---- getStringList / getStringMap ----
+//
+// Both must distinguish "field absent or JSON null" (-> Null) from "field genuinely present" (a
+// concrete, possibly empty, list/map) — matching getString/getBool's existing exists/nil-check
+// convention a few functions above them in resource_common.go. Getting this wrong is what caused
+// "Provider produced inconsistent result after apply" for Optional-but-not-Computed fields (see
+// optionalOnlyListMapFields in tools/generator/main.go) — though by itself this fix is not what
+// resolves that crash (the backend never actually omits these keys; see that same doc comment for
+// why the generator-level capture/restore wrap is the real fix). This is independent, narrower
+// coverage of the two helpers themselves.
+
+func TestGetStringList_AbsentKey_ReturnsNull(t *testing.T) {
+	got := getStringList(context.Background(), map[string]interface{}{}, "securityGroupIds")
+	if !got.IsNull() {
+		t.Errorf("expected null for an absent key, got %v", got)
+	}
+}
+
+func TestGetStringList_ExplicitJsonNull_ReturnsNull(t *testing.T) {
+	got := getStringList(context.Background(), map[string]interface{}{"securityGroupIds": nil}, "securityGroupIds")
+	if !got.IsNull() {
+		t.Errorf("expected null for an explicit JSON null, got %v", got)
+	}
+}
+
+func TestGetStringList_PresentEmptyArray_ReturnsConcreteEmptyList(t *testing.T) {
+	got := getStringList(context.Background(), map[string]interface{}{"securityGroupIds": []interface{}{}}, "securityGroupIds")
+	if got.IsNull() {
+		t.Error("expected a concrete (non-null) empty list when the key is present as []")
+	}
+	if len(got.Elements()) != 0 {
+		t.Errorf("expected zero elements, got %v", got)
+	}
+}
+
+func TestGetStringList_PresentPopulated_ReturnsValues(t *testing.T) {
+	got := getStringList(context.Background(), map[string]interface{}{"securityGroupIds": []interface{}{"sg-1", "sg-2"}}, "securityGroupIds")
+	if got.IsNull() {
+		t.Fatal("expected a non-null list")
+	}
+	elems := got.Elements()
+	if len(elems) != 2 {
+		t.Fatalf("expected 2 elements, got %d: %v", len(elems), elems)
+	}
+	if s, ok := elems[0].(types.String); !ok || s.ValueString() != "sg-1" {
+		t.Errorf("expected first element \"sg-1\", got %v", elems[0])
+	}
+	if s, ok := elems[1].(types.String); !ok || s.ValueString() != "sg-2" {
+		t.Errorf("expected second element \"sg-2\", got %v", elems[1])
+	}
+}
+
+func TestGetStringMap_AbsentKey_ReturnsNull(t *testing.T) {
+	got := getStringMap(map[string]interface{}{}, "labels")
+	if !got.IsNull() {
+		t.Errorf("expected null for an absent key, got %v", got)
+	}
+}
+
+func TestGetStringMap_ExplicitJsonNull_ReturnsNull(t *testing.T) {
+	got := getStringMap(map[string]interface{}{"labels": nil}, "labels")
+	if !got.IsNull() {
+		t.Errorf("expected null for an explicit JSON null, got %v", got)
+	}
+}
+
+func TestGetStringMap_PresentEmptyObject_ReturnsConcreteEmptyMap(t *testing.T) {
+	got := getStringMap(map[string]interface{}{"labels": map[string]interface{}{}}, "labels")
+	if got.IsNull() {
+		t.Error("expected a concrete (non-null) empty map when the key is present as {}")
+	}
+	if len(got.Elements()) != 0 {
+		t.Errorf("expected zero elements, got %v", got)
+	}
+}
+
+func TestGetStringMap_PresentPopulated_ReturnsValues(t *testing.T) {
+	got := getStringMap(map[string]interface{}{"labels": map[string]interface{}{"env": "prod"}}, "labels")
+	if got.IsNull() {
+		t.Fatal("expected a non-null map")
+	}
+	elems := got.Elements()
+	if v, ok := elems["env"].(types.String); !ok || v.ValueString() != "prod" {
+		t.Errorf("expected labels[\"env\"] = \"prod\", got %v", elems["env"])
+	}
+}
+
+// ---- Optional+Computed fields must still get a concrete empty list from populateXState alone ----
+//
+// Guards against a future edit collapsing the "present but empty" and "absent" branches back
+// together: ssh_key_ids is Optional+Computed (not in optionalOnlyListMapFields), so no
+// capture/restore wrap protects it — populateVmState's own getStringList-derived value is what
+// actually ships for this field, and it must stay a concrete empty list (not null) when the API
+// returns "sshKeyIds": [].
+
+func TestPopulateVmState_SshKeyIdsPresentEmpty_StaysConcreteEmptyList(t *testing.T) {
+	data := makeVmApiData(map[string]interface{}{"sshKeyIds": []interface{}{}}, map[string]interface{}{"state": "stable"})
+	var state VmResourceModel
+	if err := populateVmState(context.Background(), data, &state); err != nil {
+		t.Fatalf("populateVmState error: %v", err)
+	}
+	if state.Spec.SshKeyIds.IsNull() {
+		t.Error("ssh_key_ids should be a concrete empty list, not null, when the API returns []")
+	}
+	if len(state.Spec.SshKeyIds.Elements()) != 0 {
+		t.Errorf("expected zero elements, got %v", state.Spec.SshKeyIds)
+	}
+}

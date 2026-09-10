@@ -121,6 +121,9 @@ func (r *ValkeyUserResource) Create(ctx context.Context, req resource.CreateRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	origCategories := plan.Spec.Categories
+	origChannels := plan.Spec.Channels
+	origKeyPatterns := plan.Spec.KeyPatterns
 	plan.ID = types.StringValue(newULID())
 	body := buildValkeyUserRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/valkey-user", body)
@@ -135,6 +138,9 @@ func (r *ValkeyUserResource) Create(ctx context.Context, req resource.CreateRequ
 	if err := r.client.PollUntilDone(ctx, "/api/v1/valkey-user", modResp.RequestId); err != nil {
 		if recoverData, getErr := r.client.Get(ctx, "/api/v1/valkey-user", resourceId); getErr == nil && recoverData != nil {
 			if popErr := populateValkeyUserState(ctx, recoverData, &plan); popErr == nil {
+				plan.Spec.Categories = origCategories
+				plan.Spec.Channels = origChannels
+				plan.Spec.KeyPatterns = origKeyPatterns
 				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 			} else {
 				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
@@ -158,6 +164,9 @@ func (r *ValkeyUserResource) Create(ctx context.Context, req resource.CreateRequ
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	plan.Spec.Categories = origCategories
+	plan.Spec.Channels = origChannels
+	plan.Spec.KeyPatterns = origKeyPatterns
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -167,6 +176,9 @@ func (r *ValkeyUserResource) Read(ctx context.Context, req resource.ReadRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	origCategories := state.Spec.Categories
+	origChannels := state.Spec.Channels
+	origKeyPatterns := state.Spec.KeyPatterns
 	apiData, err := r.client.Get(ctx, "/api/v1/valkey-user", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -180,6 +192,9 @@ func (r *ValkeyUserResource) Read(ctx context.Context, req resource.ReadRequest,
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	state.Spec.Categories = origCategories
+	state.Spec.Channels = origChannels
+	state.Spec.KeyPatterns = origKeyPatterns
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
@@ -191,6 +206,9 @@ func (r *ValkeyUserResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 	plan.ID = state.ID
+	origCategories := plan.Spec.Categories
+	origChannels := plan.Spec.Channels
+	origKeyPatterns := plan.Spec.KeyPatterns
 	body := buildValkeyUserRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/valkey-user", body)
 	if err != nil {
@@ -214,6 +232,9 @@ func (r *ValkeyUserResource) Update(ctx context.Context, req resource.UpdateRequ
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	plan.Spec.Categories = origCategories
+	plan.Spec.Channels = origChannels
+	plan.Spec.KeyPatterns = origKeyPatterns
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 

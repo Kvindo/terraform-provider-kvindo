@@ -116,6 +116,7 @@ func (r *PostgresqlUserResource) Create(ctx context.Context, req resource.Create
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	origGrantedDatabaseIds := plan.Spec.GrantedDatabaseIds
 	plan.ID = types.StringValue(newULID())
 	body := buildPostgresqlUserRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/postgresql-user", body)
@@ -130,6 +131,7 @@ func (r *PostgresqlUserResource) Create(ctx context.Context, req resource.Create
 	if err := r.client.PollUntilDone(ctx, "/api/v1/postgresql-user", modResp.RequestId); err != nil {
 		if recoverData, getErr := r.client.Get(ctx, "/api/v1/postgresql-user", resourceId); getErr == nil && recoverData != nil {
 			if popErr := populatePostgresqlUserState(ctx, recoverData, &plan); popErr == nil {
+				plan.Spec.GrantedDatabaseIds = origGrantedDatabaseIds
 				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 			} else {
 				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
@@ -153,6 +155,7 @@ func (r *PostgresqlUserResource) Create(ctx context.Context, req resource.Create
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	plan.Spec.GrantedDatabaseIds = origGrantedDatabaseIds
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -162,6 +165,7 @@ func (r *PostgresqlUserResource) Read(ctx context.Context, req resource.ReadRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	origGrantedDatabaseIds := state.Spec.GrantedDatabaseIds
 	apiData, err := r.client.Get(ctx, "/api/v1/postgresql-user", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -175,6 +179,7 @@ func (r *PostgresqlUserResource) Read(ctx context.Context, req resource.ReadRequ
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	state.Spec.GrantedDatabaseIds = origGrantedDatabaseIds
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
@@ -186,6 +191,7 @@ func (r *PostgresqlUserResource) Update(ctx context.Context, req resource.Update
 		return
 	}
 	plan.ID = state.ID
+	origGrantedDatabaseIds := plan.Spec.GrantedDatabaseIds
 	body := buildPostgresqlUserRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/postgresql-user", body)
 	if err != nil {
@@ -209,6 +215,7 @@ func (r *PostgresqlUserResource) Update(ctx context.Context, req resource.Update
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	plan.Spec.GrantedDatabaseIds = origGrantedDatabaseIds
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 

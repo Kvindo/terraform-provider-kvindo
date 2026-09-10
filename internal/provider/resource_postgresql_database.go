@@ -94,6 +94,7 @@ func (r *PostgresqlDatabaseResource) Create(ctx context.Context, req resource.Cr
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	origExtensions := plan.Spec.Extensions
 	plan.ID = types.StringValue(newULID())
 	body := buildPostgresqlDatabaseRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/postgresql-database", body)
@@ -108,6 +109,7 @@ func (r *PostgresqlDatabaseResource) Create(ctx context.Context, req resource.Cr
 	if err := r.client.PollUntilDone(ctx, "/api/v1/postgresql-database", modResp.RequestId); err != nil {
 		if recoverData, getErr := r.client.Get(ctx, "/api/v1/postgresql-database", resourceId); getErr == nil && recoverData != nil {
 			if popErr := populatePostgresqlDatabaseState(ctx, recoverData, &plan); popErr == nil {
+				plan.Spec.Extensions = origExtensions
 				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 			} else {
 				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
@@ -131,6 +133,7 @@ func (r *PostgresqlDatabaseResource) Create(ctx context.Context, req resource.Cr
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	plan.Spec.Extensions = origExtensions
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -140,6 +143,7 @@ func (r *PostgresqlDatabaseResource) Read(ctx context.Context, req resource.Read
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	origExtensions := state.Spec.Extensions
 	apiData, err := r.client.Get(ctx, "/api/v1/postgresql-database", state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Read Error", err.Error())
@@ -153,6 +157,7 @@ func (r *PostgresqlDatabaseResource) Read(ctx context.Context, req resource.Read
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	state.Spec.Extensions = origExtensions
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
@@ -164,6 +169,7 @@ func (r *PostgresqlDatabaseResource) Update(ctx context.Context, req resource.Up
 		return
 	}
 	plan.ID = state.ID
+	origExtensions := plan.Spec.Extensions
 	body := buildPostgresqlDatabaseRequestMap(ctx, plan)
 	modResp, err := r.client.Put(ctx, "/api/v1/postgresql-database", body)
 	if err != nil {
@@ -187,6 +193,7 @@ func (r *PostgresqlDatabaseResource) Update(ctx context.Context, req resource.Up
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
+	plan.Spec.Extensions = origExtensions
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 

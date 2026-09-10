@@ -306,14 +306,22 @@ func TestPopulateVmState_SpecAndMetadata(t *testing.T) {
 	}
 }
 
-func TestPopulateVmState_SecurityGroupIdsEmpty(t *testing.T) {
+// getStringList (resource_common.go) returns Null, not a concrete empty list, when a field is
+// absent from the API response — matching getString/getBool's existing exists/nil-check
+// convention. populateVmState calls it unconditionally, so this is what it returns too when
+// called in isolation, as here. Separately, Create/Update/Read wrap populateVmState with a
+// capture/restore around this and the other 4 OptionalOnly list/map fields so their real
+// planned/prior value survives regardless of what populateVmState alone produces — see
+// tools/generator/main.go's optionalOnlyListMapFields/emitOptionalOnlyCapture/
+// emitOptionalOnlyRestore. This test only pins populateVmState's own standalone behavior.
+func TestPopulateVmState_SecurityGroupIdsNullWhenAbsent(t *testing.T) {
 	data := makeVmApiData(map[string]interface{}{}, map[string]interface{}{"state": "stable"})
 	var state VmResourceModel
 	if err := populateVmState(context.Background(), data, &state); err != nil {
 		t.Fatalf("populateVmState error: %v", err)
 	}
-	if state.Spec.SecurityGroupIds.IsNull() || len(state.Spec.SecurityGroupIds.Elements()) != 0 {
-		t.Errorf("security_group_ids should be empty list, got %v", state.Spec.SecurityGroupIds)
+	if !state.Spec.SecurityGroupIds.IsNull() {
+		t.Errorf("security_group_ids should be null when absent from the API response, got %v", state.Spec.SecurityGroupIds)
 	}
 }
 

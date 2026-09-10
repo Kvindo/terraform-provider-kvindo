@@ -831,14 +831,21 @@ func getFloat64(data map[string]interface{}, field string) types.Float64 {
 }
 
 // getStringList extracts a list of strings from a flat API response map.
+// Returns Null when the field is absent or null in the API response, matching getString/getBool's
+// exists/nil-check convention above — a concrete (possibly empty) list only when the field is
+// genuinely present.
 func getStringList(ctx context.Context, data map[string]interface{}, field string) types.List {
-	raw, ok := data[field].([]interface{})
+	v, exists := data[field]
+	if !exists || v == nil {
+		return types.ListNull(types.StringType)
+	}
+	raw, ok := v.([]interface{})
 	if !ok {
-		return types.ListValueMust(types.StringType, []attr.Value{})
+		return types.ListNull(types.StringType)
 	}
 	vals := make([]attr.Value, 0, len(raw))
-	for _, v := range raw {
-		if s, ok := v.(string); ok {
+	for _, item := range raw {
+		if s, ok := item.(string); ok {
 			vals = append(vals, types.StringValue(s))
 		}
 	}
@@ -846,14 +853,20 @@ func getStringList(ctx context.Context, data map[string]interface{}, field strin
 }
 
 // getStringMap extracts a map[string]string from a flat API response map.
+// Returns Null when the field is absent or null in the API response — same convention as
+// getStringList above.
 func getStringMap(data map[string]interface{}, field string) types.Map {
-	raw, ok := data[field].(map[string]interface{})
+	v, exists := data[field]
+	if !exists || v == nil {
+		return types.MapNull(types.StringType)
+	}
+	raw, ok := v.(map[string]interface{})
 	if !ok {
-		return types.MapValueMust(types.StringType, map[string]attr.Value{})
+		return types.MapNull(types.StringType)
 	}
 	vals := make(map[string]attr.Value, len(raw))
-	for k, v := range raw {
-		if s, ok := v.(string); ok {
+	for k, item := range raw {
+		if s, ok := item.(string); ok {
 			vals[k] = types.StringValue(s)
 		}
 	}

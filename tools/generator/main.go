@@ -231,7 +231,6 @@ var writeOnlySensitiveSpecFields = map[string]map[string]bool{
 	"valkey_user":     {"password": true},
 }
 
-
 // specFieldDescriptions[resource][tf_field] = the field's schema Description. tfplugindocs
 // generates docs straight from the compiled binary's schema, so a spec field with no Description
 // here renders with no explanation at all - only worth setting where the field's meaning isn't
@@ -1140,6 +1139,10 @@ func emitVmCreateDelete(sb *strings.Builder, r ResourceDef) {
 // see vmBootVolumeAttachmentSchemaAttr's doc comment for why this can't be table-driven.
 var bootVolumeAttachmentAttrTypes = map[string]attr.Type{"volume_id": types.StringType, "attachment_id": types.StringType}
 
+// vmBootVolumeAttachmentObjFields backs populateVmState's objFromAPI read of boot_volume_attachment
+// (see that call's own doc comment) — same non-swagger-backed reasoning as the declarations above.
+var vmBootVolumeAttachmentObjFields = []objField{{TF: "volume_id", API: "volumeId", Kind: "string"}, {TF: "attachment_id", API: "attachmentId", Kind: "string"}}
+
 // resolvedVmState returns the vm_state the backend will end up applying, mirroring the default
 // ("running") that OrganizationVmResourceChangeRequest.CreateFromResourceAsync applies server-side.
 func resolvedVmState(spec VmSpecModel) string {
@@ -1181,13 +1184,19 @@ func buildBootVolumeAttachmentPlan(vmPlan VmResourceModel, vmId, attachmentId, v
 
 `)
 	apiPath := r.APIPath
+	optFields := optionalOnlyListMapFields(r)
+	var captureBuf, restoreBuf strings.Builder
+	emitOptionalOnlyCapture(&captureBuf, optFields, "plan")
+	emitOptionalOnlyRestore(&restoreBuf, optFields, "plan", "\t")
+	capture := captureBuf.String()
+	restore := restoreBuf.String()
 	sb.WriteString(fmt.Sprintf(`func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan VmResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
+%s
 	hasBootVolumeAttachment := !plan.Spec.BootVolumeAttachment.IsNull() && !plan.Spec.BootVolumeAttachment.IsUnknown()
 	if vmCreateRequiresBootVolumeAttachment(plan.Spec) {
 		resp.Diagnostics.AddError(
@@ -1210,10 +1219,11 @@ func buildBootVolumeAttachmentPlan(vmPlan VmResourceModel, vmId, attachmentId, v
 		resourceId = plan.ID.ValueString()
 	}
 
-	var attachmentId string
+	var attachmentId, bootVolumeId string
 	if hasBootVolumeAttachment {
 		bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
 		volumeId := bootVolAttrs["volume_id"].(types.String).ValueString()
+		bootVolumeId = volumeId
 		attachmentId = newULID()
 		// Create the boot volume_attachment behind the scenes, right after the VM's DB row is
 		// committed (the PUT above already returned, so it exists) but before polling the VM to
@@ -1226,7 +1236,7 @@ func buildBootVolumeAttachmentPlan(vmPlan VmResourceModel, vmId, attachmentId, v
 			// orphaned too, even though the attachment itself was never created.
 			if recoverData, getErr := r.client.Get(ctx, %q, resourceId); getErr == nil && recoverData != nil {
 				if popErr := populateVmState(ctx, recoverData, &plan); popErr == nil {
-					resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+%s					resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 				} else {
 					tflog.Warn(ctx, "Boot Volume Attachment Create Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
 				}
@@ -1238,19 +1248,34 @@ func buildBootVolumeAttachmentPlan(vmPlan VmResourceModel, vmId, attachmentId, v
 		}
 	}
 
+	// bootVolumeId/attachmentId (plain strings captured above, before any populateVmState call) must
+	// be (re-)applied to plan.Spec.BootVolumeAttachment strictly AFTER populateVmState runs —
+	// populateVmState unconditionally overwrites that field from the API response, which never
+	// carries a bootVolumeAttachment key (see its own doc comment above), so calling it after setting
+	// the field clobbers the correct value back to null. This exact ordering bug reliably failed
+	// Apply_DocsVmsExampleMock_CreatesAndDestroys with "Provider produced inconsistent result after
+	// apply: .spec.boot_volume_attachment: was cty.ObjectVal(...), but now null". The closure MUST
+	// read only the captured plain strings, never plan.Spec.BootVolumeAttachment itself — that field
+	// is exactly what populateVmState just nulled, so re-reading it here (an earlier, reverted
+	// version of this fix did exactly that) panics inside types.ObjectValue on the resulting nil
+	// attribute value.
+	setBootVolumeAttachment := func() {
+		if !hasBootVolumeAttachment {
+			return
+		}
+		obj, diags := types.ObjectValue(bootVolumeAttachmentAttrTypes, map[string]attr.Value{
+			"volume_id":     types.StringValue(bootVolumeId),
+			"attachment_id": types.StringValue(attachmentId),
+		})
+		resp.Diagnostics.Append(diags...)
+		plan.Spec.BootVolumeAttachment = obj
+	}
+
 	if err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil {
 		if recoverData, getErr := r.client.Get(ctx, %q, resourceId); getErr == nil && recoverData != nil {
-			if hasBootVolumeAttachment {
-				bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
-				obj, diags := types.ObjectValue(bootVolumeAttachmentAttrTypes, map[string]attr.Value{
-					"volume_id":     bootVolAttrs["volume_id"],
-					"attachment_id": types.StringValue(attachmentId),
-				})
-				resp.Diagnostics.Append(diags...)
-				plan.Spec.BootVolumeAttachment = obj
-			}
 			if popErr := populateVmState(ctx, recoverData, &plan); popErr == nil {
-				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+				setBootVolumeAttachment()
+%s				resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 			} else {
 				tflog.Warn(ctx, "Create Poll Error: recovery state population also failed", map[string]interface{}{"error": popErr.Error()})
 			}
@@ -1269,23 +1294,15 @@ func buildBootVolumeAttachmentPlan(vmPlan VmResourceModel, vmId, attachmentId, v
 		resp.Diagnostics.AddError("Read After Create Error", "resource not found after creation")
 		return
 	}
-	if hasBootVolumeAttachment {
-		bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
-		obj, diags := types.ObjectValue(bootVolumeAttachmentAttrTypes, map[string]attr.Value{
-			"volume_id":     bootVolAttrs["volume_id"],
-			"attachment_id": types.StringValue(attachmentId),
-		})
-		resp.Diagnostics.Append(diags...)
-		plan.Spec.BootVolumeAttachment = obj
-	}
 	if err := populateVmState(ctx, apiData, &plan); err != nil {
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+	setBootVolumeAttachment()
+%s	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
-`, apiPath, apiPath, apiPath, apiPath, apiPath))
+`, capture, apiPath, apiPath, restore, apiPath, apiPath, restore, apiPath, restore))
 
 	sb.WriteString(fmt.Sprintf(`func (r *VmResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state VmResourceModel
@@ -1322,6 +1339,52 @@ func buildBootVolumeAttachmentPlan(vmPlan VmResourceModel, vmId, attachmentId, v
 }
 
 `, apiPath, apiPath))
+}
+
+// optionalOnlyListMapFields returns r's spec fields that are Optional-but-not-Computed AND
+// list/map-typed — the only OptionalOnly fields actually broken by getStringList/getStringMap's
+// inability to distinguish "absent" from "present but empty" (a scalar OptionalOnly field already
+// round-trips correctly via getString/getBool's existing exists/nil check — confirmed live against
+// a real unset vpc.nat_floating_ip_id, which the backend returns as genuine JSON null, not an
+// omitted key or an empty string). Terraform's plugin protocol requires a non-Computed attribute's
+// final Create/Update state to equal its planned value exactly, always — populateXState alone can't
+// satisfy that for these fields since it unconditionally overwrites every spec field from the
+// backend response, so every call site that saves state built from a real plan/prior-state value
+// must capture the field beforehand and restore it unconditionally afterward. See
+// emitOptionalOnlyCapture/emitOptionalOnlyRestore below.
+func optionalOnlyListMapFields(r ResourceDef) []FieldDef {
+	var out []FieldDef
+	for _, f := range r.Fields {
+		if f.OptionalOnly && (f.FieldType == "list_string" || f.FieldType == "map_string") {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// emitOptionalOnlyCapture writes one `origX := <varExpr>.Spec.X` line per field in fields — call
+// once, right after varExpr (a plan or prior state) is populated from the request, before any
+// populateXState call that would otherwise clobber it. No-op when fields is empty, so this is safe
+// to call unconditionally for every resource.
+func emitOptionalOnlyCapture(sb *strings.Builder, fields []FieldDef, varExpr string) {
+	for _, f := range fields {
+		F := toTitle(f.TFName)
+		sb.WriteString(fmt.Sprintf("\torig%s := %s.Spec.%s\n", F, varExpr, F))
+	}
+}
+
+// emitOptionalOnlyRestore writes one `varExpr.Spec.X = origX` line per field in fields, at the
+// given indent — call after every populateXState call whose result is about to be saved via
+// resp.State.Set, so a non-Computed field's real planned/prior value survives populateXState's
+// unconditional overwrite. Deliberately unconditional (not gated on origX being null) — Terraform's
+// "final state must equal plan exactly" rule applies to every known planned value, not just null
+// ones; a user-configured concrete value must be just as protected from being silently replaced by
+// whatever populateXState derived from the backend response.
+func emitOptionalOnlyRestore(sb *strings.Builder, fields []FieldDef, varExpr string, indent string) {
+	for _, f := range fields {
+		F := toTitle(f.TFName)
+		sb.WriteString(fmt.Sprintf("%s%s.Spec.%s = orig%s\n", indent, varExpr, F, F))
+	}
 }
 
 func generateResourceFile(r ResourceDef) string {
@@ -1420,6 +1483,18 @@ func generateResourceFile(r ResourceDef) string {
 	sb.WriteString("\tstate.ID = state.Metadata.ID\n")
 	if hasSpec {
 		sb.WriteString("\tspec := getSpec(data)\n")
+		// boot_volume_attachment has no swagger field at all (see vmBootVolumeAttachmentSchemaAttr's
+		// doc comment) — not table-driven, spliced in unconditionally for "vm" like the schema attr
+		// above.
+		if r.Name == "vm" {
+			sb.WriteString("\t// The API never returns a bootVolumeAttachment field on a plain read (it's a create-time-only\n")
+			sb.WriteString("\t// convenience the provider translates into a real, separately-tracked kvindo_volume_attachment\n")
+			sb.WriteString("\t// resource — see buildBootVolumeAttachmentPlan below). Left unset, the Go zero-value types.Object{}\n")
+			sb.WriteString("\t// reads back as an untyped empty object, which the framework then rejects against this attribute's\n")
+			sb.WriteString("\t// declared (volume_id, attachment_id) type during Read/Import (\"Expected ... Received\n")
+			sb.WriteString("\t// types.ObjectType[]\"). objFromAPI on an always-absent key returns a properly-typed null instead.\n")
+			sb.WriteString("\tstate.Spec.BootVolumeAttachment = objFromAPI(objMap(spec, \"bootVolumeAttachment\"), vmBootVolumeAttachmentObjFields)\n")
+		}
 		for _, f := range r.Fields {
 			if writeOnly[f.TFName] {
 				// Preserve if already known (a configured value from a plan, or an already-
@@ -1444,10 +1519,12 @@ func generateResourceFile(r ResourceDef) string {
 	// a companion kvindo_volume_attachment behind the scenes for boot_volume_attachment, which has
 	// no backend field of its own for the standard per-field request/response loop to drive.
 	if r.Name != "vm" {
+		optFields := optionalOnlyListMapFields(r)
 		sb.WriteString(fmt.Sprintf("func (r *%sResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {\n", sn))
 		sb.WriteString(fmt.Sprintf("\tvar plan %sResourceModel\n", sn))
 		sb.WriteString("\tresp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)\n")
 		sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
+		emitOptionalOnlyCapture(&sb, optFields, "plan")
 		sb.WriteString("\tplan.ID = types.StringValue(newULID())\n")
 		sb.WriteString(fmt.Sprintf("\tbody := build%sRequestMap(ctx, plan)\n", sn))
 		sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Put(ctx, %q, body)\n", r.APIPath))
@@ -1456,6 +1533,7 @@ func generateResourceFile(r ResourceDef) string {
 		sb.WriteString(fmt.Sprintf("\tif err := r.client.PollUntilDone(ctx, %q, modResp.RequestId); err != nil {\n", r.APIPath))
 		sb.WriteString(fmt.Sprintf("\t\tif recoverData, getErr := r.client.Get(ctx, %q, resourceId); getErr == nil && recoverData != nil {\n", r.APIPath))
 		sb.WriteString(fmt.Sprintf("\t\t\tif popErr := populate%sState(ctx, recoverData, &plan); popErr == nil {\n", sn))
+		emitOptionalOnlyRestore(&sb, optFields, "plan", "\t\t\t\t")
 		sb.WriteString("\t\t\t\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n")
 		sb.WriteString("\t\t\t} else {\n")
 		sb.WriteString("\t\t\t\ttflog.Warn(ctx, \"Create Poll Error: recovery state population also failed\", map[string]interface{}{\"error\": popErr.Error()})\n")
@@ -1469,20 +1547,35 @@ func generateResourceFile(r ResourceDef) string {
 		sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read After Create Error\", err.Error()); return }\n")
 		sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Read After Create Error\", \"resource not found after creation\"); return }\n")
 		sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+		emitOptionalOnlyRestore(&sb, optFields, "plan", "\t")
 		sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n}\n\n")
 	} else {
 		emitVmCreateDelete(&sb, r)
 	}
 
 	// Read
+	optFields := optionalOnlyListMapFields(r)
 	sb.WriteString(fmt.Sprintf("func (r *%sResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {\n", sn))
 	sb.WriteString(fmt.Sprintf("\tvar state %sResourceModel\n", sn))
 	sb.WriteString("\tresp.Diagnostics.Append(req.State.Get(ctx, &state)...)\n")
 	sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
+	if r.Name == "vm" {
+		sb.WriteString("\t// boot_volume_attachment is immutable once set (volume_id is RequiresReplace) and the API never\n")
+		sb.WriteString("\t// echoes it back on a plain read, so populateVmState always nulls it — capture the existing\n")
+		sb.WriteString("\t// state's value first and restore it after, or every refresh permanently drops it, forcing a\n")
+		sb.WriteString("\t// spurious destroy+recreate on the very next plan. Same pattern as Create()'s own fix; without\n")
+		sb.WriteString("\t// this, Create()'s fix alone still fails - just one step later than before.\n")
+		sb.WriteString("\texistingBootVolumeAttachment := state.Spec.BootVolumeAttachment\n")
+	}
+	emitOptionalOnlyCapture(&sb, optFields, "state")
 	sb.WriteString(fmt.Sprintf("\tapiData, err := r.client.Get(ctx, %q, state.ID.ValueString())\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read Error\", err.Error()); return }\n")
 	sb.WriteString("\tif apiData == nil { resp.State.RemoveResource(ctx); return }\n")
 	sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &state); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+	if r.Name == "vm" {
+		sb.WriteString("\tstate.Spec.BootVolumeAttachment = existingBootVolumeAttachment\n")
+	}
+	emitOptionalOnlyRestore(&sb, optFields, "state", "\t")
 	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, state)...)\n}\n\n")
 
 	// Update
@@ -1492,6 +1585,13 @@ func generateResourceFile(r ResourceDef) string {
 	sb.WriteString("\tresp.Diagnostics.Append(req.State.Get(ctx, &state)...)\n")
 	sb.WriteString("\tif resp.Diagnostics.HasError() { return }\n")
 	sb.WriteString("\tplan.ID = state.ID\n")
+	if r.Name == "vm" {
+		sb.WriteString("\t// Same boot_volume_attachment preservation as Read() above — populateVmState always nulls it,\n")
+		sb.WriteString("\t// and by the time Update() runs (as opposed to a replace) volume_id can't have changed anyway\n")
+		sb.WriteString("\t// (RequiresReplace), so plan's own incoming value is exactly what should survive.\n")
+		sb.WriteString("\texistingBootVolumeAttachment := plan.Spec.BootVolumeAttachment\n")
+	}
+	emitOptionalOnlyCapture(&sb, optFields, "plan")
 	sb.WriteString(fmt.Sprintf("\tbody := build%sRequestMap(ctx, plan)\n", sn))
 	sb.WriteString(fmt.Sprintf("\tmodResp, err := r.client.Put(ctx, %q, body)\n", r.APIPath))
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Update Error\", err.Error()); return }\n")
@@ -1500,6 +1600,10 @@ func generateResourceFile(r ResourceDef) string {
 	sb.WriteString("\tif err != nil { resp.Diagnostics.AddError(\"Read After Update Error\", err.Error()); return }\n")
 	sb.WriteString("\tif apiData == nil { resp.Diagnostics.AddError(\"Read After Update Error\", \"not found\"); return }\n")
 	sb.WriteString(fmt.Sprintf("\tif err := populate%sState(ctx, apiData, &plan); err != nil { resp.Diagnostics.AddError(\"State Error\", err.Error()); return }\n", sn))
+	if r.Name == "vm" {
+		sb.WriteString("\tplan.Spec.BootVolumeAttachment = existingBootVolumeAttachment\n")
+	}
+	emitOptionalOnlyRestore(&sb, optFields, "plan", "\t")
 	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, plan)...)\n}\n\n")
 
 	// Delete — vm's own Delete was already emitted by emitVmCreateDelete above, alongside Create.
