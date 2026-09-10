@@ -14,9 +14,16 @@ version: 1.0.0
 
 # Writing Terraform for Kvindo Cloud
 
-Written against provider `v3.1.2` (current latest release). Terraform *schemas* are exactly what
+Written against provider `v5.0.0` (current latest release). Terraform *schemas* are exactly what
 changes release to release, unlike a thin CLI — treat every field/shape claim here as something to
 re-verify against the live schema if the installed version might differ (see Discovery-first below).
+
+**v5.0.0 (2026-09-11) was a breaking release**: `kvindo_vpc_peering_external_peer.spec.ssh_port` is
+now Required (was Optional+Computed with no real backend default), and ~20 fields across Valkey/
+PostgreSql/Etcd/Ollama/OpenVpn/VpcPeeringPeer/*User/*Database gained `RequiresReplace` — editing one
+of those now correctly plans a destroy+recreate instead of failing at apply with a backend
+"immutable after creation" error. A config written against `v4.x` that omits `ssh_port` will fail
+`plan`/`apply` until updated.
 
 ## The three-block shape
 
@@ -56,16 +63,17 @@ Before writing any resource block, check its schema from a **generated, not hand
 3. `examples/resources/<type>/resource.tf` / `examples/data-sources/<type>/data-source.tf` — the
    per-type canonical example, the same content shown in the generated doc's "Example Usage".
 
-**Do NOT trust `examples/s3/main.tf`, `TESTING.md`'s worked example, or `docs/index.md`'s prose
-resource list as current.** Concretely verified while writing this skill: `examples/s3/main.tf` and
-`TESTING.md` both still use **flat** attributes (`name = ...` directly on the resource) — the
-pre-refactor shape, from before this repo moved to the `metadata`/`spec`/`status` blocks above —
-while `docs/index.md`'s intro still lists "monitoring (VictoriaMetrics)" as supported even though
-`kvindo_victoria_metrics` was retired in `v0.9.0`, several releases before the current `v3.1.2`. Both
-are real, dated drift, not hypothetical risk — trust the generated sources (1–3 above) instead.
+**Do NOT trust `docs/index.md`'s prose resource list as current.** Its intro still lists
+"monitoring (VictoriaMetrics)" as supported even though `kvindo_victoria_metrics` was retired in
+`v0.9.0`, several releases before the current `v5.0.0` — a real, dated drift, not hypothetical
+risk. Trust the generated sources (1–3 above) instead.
+
+(`examples/s3/main.tf` — a flat pre-refactor bundle example — and `TESTING.md`'s worked example
+used to have this same flat-attribute drift too; both were fixed in the v5.0.0 release, so they're
+no longer exceptions to trust the generated sources over.)
 
 **Version pinning**: recommend `required_providers { kvindo = { source = "kvindo/kvindo", version =
-"~> 3.1" } }` so a config doesn't silently pick up a future breaking schema change. If the installed
+"~> 5.0" } }` so a config doesn't silently pick up a future breaking schema change. If the installed
 provider's schema and the pinned version genuinely might differ (e.g. `terraform init` hasn't run
 yet against a newly-changed pin), run/re-run `terraform init` (or `-upgrade`) so what's on disk
 matches the pin before trusting its schema, or check the version-specific Registry docs instead.
