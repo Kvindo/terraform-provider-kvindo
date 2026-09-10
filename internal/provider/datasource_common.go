@@ -5,31 +5,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-// commonDatasourceSchemaAttributes returns the common datasource schema attributes.
-func commonDatasourceSchemaAttributes() map[string]dschema.Attribute {
-	return map[string]dschema.Attribute{
-		"id": dschema.StringAttribute{
-			Required: true,
-		},
-		"name": dschema.StringAttribute{
-			Computed: true,
-		},
-		"description": dschema.StringAttribute{
-			Computed: true,
-		},
-		"folder_id": dschema.StringAttribute{
-			Computed: true,
-		},
-		"delete_protection": dschema.BoolAttribute{
-			Computed: true,
-		},
-		"labels": dschema.MapAttribute{
-			Computed:    true,
-			ElementType: types.StringType,
-		},
-	}
-}
-
 // metadataDatasourceSchema returns the Computed "metadata" block for datasources.
 // The root-level id is the lookup key (Required); metadata mirrors it and the rest read-only.
 func metadataDatasourceSchema() dschema.Attribute {

@@ -40,7 +40,7 @@ func OpenVpnResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
 		"floating_ip_id": schema.StringAttribute{Optional: true},
 		"tier":           schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"vpc_subnet_id":  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"vpc_subnet_id":  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplace()}},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},

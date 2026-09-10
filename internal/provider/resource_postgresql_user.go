@@ -46,7 +46,7 @@ func PostgresqlUserResourceSchemaAttrs() map[string]schema.Attribute {
 		"granted_database_ids": schema.ListAttribute{Optional: true, ElementType: types.StringType},
 		"login":                schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
 		"password":             schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, Description: "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"postgre_sql_id":       schema.StringAttribute{Required: true},
+		"postgre_sql_id":       schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -179,7 +179,7 @@ func (r *PostgresqlUserResource) Read(ctx context.Context, req resource.ReadRequ
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.Spec.GrantedDatabaseIds = origGrantedDatabaseIds
+	state.Spec.GrantedDatabaseIds = normalizeOptionalOnlyListForRead(state.Spec.GrantedDatabaseIds, origGrantedDatabaseIds)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 

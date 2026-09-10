@@ -276,7 +276,12 @@ func (r *VmResource) Create(ctx context.Context, req resource.CreateRequest, res
 	var attachmentId, bootVolumeId string
 	if hasBootVolumeAttachment {
 		bootVolAttrs := plan.Spec.BootVolumeAttachment.Attributes()
-		volumeId := bootVolAttrs["volume_id"].(types.String).ValueString()
+		volumeIdAttr, ok := bootVolAttrs["volume_id"].(types.String)
+		if !ok {
+			resp.Diagnostics.AddError("Create Error", "boot_volume_attachment.volume_id has an unexpected type or is missing")
+			return
+		}
+		volumeId := volumeIdAttr.ValueString()
 		bootVolumeId = volumeId
 		attachmentId = newULID()
 		// Create the boot volume_attachment behind the scenes, right after the VM's DB row is
@@ -420,7 +425,7 @@ func (r *VmResource) Read(ctx context.Context, req resource.ReadRequest, resp *r
 		return
 	}
 	state.Spec.BootVolumeAttachment = existingBootVolumeAttachment
-	state.Spec.SecurityGroupIds = origSecurityGroupIds
+	state.Spec.SecurityGroupIds = normalizeOptionalOnlyListForRead(state.Spec.SecurityGroupIds, origSecurityGroupIds)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 

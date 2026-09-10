@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -90,6 +92,12 @@ type TransactionSpecModel struct {
 	Etcds                                          types.Map  `tfsdk:"etcds"`
 	Valkeys                                        types.Map  `tfsdk:"valkeys"`
 	ValkeyParametersSets                           types.Map  `tfsdk:"valkey_parameters_sets"`
+	OnOffSchedules                                 types.Map  `tfsdk:"on_off_schedules"`
+	VmCommandSchedules                             types.Map  `tfsdk:"vm_command_schedules"`
+	PostgreSqls                                    types.Map  `tfsdk:"postgresqls"`
+	PostgreSqlUsers                                types.Map  `tfsdk:"postgresql_users"`
+	PostgreSqlDatabases                            types.Map  `tfsdk:"postgresql_databases"`
+	ValkeyUsers                                    types.Map  `tfsdk:"valkey_users"`
 }
 
 // ---------------------------------------------------------------------------
@@ -326,8 +334,35 @@ func (r *TransactionResource) Create(ctx context.Context, req resource.CreateReq
 			break
 		}
 		lastPutErr = putErr
-		blockingID, blockingType := parseSchedulingConflict(putErr.Error())
+		// parseSchedulingConflict extracts the blocking resource's type+id from the backend's raw
+		// errorMessage field (e.g. `The resource OrganizationS3Bucket "b1" (01k4...) is in state
+		// Scheduling and can not be modified`, ResourceControllerBase.cs:1430). Since f60010b
+		// (2026-08-12) the client wraps that into `API error <code> (status <n>): <message>` via
+		// ApiError.Error() - parsing putErr.Error() (the wrapped string) instead of the underlying
+		// *client.ApiError's own ErrorMessage field broke the extraction (the wrapped prefix's own
+		// "(status <n>)" parenthetical shifted the ULID-boundary search to the wrong parens).
+		// Unwrap first and parse the raw message, one layer in.
+		//
+		// Also classify on the structured ErrorCode, not a text sniff of the message body: the
+		// backend only ever sends ONE error code for this condition - ModificationErrorCode.
+		// ResourceIsScheduling - even when the resource's real State is "Reconciling" (there is no
+		// separate "ResourceIsReconciling" code); only the human-readable message text names the
+		// actual state. A message-text guard trying to distinguish the two independently is exactly
+		// the kind of fragile duplication ApiError was introduced to avoid.
+		var apiErr *client.ApiError
+		if !errors.As(putErr, &apiErr) || apiErr.ErrorCode != "ResourceIsScheduling" {
+			// Not a structured API error at all (e.g. Put()'s own "giving up after retrying for
+			// 10m" wrapper, or a local marshal error), or a structured error that isn't this
+			// specific scheduling conflict - nothing to parse or wait on either way.
+			resp.Diagnostics.AddError("Create Error", putErr.Error())
+			return
+		}
+		blockingID, blockingType := parseSchedulingConflict(apiErr.ErrorMessage)
 		if blockingID == "" {
+			// ErrorCode confirmed this IS a scheduling conflict, but the message body didn't match
+			// the expected "... (id) is in state ..." shape or a known resource type name - a
+			// backend message-format change would land here; fail loudly rather than silently
+			// mis-parsing.
 			resp.Diagnostics.AddError("Create Error", putErr.Error())
 			return
 		}
@@ -489,7 +524,7 @@ func (r *TransactionResource) Update(ctx context.Context, req resource.UpdateReq
 	plan.ID = state.ID
 
 	var cfgU TransactionResourceModel
-	req.Config.Get(ctx, &cfgU)
+	req.Config.Get(ctx, &cfgU) // diagnostics intentionally ignored — same reasoning as Create() above: we only need known values
 	txnAssignAndRecoverIDs(ctx, &plan, &cfgU)
 
 	body := buildTxnBody(ctx, plan, true, true, true, true)
@@ -558,11 +593,18 @@ func (r *TransactionResource) ImportState(ctx context.Context, req resource.Impo
 
 // parseSchedulingConflict extracts the ULID and resource type from a ResourceIsScheduling or
 // ResourceIsReconciling 422 error so the caller can wait and retry.
+// parseSchedulingConflict extracts the blocking resource's type and ULID from a
+// ResourceIsScheduling error's raw message body. The caller (Create()'s retry loop) is
+// responsible for first confirming the error's structured ErrorCode is actually
+// "ResourceIsScheduling" - the backend uses that single code regardless of whether the resource's
+// real State is "Scheduling" or "Reconciling" (there is no separate "ResourceIsReconciling" code;
+// only this function's job is picking the type+id out of the message text), so this function no
+// longer needs (and must not re-derive) its own "is this a conflict" guess from message-text
+// matching - a prior version's guard checked for the literal substring "Reconciling state", which
+// never actually appears in the real backend message ("... is in state Reconciling ...",
+// ResourceControllerBase.cs:1430) and so silently failed to recognize a real Reconciling-state
+// conflict passed through the wrapped-then-wrongly-parsed path this function replaces.
 func parseSchedulingConflict(errMsg string) (ulid, resType string) {
-	if !strings.Contains(errMsg, "ResourceIsScheduling") && !strings.Contains(errMsg, "is in state Scheduling") &&
-		!strings.Contains(errMsg, "Reconciling state") && !strings.Contains(errMsg, "ResourceIsReconciling") {
-		return "", ""
-	}
 	// Map API type names to path segments
 	typeMap := map[string]string{
 		"OrganizationS3UserAccessPolicy": "s3-user-access-policy",
@@ -576,12 +618,14 @@ func parseSchedulingConflict(errMsg string) (ulid, resType string) {
 			break
 		}
 	}
-	// Extract ULID: text inside parentheses after the type name.
+	// Extract ULID: text inside parentheses immediately before "is in state <any state>". Matching
+	// the state name generically (not hardcoded to "Scheduling"/"Reconciling") is both simpler and
+	// safer against the exact bug above - the raw (unwrapped) errorMessage has exactly one " ("
+	// occurrence, right before the id, so this is unambiguous once given the raw message rather
+	// than the client's own "API error <code> (status <n>): <message>"-wrapped string (which has a
+	// second, earlier " (" around "(status <n>)" that would otherwise be matched instead).
 	start := strings.Index(errMsg, " (")
-	end := strings.Index(errMsg, ") is in state Scheduling")
-	if end < 0 {
-		end = strings.Index(errMsg, ") is in state Reconciling")
-	}
+	end := strings.Index(errMsg, ") is in state ")
 	if start < 0 || end < 0 || end <= start {
 		return "", ""
 	}
@@ -589,7 +633,7 @@ func parseSchedulingConflict(errMsg string) (ulid, resType string) {
 	return ulid, resType
 }
 
-// waitForResourceStable polls a specific resource until its info.state leaves "scheduling".
+// waitForResourceStable polls a specific resource until its status.state leaves "scheduling".
 func waitForResourceStable(ctx context.Context, c *client.Client, resType, id string) error {
 	deadline := time.Now().Add(10 * time.Minute)
 	for time.Now().Before(deadline) {
@@ -597,8 +641,12 @@ func waitForResourceStable(ctx context.Context, c *client.Client, resType, id st
 		if err != nil || apiData == nil {
 			return nil
 		}
-		info, _ := apiData["info"].(map[string]interface{})
-		state, _ := info["state"].(string)
+		// The API renamed "info" to "status" on 2026-06-28 - reading the old key made this a
+		// permanent no-op (state always read as "", which is neither "scheduling" nor
+		// "reconciling", so the function always returned immediately without ever actually
+		// waiting).
+		status, _ := apiData["status"].(map[string]interface{})
+		state, _ := status["state"].(string)
 		s := strings.ToLower(state)
 		if s != "scheduling" && s != "reconciling" {
 			return nil
@@ -659,22 +707,35 @@ func (r *TransactionResource) recoverIfStillExistsAfterCleanup(ctx context.Conte
 	}
 }
 
+// itemMetadataID reads metadata.id out of a raw sub-resource JSON item. A transaction's own
+// sub-resource arrays hold full resource envelopes (ResourceModelBase has no top-level Id field -
+// only Metadata.Id, KvindoCloud.Api/Models/Core/TransactionResource/ResourceModelBase.cs), so a
+// bare m["id"] read (as this code used to do) always finds nothing.
+func itemMetadataID(m map[string]interface{}) string {
+	meta, _ := m["metadata"].(map[string]interface{})
+	id, _ := meta["id"].(string)
+	return id
+}
+
 // cleanupTransaction explicitly deletes all sub-resources of a transaction before deleting
 // the transaction container.
 func cleanupTransaction(ctx context.Context, c *client.Client, txnID string) {
 	apiData, err := c.Get(ctx, "/api/v1/transaction", txnID)
 	if err == nil && apiData != nil {
+		// Sub-resource arrays moved under spec.* on 2026-06-28 (they used to be top-level) - reading
+		// the top-level key made this permanently find zero items and never delete anything.
+		spec := getSpec(apiData)
 		for _, key := range []string{"s3Buckets", "s3UserAccessPolicies", "folders"} {
 			resType := map[string]string{
 				"s3Buckets": "s3-bucket", "s3UserAccessPolicies": "s3-user-access-policy", "folders": "folder",
 			}[key]
-			items, _ := apiData[key].([]interface{})
+			items, _ := spec[key].([]interface{})
 			for _, raw := range items {
 				m, _ := raw.(map[string]interface{})
 				if m == nil {
 					continue
 				}
-				id, _ := m["id"].(string)
+				id := itemMetadataID(m)
 				if id != "" {
 					for _, rt := range []string{resType, "s3-bucket", "s3-user-access-policy"} {
 						deleteAnyExistingResource(ctx, c, rt, id)
@@ -694,8 +755,8 @@ func deleteIfSchedulingFailed(ctx context.Context, c *client.Client, resType, id
 	if err != nil || apiData == nil {
 		return
 	}
-	info, _ := apiData["info"].(map[string]interface{})
-	state, _ := info["state"].(string)
+	status, _ := apiData["status"].(map[string]interface{})
+	state, _ := status["state"].(string)
 	if strings.ToLower(state) != "schedulingfailed" {
 		return
 	}
@@ -723,20 +784,23 @@ func waitForSubResourcesStable(ctx context.Context, c *client.Client, txnID stri
 		if err != nil {
 			return err
 		}
+		// Same 2026-06-28 shape change as cleanupTransaction: sub-resource arrays are under
+		// spec.*, and each item's own state is under its "status" block, not "info".
+		spec := getSpec(apiData)
 		var pending []subRes
 		for _, key := range []string{"s3Buckets", "s3UserAccessPolicies", "folders"} {
 			resType := map[string]string{
 				"s3Buckets": "s3-bucket", "s3UserAccessPolicies": "s3-user-access-policy", "folders": "folder",
 			}[key]
-			items, _ := apiData[key].([]interface{})
+			items, _ := spec[key].([]interface{})
 			for _, raw := range items {
 				m, _ := raw.(map[string]interface{})
 				if m == nil {
 					continue
 				}
-				id, _ := m["id"].(string)
-				info, _ := m["info"].(map[string]interface{})
-				state, _ := info["state"].(string)
+				id := itemMetadataID(m)
+				status, _ := m["status"].(map[string]interface{})
+				state, _ := status["state"].(string)
 				switch strings.ToLower(state) {
 				case "scheduling", "reconciling":
 					pending = append(pending, subRes{resType, id})
@@ -897,14 +961,24 @@ func isIdKey(k string) bool {
 
 // autoWireUsers populates s3_users.bucket_id with actual Phase 1 bucket ID for users that
 // have unknown/null bucket_id.
-func autoWireUsers(_ context.Context, users, buckets, _ types.Map) types.Map {
+func autoWireUsers(ctx context.Context, users, buckets, _ types.Map) types.Map {
 	if users.IsNull() || users.IsUnknown() || len(users.Elements()) == 0 {
 		return users
 	}
 	var firstBucketID types.String
 	if !buckets.IsNull() && !buckets.IsUnknown() {
-		for _, bVal := range buckets.Elements() {
-			if bObj, ok := bVal.(types.Object); ok {
+		// Go map iteration order is randomized per-process - picking "the first" bucket straight
+		// off buckets.Elements() picked a different bucket on every run when more than one bucket
+		// was present. Sort the map keys first so the same bucket is always chosen for the same
+		// input.
+		bucketElems := buckets.Elements()
+		keys := make([]string, 0, len(bucketElems))
+		for k := range bucketElems {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if bObj, ok := bucketElems[k].(types.Object); ok {
 				if idVal, ok2 := bObj.Attributes()["id"].(types.String); ok2 && !idVal.IsNull() && !idVal.IsUnknown() && idVal.ValueString() != "" {
 					firstBucketID = idVal
 					break
@@ -925,7 +999,7 @@ func autoWireUsers(_ context.Context, users, buckets, _ types.Map) types.Map {
 			continue
 		}
 		if bv, ok2 := getSpecString(uObj, "bucket_id"); !ok2 || bv.IsNull() || bv.IsUnknown() {
-			uObj = setSpecField(uObj, elemTypes, "bucket_id", firstBucketID)
+			uObj = setSpecField(ctx, uObj, elemTypes, "bucket_id", firstBucketID)
 		}
 		updated[key] = uObj
 	}

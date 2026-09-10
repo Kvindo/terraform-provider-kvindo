@@ -40,7 +40,7 @@ func (r *VpcPeeringPeerResource) Metadata(_ context.Context, req resource.Metada
 func VpcPeeringPeerResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
 		"floating_ip_id": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"vpc_peering_id": schema.StringAttribute{Required: true},
+		"vpc_peering_id": schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 		"vpc_subnet_id":  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 	}
 	return map[string]schema.Attribute{

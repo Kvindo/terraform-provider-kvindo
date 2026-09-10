@@ -25,6 +25,7 @@ type objField struct {
 	API       string // API JSON key (camelCase)
 	Kind      string // string|bool|int64|float64|list_string|map_string|object|list_object
 	Sensitive bool
+	Immutable bool       // RequiresReplace - see tools/generator/main.go's immutableNestedFields
 	Obj       []objField // sub-fields for Kind == object / list_object
 }
 
@@ -264,7 +265,15 @@ func objLeafResourceSchema(f objField) rschema.Attribute {
 	case "list_object":
 		return listObjResourceSchema(f.Obj)
 	default:
-		return rschema.StringAttribute{Optional: true, Computed: true, Sensitive: f.Sensitive, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}
+		mods := []planmodifier.String{stringplanmodifier.UseStateForUnknown()}
+		if f.Immutable {
+			// The 3 array-nested VpcSubnetId cases (PostgreSql.ShardGroups[], Valkey.Shards[],
+			// Etcd.Instances[]) - see tools/generator/main.go's immutableNestedFields. Coexists
+			// safely with UseStateForUnknown: RequiresReplace only fires on an actual value
+			// change, UseStateForUnknown only when the value would otherwise be unknown.
+			mods = append(mods, stringplanmodifier.RequiresReplace())
+		}
+		return rschema.StringAttribute{Optional: true, Computed: true, Sensitive: f.Sensitive, PlanModifiers: mods}
 	}
 }
 
@@ -285,6 +294,27 @@ func objResourceSchema(fields []objField) rschema.Attribute {
 		Computed:      true,
 		Attributes:    attrs,
 		PlanModifiers: []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
+	}
+}
+
+// objResourceSchemaImmutable is objResourceSchema's variant for a top-level nested-object spec
+// field the backend rejects changing at all after creation (e.g. postgresql.restore_configuration
+// - see tools/generator/main.go's immutableSpecFields doc comment). RequiresReplace at the
+// container level, alongside the existing UseStateForUnknown, so changing ANY leaf inside the
+// object forces a full resource replace rather than an in-place update the backend would 422 on.
+func objResourceSchemaImmutable(fields []objField) rschema.Attribute {
+	attrs := make(map[string]rschema.Attribute, len(fields))
+	for _, f := range fields {
+		attrs[f.TF] = objLeafResourceSchema(f)
+	}
+	return rschema.SingleNestedAttribute{
+		Optional:   true,
+		Computed:   true,
+		Attributes: attrs,
+		PlanModifiers: []planmodifier.Object{
+			objectplanmodifier.UseStateForUnknown(),
+			objectplanmodifier.RequiresReplace(),
+		},
 	}
 }
 

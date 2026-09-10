@@ -16,7 +16,7 @@ import (
 
 var _ = fmt.Sprintf
 
-var gitlabRunnerGitlabInstancesObjFields = []objField{{TF: "runner_token", API: "runnerToken", Kind: "string"}, {TF: "url", API: "url", Kind: "string"}}
+var gitlabRunnerGitlabInstancesObjFields = []objField{{TF: "runner_token", API: "runnerToken", Kind: "string", Sensitive: true}, {TF: "url", API: "url", Kind: "string"}}
 
 type GitlabRunnerSpecModel struct {
 	Concurrency             types.Int64  `tfsdk:"concurrency"`

@@ -598,9 +598,18 @@ func buildCommonRequestMap(id, name string, description types.String, folderID t
 	if !labels.IsNull() && !labels.IsUnknown() {
 		labelsMap := make(map[string]string)
 		diags := labels.ElementsAs(ctx, &labelsMap, false)
-		if !diags.HasError() {
-			metadata["labels"] = labelsMap
+		if diags.HasError() {
+			// Silently omitting labels here would send a request missing data the user actually
+			// configured - fail loudly instead. terraform-plugin-framework's RPC server recovers a
+			// panic raised during Create/Update and reports it as a provider error, so this fails
+			// safely rather than crashing Terraform. In practice ElementsAs on a types.Map of
+			// StringType elements into a plain map[string]string essentially cannot fail here (the
+			// IsNull()/IsUnknown() check above already ruled out the only realistic failure modes) -
+			// this only fires on a genuine internal type-shape bug, exactly when a loud failure is
+			// preferable to silently sending an incomplete request.
+			panic(fmt.Sprintf("buildCommonRequestMap: ElementsAs failed: %s", diags))
 		}
+		metadata["labels"] = labelsMap
 	}
 	return map[string]interface{}{"metadata": metadata, "spec": map[string]interface{}{}}
 }
@@ -654,6 +663,36 @@ func setCommonFields(ctx context.Context, data map[string]interface{}, id *types
 	}
 
 	return nil
+}
+
+// normalizeOptionalOnlyListForRead reconciles an Optional-not-Computed list_string field's
+// freshly-populated value (from populateXState's live GET response) against the value captured
+// from state before that call ran. Read() has no "final state must equal plan" protocol
+// constraint the way Create/Update do (see emitOptionalOnlyRestore, used by those two) - its whole
+// purpose is to refresh state to match reality, so unconditionally restoring the captured value
+// there doesn't just hide drift, it freezes the field to whatever it was at apply time forever.
+// The only real problem worth guarding against is JSON round-tripping noise: the backend may
+// return a concrete empty list for a field that was never configured (still null), which would
+// otherwise flip null -> [] as a spurious diff on a field nothing actually changed. So: collapse
+// to null only when BOTH sides are already empty; otherwise trust fresh completely, including when
+// it differs from captured - that's real drift and must surface, never fall back to captured.
+func normalizeOptionalOnlyListForRead(fresh, captured types.List) types.List {
+	freshEmpty := fresh.IsNull() || len(fresh.Elements()) == 0
+	capturedEmpty := captured.IsNull() || len(captured.Elements()) == 0
+	if freshEmpty && capturedEmpty {
+		return types.ListNull(fresh.ElementType(context.Background()))
+	}
+	return fresh
+}
+
+// normalizeOptionalOnlyMapForRead is normalizeOptionalOnlyListForRead's map_string equivalent.
+func normalizeOptionalOnlyMapForRead(fresh, captured types.Map) types.Map {
+	freshEmpty := fresh.IsNull() || len(fresh.Elements()) == 0
+	capturedEmpty := captured.IsNull() || len(captured.Elements()) == 0
+	if freshEmpty && capturedEmpty {
+		return types.MapNull(fresh.ElementType(context.Background()))
+	}
+	return fresh
 }
 
 // getSpec extracts the "spec" sub-map from an API response (type-specific fields).
@@ -879,7 +918,12 @@ func stringListToInterface(ctx context.Context, list types.List) []interface{} {
 		return nil
 	}
 	var strs []string
-	list.ElementsAs(ctx, &strs, false)
+	// See buildCommonRequestMap's labels handling above for why this panics rather than silently
+	// sending an empty list on failure - discarding this diagnostic used to mean an ElementsAs
+	// failure silently cleared the field server-side instead of sending the real configured value.
+	if diags := list.ElementsAs(ctx, &strs, false); diags.HasError() {
+		panic(fmt.Sprintf("stringListToInterface: ElementsAs failed: %s", diags))
+	}
 	result := make([]interface{}, len(strs))
 	for i, s := range strs {
 		result[i] = s
@@ -893,7 +937,9 @@ func stringMapToInterface(ctx context.Context, m types.Map) map[string]interface
 		return nil
 	}
 	var strs map[string]string
-	m.ElementsAs(ctx, &strs, false)
+	if diags := m.ElementsAs(ctx, &strs, false); diags.HasError() {
+		panic(fmt.Sprintf("stringMapToInterface: ElementsAs failed: %s", diags))
+	}
 	result := make(map[string]interface{}, len(strs))
 	for k, v := range strs {
 		result[k] = v

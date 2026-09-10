@@ -38,7 +38,7 @@ func (r *PostgresqlDatabaseResource) Metadata(_ context.Context, req resource.Me
 func PostgresqlDatabaseResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
 		"extensions":     schema.ListAttribute{Optional: true, ElementType: types.StringType},
-		"postgre_sql_id": schema.StringAttribute{Required: true},
+		"postgre_sql_id": schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -157,7 +157,7 @@ func (r *PostgresqlDatabaseResource) Read(ctx context.Context, req resource.Read
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.Spec.Extensions = origExtensions
+	state.Spec.Extensions = normalizeOptionalOnlyListForRead(state.Spec.Extensions, origExtensions)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 

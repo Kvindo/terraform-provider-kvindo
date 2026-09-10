@@ -55,33 +55,47 @@ provider "kvindo" {
   endpoint = "https://cloud-api.kvindo.com"  # optional, this is the default
 }
 
+# Every resource exposes exactly three blocks: metadata (identity), spec (type-specific
+# configuration), and status (computed, read-only) - see "The `status` Block" below.
+
 # Create a VPC
 resource "kvindo_vpc" "example" {
-  name                = "my-vpc"
-  hosting_provider_id = "provider-id"
-  ipv4_cidr           = "10.0.0.0/16"
-  folder_id           = "folder-id"
-  description         = "My example VPC"
+  metadata = {
+    name        = "my-vpc"
+    folder_id   = "folder-id"
+    description = "My example VPC"
+  }
+  spec = {
+    hosting_provider_id = "provider-id"
+  }
 }
 
 # Create a subnet
 resource "kvindo_vpc_subnet" "example" {
-  name      = "my-subnet"
-  vpc_id    = kvindo_vpc.example.id
-  ipv4_cidr = "10.0.1.0/24"
+  metadata = {
+    name = "my-subnet"
+  }
+  spec = {
+    vpc_id    = kvindo_vpc.example.id
+    ipv4_cidr = "10.0.1.0/24"
+  }
 }
 
 # Create a VM
 resource "kvindo_vm" "example" {
-  name              = "my-vm"
-  offer_id          = "vm-offer-id"
-  image_id          = "image-id"
-  vpc_subnet_id     = kvindo_vpc_subnet.example.id
-  folder_id         = "folder-id"
-  # Optional: attach security groups
-  # security_group_ids = [kvindo_security_group.example.id]
-  # Optional: "linux" (default) or "windows"
-  # os_type = "linux"
+  metadata = {
+    name      = "my-vm"
+    folder_id = "folder-id"
+  }
+  spec = {
+    offer_id      = "vm-offer-id"
+    image_id      = "image-id"
+    vpc_subnet_id = kvindo_vpc_subnet.example.id
+    # Optional: attach security groups
+    # security_group_ids = [kvindo_security_group.example.id]
+    # Optional: "linux" (default) or "windows"
+    # os_type = "linux"
+  }
 }
 
 # Read data from an existing VPC
@@ -94,7 +108,7 @@ output "vpc_id" {
 }
 
 output "vm_private_ip" {
-  value = kvindo_vm.example.info.private_ipv4
+  value = kvindo_vm.example.status.private_ipv4
 }
 ```
 
@@ -253,36 +267,38 @@ The provider implements the following resources and data sources:
 
 All create, update, and delete operations are asynchronous. The provider automatically polls the request status endpoint until the operation completes (with a 10-minute timeout and exponential backoff starting at 2 seconds).
 
-## The `info` Block
+## The `status` Block
 
-Every resource exposes a computed `info` block with base fields from the server-side `ResourceInfo`:
+Every resource (and data source) exposes a computed `status` block with base fields from the
+server-side `ResourceInfo` (this block was named `info` before the 2026-06-28 API rename - if you
+see `info.*` anywhere, including in an older example, it's stale):
 
 ```
-info.state                        # e.g. "stable", "reconcilling"
-info.create_time                  # RFC3339 string
-info.created_by_user.id
-info.created_by_user.name
-info.last_change_request.state
-info.last_change_request.create_time
-info.last_change_request.error_message
-info.last_change_request.created_by_user.id
-info.last_change_request.created_by_user.name
-info.pricing.month
-info.pricing.day
-info.pricing.hour
+status.state                        # e.g. "stable", "reconciling"
+status.create_time                  # RFC3339 string
+status.created_by_user.id
+status.created_by_user.name
+status.last_change_request.state
+status.last_change_request.create_time
+status.last_change_request.error_message
+status.last_change_request.created_by_user.id
+status.last_change_request.created_by_user.name
+status.pricing.month
+status.pricing.day
+status.pricing.hour
 ```
 
-Some resources add extra fields inside `info` (e.g. `info.private_ipv4` / `info.public_ipv4` for VMs, `info.token` for user tokens).
-
-Data sources use a flat notation instead: `info_state`, `info_private_ipv4`, etc.
+Some resources add extra fields inside `status` (e.g. `status.private_ipv4` / `status.public_ipv4`
+for VMs, `status.token` for user tokens). Data sources use the exact same nested `status.*`
+notation as resources, not a flat `status_*` naming.
 
 ## Sensitive Fields
 
 The following fields are marked as sensitive and will not be shown in plan output:
 - Passwords (`root_password`, etc.)
-- Tokens (`info.token`, `info.kubeconfig` — flat `info_token`, `info_kubeconfig` in datasources)
-- Private keys (`private_key`, `private_key_pem`, `info.client_key_pem`)
-- Secrets (`info.secret_key`, `info.access_key`)
-- Certificates (`certificate_pem`, `info.ca_certificate_pem`, etc.)
-- VPN config (`info.config`)
-- Windows admin password (`info.windows_administrator_password` on VMs)
+- Tokens (`status.token`, `status.kubeconfig`)
+- Private keys (`private_key`, `private_key_pem`, `status.client_key_pem`)
+- Secrets (`status.secret_key`, `status.access_key`)
+- Certificates (`certificate_pem`, `status.ca_certificate_pem`, etc.)
+- VPN config (`status.config`)
+- Windows admin password (`status.windows_administrator_password` on VMs)

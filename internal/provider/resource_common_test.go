@@ -673,3 +673,81 @@ func TestPopulateVmState_SshKeyIdsPresentEmpty_StaysConcreteEmptyList(t *testing
 		t.Errorf("expected zero elements, got %v", state.Spec.SshKeyIds)
 	}
 }
+
+// ---- normalizeOptionalOnlyListForRead / normalizeOptionalOnlyMapForRead (review finding #6) ----
+//
+// Read()'s old emitOptionalOnlyRestore-based behavior unconditionally restored the captured
+// pre-refresh value, freezing an Optional-not-Computed list/map field to whatever it was at apply
+// time forever - a real out-of-band change (e.g. security_group_ids edited via the console) never
+// surfaced in `terraform plan`. The fix (emitOptionalOnlyNormalizeRead) only collapses a null-vs-
+// empty JSON round-trip artifact when BOTH sides are already empty; any other case must trust the
+// freshly-populated value completely, including when it differs from what was captured.
+
+func stringList(vals ...string) types.List {
+	elems := make([]attr.Value, len(vals))
+	for i, v := range vals {
+		elems[i] = types.StringValue(v)
+	}
+	return types.ListValueMust(types.StringType, elems)
+}
+
+func TestNormalizeOptionalOnlyListForRead(t *testing.T) {
+	nullList := types.ListNull(types.StringType)
+	emptyList := stringList()
+
+	tests := []struct {
+		name            string
+		fresh, captured types.List
+		wantNull        bool
+		wantElements    []string
+	}{
+		{"both null -> null", nullList, nullList, true, nil},
+		{"fresh empty, captured null -> null (JSON round-trip noise collapsed)", emptyList, nullList, true, nil},
+		{"fresh null, captured empty -> null", nullList, emptyList, true, nil},
+		{"fresh has new value, captured null -> fresh wins (new value surfaces)", stringList("a"), nullList, false, []string{"a"}},
+		{"fresh empty (real deletion), captured non-empty -> fresh wins, NOT restored to captured", emptyList, stringList("a"), false, nil},
+		{"fresh differs from captured -> fresh wins (real drift surfaces)", stringList("b"), stringList("a"), false, []string{"b"}},
+		{"fresh equals captured -> fresh (same value either way)", stringList("a"), stringList("a"), false, []string{"a"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeOptionalOnlyListForRead(tt.fresh, tt.captured)
+			if got.IsNull() != tt.wantNull {
+				t.Fatalf("IsNull() = %v, want %v (got %v)", got.IsNull(), tt.wantNull, got)
+			}
+			if tt.wantNull {
+				return
+			}
+			var gotVals []string
+			for _, e := range got.Elements() {
+				gotVals = append(gotVals, e.(types.String).ValueString())
+			}
+			if len(gotVals) != len(tt.wantElements) {
+				t.Fatalf("expected elements %v, got %v", tt.wantElements, gotVals)
+			}
+			for i := range gotVals {
+				if gotVals[i] != tt.wantElements[i] {
+					t.Errorf("expected elements %v, got %v", tt.wantElements, gotVals)
+				}
+			}
+		})
+	}
+}
+
+func TestNormalizeOptionalOnlyMapForRead(t *testing.T) {
+	nullMap := types.MapNull(types.StringType)
+	emptyMap := types.MapValueMust(types.StringType, map[string]attr.Value{})
+	oneMap := types.MapValueMust(types.StringType, map[string]attr.Value{"k": types.StringValue("v")})
+
+	// Same collapse-only-when-both-empty rule as the list variant, spot-checked rather than
+	// repeating every case above.
+	if got := normalizeOptionalOnlyMapForRead(emptyMap, nullMap); !got.IsNull() {
+		t.Errorf("expected null-vs-empty collapse to null, got %v", got)
+	}
+	if got := normalizeOptionalOnlyMapForRead(emptyMap, oneMap); got.IsNull() || len(got.Elements()) != 0 {
+		t.Errorf("expected a real deletion (fresh empty, captured non-empty) to surface as empty, not be restored to captured, got %v", got)
+	}
+	if got := normalizeOptionalOnlyMapForRead(oneMap, nullMap); got.IsNull() || len(got.Elements()) != 1 {
+		t.Errorf("expected a new value to surface, got %v", got)
+	}
+}

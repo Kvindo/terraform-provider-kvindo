@@ -168,7 +168,7 @@ returns. The most useful field per type:
 | `kvindo_open_vpn_user` | `state`, `config` |
 | `kvindo_user_token` | `state`, `token` |
 | `kvindo_image` | `state`, `size_bytes` |
-| `kvindo_vpc` | `state`, `nat_public_ip_v4` |
+| `kvindo_vpc` | `state`, `nat_public_ipv4` |
 | `kvindo_billing_account` | `state`, `rub_balance` |
 | `kvindo_quota` | `state`, `current_value` |
 | `kvindo_quota_change_request` | `state`, `ticket_id` |

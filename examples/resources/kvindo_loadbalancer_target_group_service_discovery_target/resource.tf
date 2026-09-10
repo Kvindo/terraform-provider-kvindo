@@ -1,15 +1,7 @@
-resource "kvindo_loadbalancer" "main" {
-  metadata = {
-    name = "my-lb"
-  }
-}
-
+# kvindo_loadbalancer_target_group has no spec of its own - see its own example for why.
 resource "kvindo_loadbalancer_target_group" "main" {
   metadata = {
     name = "my-tg"
-  }
-  spec = {
-    loadbalancer_id = kvindo_loadbalancer.main.id
   }
 }
 

@@ -20,7 +20,7 @@ var _ = fmt.Sprintf
 
 var postgresqlRestoreConfigurationObjFields = []objField{{TF: "postgre_sql_id", API: "postgreSqlId", Kind: "string"}, {TF: "restore_time", API: "restoreTime", Kind: "string"}}
 
-var postgresqlShardGroupsObjFields = []objField{{TF: "is_coordinator", API: "isCoordinator", Kind: "bool"}, {TF: "name", API: "name", Kind: "string"}, {TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string"}}
+var postgresqlShardGroupsObjFields = []objField{{TF: "is_coordinator", API: "isCoordinator", Kind: "bool"}, {TF: "name", API: "name", Kind: "string"}, {TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string", Immutable: true}}
 
 var postgresqlStatusNodesObjFields = []objField{{TF: "id", API: "id", Kind: "string"}, {TF: "is_primary", API: "isPrimary", Kind: "bool"}, {TF: "observed_role", API: "observedRole", Kind: "string"}, {TF: "patroni_state", API: "patroniState", Kind: "string"}, {TF: "port", API: "port", Kind: "int64"}, {TF: "private_ipv4", API: "privateIpV4", Kind: "string"}, {TF: "public_ipv4", API: "publicIpV4", Kind: "string"}, {TF: "replication_lag_bytes", API: "replicationLagBytes", Kind: "int64"}, {TF: "shard_group_index", API: "shardGroupIndex", Kind: "int64"}}
 
@@ -58,10 +58,10 @@ func (r *PostgresqlResource) Metadata(_ context.Context, req resource.MetadataRe
 func PostgresqlResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
 		"backup_retention_days":         schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
-		"create_public_ipv4":            schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
+		"create_public_ipv4":            schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown(), boolplanmodifier.RequiresReplace()}},
 		"postgre_sql_parameters_set_id": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"replicas_per_shard_group":      schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
-		"restore_configuration":         objResourceSchema(postgresqlRestoreConfigurationObjFields),
+		"restore_configuration":         objResourceSchemaImmutable(postgresqlRestoreConfigurationObjFields),
 		"shard_groups":                  listObjResourceSchema(postgresqlShardGroupsObjFields),
 		"tls_mode":                      schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"version":                       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},

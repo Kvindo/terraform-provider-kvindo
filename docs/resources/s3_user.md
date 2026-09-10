@@ -34,7 +34,7 @@ resource "kvindo_s3_user_access_policy" "rw" {
         {
           Effect   = "Allow"
           Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
-          Resource = ["arn:aws:s3:::${kvindo_s3_bucket.main.name}/*"]
+          Resource = ["arn:aws:s3:::${kvindo_s3_bucket.main.metadata.name}/*"]
         }
       ]
     })

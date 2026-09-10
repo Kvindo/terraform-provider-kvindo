@@ -21,7 +21,7 @@ type txnSub struct {
 	field    func(*TransactionResourceModel) *types.Map
 	attrs    func() map[string]schema.Attribute
 	build    func(context.Context, types.Object) map[string]interface{}
-	populate func(context.Context, map[string]interface{}) (types.Object, string)
+	populate func(context.Context, map[string]interface{}) (types.Object, string, error)
 }
 
 var txnSubs = []txnSub{
@@ -440,6 +440,43 @@ var txnSubs = []txnSub{
 		build:    txnBuild(buildEtcdRequestMap),
 		populate: txnPop[EtcdResourceModel](populateEtcdState, EtcdResourceSchemaAttrs),
 	},
+	{
+		tfKey: "on_off_schedules", apiKey: "onOffSchedules", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.OnOffSchedules },
+		attrs:    OnOffScheduleResourceSchemaAttrs,
+		build:    txnBuild(buildOnOffScheduleRequestMap),
+		populate: txnPop[OnOffScheduleResourceModel](populateOnOffScheduleState, OnOffScheduleResourceSchemaAttrs),
+	},
+	{
+		tfKey: "vm_command_schedules", apiKey: "vmCommandSchedules", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.VmCommandSchedules },
+		attrs:    VmCommandScheduleResourceSchemaAttrs,
+		build:    txnBuild(buildVmCommandScheduleRequestMap),
+		populate: txnPop[VmCommandScheduleResourceModel](populateVmCommandScheduleState, VmCommandScheduleResourceSchemaAttrs),
+	},
+	// PostgreSqls before PostgreSqlUsers/PostgreSqlDatabases - dependency order, same convention
+	// as ParametersSets before Valkeys below.
+	{
+		tfKey: "postgresqls", apiKey: "postgreSqls", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.PostgreSqls },
+		attrs:    PostgresqlResourceSchemaAttrs,
+		build:    txnBuild(buildPostgresqlRequestMap),
+		populate: txnPop[PostgresqlResourceModel](populatePostgresqlState, PostgresqlResourceSchemaAttrs),
+	},
+	{
+		tfKey: "postgresql_users", apiKey: "postgreSqlUsers", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.PostgreSqlUsers },
+		attrs:    PostgresqlUserResourceSchemaAttrs,
+		build:    txnBuild(buildPostgresqlUserRequestMap),
+		populate: txnPop[PostgresqlUserResourceModel](populatePostgresqlUserState, PostgresqlUserResourceSchemaAttrs),
+	},
+	{
+		tfKey: "postgresql_databases", apiKey: "postgreSqlDatabases", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.PostgreSqlDatabases },
+		attrs:    PostgresqlDatabaseResourceSchemaAttrs,
+		build:    txnBuild(buildPostgresqlDatabaseRequestMap),
+		populate: txnPop[PostgresqlDatabaseResourceModel](populatePostgresqlDatabaseState, PostgresqlDatabaseResourceSchemaAttrs),
+	},
 	// ParametersSets before Valkeys - dependency order, same as postgresql_parameters_sets
 	// above.
 	{
@@ -455,5 +492,13 @@ var txnSubs = []txnSub{
 		attrs:    ValkeyResourceSchemaAttrs,
 		build:    txnBuild(buildValkeyRequestMap),
 		populate: txnPop[ValkeyResourceModel](populateValkeyState, ValkeyResourceSchemaAttrs),
+	},
+	// ValkeyUsers after Valkeys - depends on valkey_id.
+	{
+		tfKey: "valkey_users", apiKey: "valkeyUsers", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.ValkeyUsers },
+		attrs:    ValkeyUserResourceSchemaAttrs,
+		build:    txnBuild(buildValkeyUserRequestMap),
+		populate: txnPop[ValkeyUserResourceModel](populateValkeyUserState, ValkeyUserResourceSchemaAttrs),
 	},
 }

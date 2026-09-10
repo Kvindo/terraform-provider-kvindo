@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -10,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 // txnObjType derives the nested object type of a transaction sub-resource map element from its
@@ -36,20 +38,26 @@ func txnBuild[T any](buildFn func(context.Context, T) map[string]interface{}) fu
 // txnPop adapts a standalone populate<Sn>State into a transaction sub-item populator: run the
 // resource's own populate, then materialize the resulting model back into a types.Object (using
 // the schema-derived element type) and return it together with the resource id (for map keying).
-func txnPop[T any](popFn func(context.Context, map[string]interface{}, *T) error, attrs func() map[string]schema.Attribute) func(context.Context, map[string]interface{}) (types.Object, string) {
-	return func(ctx context.Context, item map[string]interface{}) (types.Object, string) {
-		var e T
-		_ = popFn(ctx, item, &e)
+// The third return value surfaces popFn's own error (previously discarded, so a genuinely failed
+// populate silently wrote a partially-populated struct into state as if it had succeeded) and any
+// ObjectValueFrom conversion failure - the caller (txnPopulateSubResources) skips the item and
+// logs a warning rather than trusting a null-or-half-filled object.
+func txnPop[T any](popFn func(context.Context, map[string]interface{}, *T) error, attrs func() map[string]schema.Attribute) func(context.Context, map[string]interface{}) (types.Object, string, error) {
+	return func(ctx context.Context, item map[string]interface{}) (types.Object, string, error) {
 		ot := txnObjType(attrs())
+		var e T
+		if err := popFn(ctx, item, &e); err != nil {
+			return types.ObjectNull(ot.AttrTypes), "", err
+		}
 		obj, diags := types.ObjectValueFrom(ctx, ot.AttrTypes, e)
 		if diags.HasError() {
-			return types.ObjectNull(ot.AttrTypes), ""
+			return types.ObjectNull(ot.AttrTypes), "", fmt.Errorf("converting populated state to object: %s", diags)
 		}
 		id := ""
 		if v, ok := obj.Attributes()["id"].(types.String); ok {
 			id = v.ValueString()
 		}
-		return obj, id
+		return obj, id, nil
 	}
 }
 
@@ -177,7 +185,14 @@ func txnPopulateSubResources(ctx context.Context, data map[string]interface{}, s
 			if !ok {
 				continue
 			}
-			obj, id := s.populate(ctx, m)
+			obj, id, err := s.populate(ctx, m)
+			if err != nil {
+				// One bad historical item shouldn't abort refreshing the whole transaction's
+				// state, but it also shouldn't silently look like it succeeded - skip it and make
+				// the failure visible in TF_LOG output instead of writing a half-filled object.
+				tflog.Warn(ctx, "skipping transaction sub-resource item with populate error", map[string]interface{}{"apiKey": s.apiKey, "error": err.Error()})
+				continue
+			}
 			meta, _ := m["metadata"].(map[string]interface{})
 			items[resolveMapKey(*fp, id, meta)] = obj
 		}
@@ -203,8 +218,10 @@ func txnAssignAndRecoverIDs(ctx context.Context, plan, cfg *TransactionResourceM
 }
 
 // setSpecField sets key on the element's nested "spec" object (rebuilding it), used by the s3
-// auto-wiring. Returns the updated element object.
-func setSpecField(obj types.Object, elemAttrTypes map[string]attr.Type, key string, val attr.Value) types.Object {
+// auto-wiring. Returns the updated element object, or the original unmodified object if the
+// rebuild fails (logged via tflog.Warn - no diagnostics channel reaches this deep, so a failed
+// auto-wire attempt would otherwise be entirely silent rather than just non-fatal).
+func setSpecField(ctx context.Context, obj types.Object, elemAttrTypes map[string]attr.Type, key string, val attr.Value) types.Object {
 	attrs := obj.Attributes()
 	specVal, ok := attrs["spec"].(types.Object)
 	if !ok || specVal.IsNull() {
@@ -222,6 +239,7 @@ func setSpecField(obj types.Object, elemAttrTypes map[string]attr.Type, key stri
 	newSpec[key] = val
 	newSpecObj, diags := types.ObjectValue(specType.AttrTypes, newSpec)
 	if diags.HasError() {
+		tflog.Warn(ctx, "setSpecField: rebuilding spec object failed, leaving field unset", map[string]interface{}{"key": key, "diagnostics": diags.Errors()})
 		return obj
 	}
 	newAttrs := make(map[string]attr.Value, len(attrs))
@@ -231,6 +249,7 @@ func setSpecField(obj types.Object, elemAttrTypes map[string]attr.Type, key stri
 	newAttrs["spec"] = newSpecObj
 	out, diags := types.ObjectValue(elemAttrTypes, newAttrs)
 	if diags.HasError() {
+		tflog.Warn(ctx, "setSpecField: rebuilding element object failed, leaving field unset", map[string]interface{}{"key": key, "diagnostics": diags.Errors()})
 		return obj
 	}
 	return out

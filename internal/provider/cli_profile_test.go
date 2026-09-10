@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -27,7 +28,10 @@ func TestLoadKcProfile_ReadsServerAndToken(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	writeKcProfile(t, home, "prod", "server: https://cloud-api.kvindo.com\ntoken: from-profile-token\n")
 
-	p := loadKcProfile("prod")
+	p, found := loadKcProfile("prod")
+	if !found {
+		t.Fatal("expected found=true for an existing, readable profile")
+	}
 	if p.Server != "https://cloud-api.kvindo.com" {
 		t.Errorf("Server = %q", p.Server)
 	}
@@ -39,7 +43,29 @@ func TestLoadKcProfile_ReadsServerAndToken(t *testing.T) {
 func TestLoadKcProfile_MissingFileReturnsZeroValue(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	p := loadKcProfile("does-not-exist")
+	p, found := loadKcProfile("does-not-exist")
+	if found {
+		t.Error("expected found=false for a missing profile")
+	}
+	if p.Server != "" || p.Token != "" {
+		t.Errorf("expected zero-value profile, got %+v", p)
+	}
+}
+
+func TestLoadKcProfile_SanitizesPathTraversal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// A file sitting outside ~/.kc/config, at the exact spot "../secret.yaml" would
+	// resolve to without sanitization.
+	if err := os.WriteFile(filepath.Join(home, "..", "secret.yaml"), []byte("server: https://escaped.example.com\ntoken: escaped-token\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(filepath.Join(home, "..", "secret.yaml"))
+
+	p, found := loadKcProfile("../secret")
+	if found {
+		t.Error("expected found=false: '../secret' must not escape ~/.kc/config via filepath.Base sanitization")
+	}
 	if p.Server != "" || p.Token != "" {
 		t.Errorf("expected zero-value profile, got %+v", p)
 	}
@@ -166,5 +192,42 @@ func TestConfigure_MissingTokenErrorsEvenWithCliProfileUnset(t *testing.T) {
 	resp := configureWith(t, nil, nil, nil)
 	if !resp.Diagnostics.HasError() {
 		t.Fatal("expected an error when no token, env var, or cli_profile is available")
+	}
+}
+
+func TestConfigure_MissingTokenErrorNamesUnreadableCliProfile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("KVINDO_ENDPOINT", "")
+	t.Setenv("KVINDO_TOKEN", "")
+	t.Setenv("KVINDO_CLI_PROFILE", "")
+
+	resp := configureWith(t, nil, nil, strp("nonexistent"))
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("expected an error when the named cli_profile can't be read and no other token source exists")
+	}
+	found := false
+	for _, d := range resp.Diagnostics {
+		if strings.Contains(d.Detail(), "nonexistent") && strings.Contains(d.Detail(), "could not be read") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a diagnostic naming the unreadable profile, got: %v", resp.Diagnostics)
+	}
+}
+
+func TestConfigure_EndpointTrailingSlashTrimmed(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("KVINDO_ENDPOINT", "")
+	t.Setenv("KVINDO_TOKEN", "")
+	t.Setenv("KVINDO_CLI_PROFILE", "")
+
+	resp := configureWith(t, strp("https://explicit.example.com/"), strp("explicit-token"), nil)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("unexpected error: %v", resp.Diagnostics)
+	}
+	pd := resp.ResourceData.(*KvindoProviderData)
+	if pd.Client.BaseURL != "https://explicit.example.com" {
+		t.Errorf("BaseURL = %q, want trailing slash trimmed", pd.Client.BaseURL)
 	}
 }

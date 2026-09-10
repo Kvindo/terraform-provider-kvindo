@@ -47,7 +47,7 @@ func ValkeyUserResourceSchemaAttrs() map[string]schema.Attribute {
 		"enabled":      schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
 		"key_patterns": schema.ListAttribute{Optional: true, ElementType: types.StringType, Description: "Valkey ACL key-pattern globs, e.g. `cache:*`. Entered without the leading `~` - Kvindo Cloud adds it when applying the ACL. Empty/null denies all key access."},
 		"password":     schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, Description: "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"valkey_id":    schema.StringAttribute{Required: true},
+		"valkey_id":    schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -192,9 +192,9 @@ func (r *ValkeyUserResource) Read(ctx context.Context, req resource.ReadRequest,
 		resp.Diagnostics.AddError("State Error", err.Error())
 		return
 	}
-	state.Spec.Categories = origCategories
-	state.Spec.Channels = origChannels
-	state.Spec.KeyPatterns = origKeyPatterns
+	state.Spec.Categories = normalizeOptionalOnlyListForRead(state.Spec.Categories, origCategories)
+	state.Spec.Channels = normalizeOptionalOnlyListForRead(state.Spec.Channels, origChannels)
+	state.Spec.KeyPatterns = normalizeOptionalOnlyListForRead(state.Spec.KeyPatterns, origKeyPatterns)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 

@@ -18,7 +18,7 @@ import (
 
 var _ = fmt.Sprintf
 
-var valkeyShardsObjFields = []objField{{TF: "name", API: "name", Kind: "string"}, {TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string"}}
+var valkeyShardsObjFields = []objField{{TF: "name", API: "name", Kind: "string"}, {TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string", Immutable: true}}
 
 var valkeyStatusNodesObjFields = []objField{{TF: "announce_fqdn", API: "announceFqdn", Kind: "string"}, {TF: "bus_port", API: "busPort", Kind: "int64"}, {TF: "id", API: "id", Kind: "string"}, {TF: "is_primary", API: "isPrimary", Kind: "bool"}, {TF: "node_id", API: "nodeId", Kind: "string"}, {TF: "observed_role", API: "observedRole", Kind: "string"}, {TF: "port", API: "port", Kind: "int64"}, {TF: "private_ipv4", API: "privateIpV4", Kind: "string"}, {TF: "public_ipv4", API: "publicIpV4", Kind: "string"}, {TF: "shard_index", API: "shardIndex", Kind: "int64"}}
 
@@ -53,7 +53,7 @@ func (r *ValkeyResource) Metadata(_ context.Context, req resource.MetadataReques
 
 func ValkeyResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"create_public_ipv4": schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
+		"create_public_ipv4": schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown(), boolplanmodifier.RequiresReplace()}},
 		"parameters_set_id":  schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"replicas_per_shard": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
 		"shards":             listObjResourceSchema(valkeyShardsObjFields),

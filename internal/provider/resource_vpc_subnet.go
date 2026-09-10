@@ -37,8 +37,8 @@ func (r *VpcSubnetResource) Metadata(_ context.Context, req resource.MetadataReq
 
 func VpcSubnetResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"ipv4_cidr": schema.StringAttribute{Required: true},
-		"vpc_id":    schema.StringAttribute{Required: true},
+		"ipv4_cidr": schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"vpc_id":    schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},

@@ -20,6 +20,10 @@ import (
 type recordedRequest struct {
 	Method string
 	Path   string
+	// RawQuery captures the request's URL query string (empty for the PUT/GET/DELETE calls every
+	// existing test here makes) - added for GetByLabels' pagination/label-encoding tests
+	// (getbylabels_test.go), which need to inspect maxPageSize/enumeratorId/labels[k] params.
+	RawQuery string
 }
 
 type fakeResponse struct {
@@ -55,7 +59,7 @@ type fakeRoundTripper struct {
 }
 
 func (f *fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	f.calls = append(f.calls, recordedRequest{Method: req.Method, Path: req.URL.Path})
+	f.calls = append(f.calls, recordedRequest{Method: req.Method, Path: req.URL.Path, RawQuery: req.URL.RawQuery})
 
 	// A real Transport checks the request's context and fails fast on an already-cancelled/expired
 	// one rather than proceeding - mirror that here so tests can exercise Put()'s handling of a
@@ -172,6 +176,37 @@ func TestPut_NoRetryAfterHeader_LeavesFieldNil(t *testing.T) {
 	}
 	if apiErr.RetryAfterSeconds != nil {
 		t.Errorf("expected RetryAfterSeconds to be nil with no header present, got %d", *apiErr.RetryAfterSeconds)
+	}
+}
+
+// Regression coverage for review finding #3: WaitUntilNotReconciling compared strings.HasPrefix
+// against a capitalized "Reconcil" prefix, but the API sends state lowercase
+// (State.ToString().ToLower() server-side) - so the check never matched and the function returned
+// immediately without ever actually waiting. Deliberately mocks the state LOWERCASE, matching real
+// backend behavior exactly: a fixture using "Reconciling" (capitalized) would pass against BOTH the
+// old buggy code and the fix, proving nothing - only a lowercase fixture fails pre-fix and passes
+// post-fix.
+func TestWaitUntilNotReconciling_LowercaseReconcilingState_ActuallyPolls(t *testing.T) {
+	rt := &fakeRoundTripper{t: t, responses: []fakeResponse{
+		{StatusCode: 200, Body: `{"resource":{"status":{"state":"reconciling"}}}`},
+		{StatusCode: 200, Body: `{"resource":{"status":{"state":"stable"}}}`},
+	}}
+	c := newTestClient(rt)
+
+	start := time.Now()
+	err := c.WaitUntilNotReconciling(context.Background(), "/api/v1/valkey", "wait1")
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("expected success once state settles to stable, got error: %v", err)
+	}
+	if len(rt.calls) != 2 {
+		t.Fatalf("expected 2 GET calls (one poll while reconciling, one after settling), got %d: %+v", len(rt.calls), rt.calls)
+	}
+	// The loop's initial backoff is 2s - if the casing bug were still present, this would return
+	// after call #1 with near-zero elapsed time instead of actually sleeping before call #2.
+	if elapsed < 1*time.Second {
+		t.Errorf("expected WaitUntilNotReconciling to actually back off before polling again, only took %v", elapsed)
 	}
 }
 

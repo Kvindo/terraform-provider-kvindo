@@ -16,20 +16,23 @@ type kcProfile struct {
 	Token  string `yaml:"token"`
 }
 
-// loadKcProfile reads ~/.kc/config/<name>.yaml. It returns a zero-value kcProfile (no
-// error) when the file is missing, unreadable, or malformed — a bad/absent cli_profile
-// falls through to the endpoint/token env-var and default resolution in Configure
-// rather than hard-failing the whole provider.
-func loadKcProfile(name string) kcProfile {
+// loadKcProfile reads ~/.kc/config/<name>.yaml. name is sanitized with filepath.Base
+// first, since it can come from HCL config or an env var and is joined directly into a
+// filesystem path. It returns a zero-value kcProfile and found=false when the file is
+// missing or unreadable — a bad/absent cli_profile falls through to the endpoint/token
+// env-var and default resolution in Configure rather than hard-failing the whole
+// provider. found=true with a zero-value kcProfile means the file was read but didn't
+// parse as valid YAML.
+func loadKcProfile(name string) (profile kcProfile, found bool) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return kcProfile{}
+		return kcProfile{}, false
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".kc", "config", name+".yaml"))
+	data, err := os.ReadFile(filepath.Join(home, ".kc", "config", filepath.Base(name)+".yaml"))
 	if err != nil {
-		return kcProfile{}
+		return kcProfile{}, false
 	}
 	var p kcProfile
 	_ = yaml.Unmarshal(data, &p)
-	return p
+	return p, true
 }

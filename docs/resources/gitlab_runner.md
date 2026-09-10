@@ -101,7 +101,7 @@ Optional:
 
 Optional:
 
-- `runner_token` (String)
+- `runner_token` (String, Sensitive)
 - `url` (String)
 
 

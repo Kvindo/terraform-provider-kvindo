@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -55,8 +57,9 @@ func (p *KvindoProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		profileName = v
 	}
 	var profile kcProfile
+	profileFound := true
 	if profileName != "" {
-		profile = loadKcProfile(profileName)
+		profile, profileFound = loadKcProfile(profileName)
 	}
 
 	endpoint := defaultEndpoint
@@ -69,6 +72,7 @@ func (p *KvindoProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	if !config.Endpoint.IsNull() && !config.Endpoint.IsUnknown() && config.Endpoint.ValueString() != "" {
 		endpoint = config.Endpoint.ValueString()
 	}
+	endpoint = strings.TrimRight(endpoint, "/")
 
 	token := profile.Token
 	if v := os.Getenv("KVINDO_TOKEN"); v != "" {
@@ -78,7 +82,11 @@ func (p *KvindoProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		token = config.Token.ValueString()
 	}
 	if token == "" {
-		resp.Diagnostics.AddError("Missing API Token", "Set token in provider config, KVINDO_TOKEN env var, or cli_profile (~/.kc/config/<name>.yaml)")
+		msg := "Set token in provider config, KVINDO_TOKEN env var, or cli_profile (~/.kc/config/<name>.yaml)"
+		if profileName != "" && !profileFound {
+			msg = fmt.Sprintf("cli_profile %q was set, but ~/.kc/config/%s.yaml could not be read (missing or unreadable) - check the profile name, or set token directly / KVINDO_TOKEN instead", profileName, profileName)
+		}
+		resp.Diagnostics.AddError("Missing API Token", msg)
 		return
 	}
 	pd := &KvindoProviderData{Client: client.New(endpoint, token, p.version)}

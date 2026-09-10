@@ -1,36 +1,8 @@
-resource "kvindo_vpc" "main" {
-  metadata = {
-    name = "my-vpc"
-  }
-  spec = {
-    hosting_provider_id = "01abc123def456gh789012345"
-  }
-}
-
-resource "kvindo_vpc_subnet" "main" {
-  metadata = {
-    name = "my-subnet"
-  }
-  spec = {
-    vpc_id    = kvindo_vpc.main.id
-    ipv4_cidr = "10.0.1.0/24"
-  }
-}
-
-resource "kvindo_loadbalancer" "main" {
-  metadata = {
-    name = "my-lb"
-  }
-  spec = {
-    vpc_subnet_id = kvindo_vpc_subnet.main.id
-  }
-}
-
+# A target group has no spec of its own - it's a standalone bucket of backends, associated with a
+# loadbalancer later by referencing its id from a listener rule's forward action (see
+# kvindo_loadbalancer_http_listener_rule's example), not by any field on the target group itself.
 resource "kvindo_loadbalancer_target_group" "example" {
   metadata = {
     name = "my-target-group"
-  }
-  spec = {
-    loadbalancer_id = kvindo_loadbalancer.main.id
   }
 }

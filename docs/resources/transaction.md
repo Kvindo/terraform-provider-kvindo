@@ -152,10 +152,14 @@ Optional:
 - `loadbalancer_udp_listeners` (Attributes Map) (see [below for nested schema](#nestedatt--spec--loadbalancer_udp_listeners))
 - `loadbalancers` (Attributes Map) (see [below for nested schema](#nestedatt--spec--loadbalancers))
 - `ollamas` (Attributes Map) (see [below for nested schema](#nestedatt--spec--ollamas))
+- `on_off_schedules` (Attributes Map) (see [below for nested schema](#nestedatt--spec--on_off_schedules))
 - `open_vpn_user_settings` (Attributes Map) (see [below for nested schema](#nestedatt--spec--open_vpn_user_settings))
 - `open_vpn_users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--open_vpn_users))
 - `open_vpns` (Attributes Map) (see [below for nested schema](#nestedatt--spec--open_vpns))
+- `postgresql_databases` (Attributes Map) (see [below for nested schema](#nestedatt--spec--postgresql_databases))
 - `postgresql_parameters_sets` (Attributes Map) (see [below for nested schema](#nestedatt--spec--postgresql_parameters_sets))
+- `postgresql_users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--postgresql_users))
+- `postgresqls` (Attributes Map) (see [below for nested schema](#nestedatt--spec--postgresqls))
 - `quota_change_requests` (Attributes Map) (see [below for nested schema](#nestedatt--spec--quota_change_requests))
 - `quotas` (Attributes Map) (see [below for nested schema](#nestedatt--spec--quotas))
 - `route_table_attachments` (Attributes Map) (see [below for nested schema](#nestedatt--spec--route_table_attachments))
@@ -174,7 +178,9 @@ Optional:
 - `user_tokens` (Attributes Map) (see [below for nested schema](#nestedatt--spec--user_tokens))
 - `users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--users))
 - `valkey_parameters_sets` (Attributes Map) (see [below for nested schema](#nestedatt--spec--valkey_parameters_sets))
+- `valkey_users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--valkey_users))
 - `valkeys` (Attributes Map) (see [below for nested schema](#nestedatt--spec--valkeys))
+- `vm_command_schedules` (Attributes Map) (see [below for nested schema](#nestedatt--spec--vm_command_schedules))
 - `vms` (Attributes Map) (see [below for nested schema](#nestedatt--spec--vms))
 - `volume_attachments` (Attributes Map) (see [below for nested schema](#nestedatt--spec--volume_attachments))
 - `volumes` (Attributes Map) (see [below for nested schema](#nestedatt--spec--volumes))
@@ -762,7 +768,7 @@ Optional:
 
 Optional:
 
-- `runner_token` (String)
+- `runner_token` (String, Sensitive)
 - `url` (String)
 
 
@@ -3364,6 +3370,109 @@ Optional:
 
 
 
+<a id="nestedatt--spec--on_off_schedules"></a>
+### Nested Schema for `spec.on_off_schedules`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--on_off_schedules--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--on_off_schedules--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--on_off_schedules--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--on_off_schedules--metadata"></a>
+### Nested Schema for `spec.on_off_schedules.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--on_off_schedules--spec"></a>
+### Nested Schema for `spec.on_off_schedules.spec`
+
+Optional:
+
+- `enabled` (Boolean)
+- `schedule` (String)
+- `schedule_format` (String)
+- `target_state` (String)
+
+
+<a id="nestedatt--spec--on_off_schedules--status"></a>
+### Nested Schema for `spec.on_off_schedules.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--on_off_schedules--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--on_off_schedules--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--on_off_schedules--status--pricing))
+- `runs` (Attributes List) (see [below for nested schema](#nestedatt--spec--on_off_schedules--status--runs))
+- `state` (String)
+
+<a id="nestedatt--spec--on_off_schedules--status--created_by_user"></a>
+### Nested Schema for `spec.on_off_schedules.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--on_off_schedules--status--last_change_request"></a>
+### Nested Schema for `spec.on_off_schedules.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--on_off_schedules--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--on_off_schedules--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.on_off_schedules.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--on_off_schedules--status--pricing"></a>
+### Nested Schema for `spec.on_off_schedules.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+<a id="nestedatt--spec--on_off_schedules--status--runs"></a>
+### Nested Schema for `spec.on_off_schedules.status.runs`
+
+Optional:
+
+- `completion_time` (String)
+- `create_time` (String)
+- `id` (String)
+- `start_time` (String)
+- `status` (String)
+- `vm_id` (String)
+
+
+
+
 <a id="nestedatt--spec--open_vpn_user_settings"></a>
 ### Nested Schema for `spec.open_vpn_user_settings`
 
@@ -3631,6 +3740,93 @@ Optional:
 
 
 
+<a id="nestedatt--spec--postgresql_databases"></a>
+### Nested Schema for `spec.postgresql_databases`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_databases--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_databases--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_databases--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--postgresql_databases--metadata"></a>
+### Nested Schema for `spec.postgresql_databases.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--postgresql_databases--spec"></a>
+### Nested Schema for `spec.postgresql_databases.spec`
+
+Optional:
+
+- `extensions` (List of String)
+- `postgre_sql_id` (String)
+
+
+<a id="nestedatt--spec--postgresql_databases--status"></a>
+### Nested Schema for `spec.postgresql_databases.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_databases--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_databases--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_databases--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--postgresql_databases--status--created_by_user"></a>
+### Nested Schema for `spec.postgresql_databases.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--postgresql_databases--status--last_change_request"></a>
+### Nested Schema for `spec.postgresql_databases.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_databases--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--postgresql_databases--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.postgresql_databases.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--postgresql_databases--status--pricing"></a>
+### Nested Schema for `spec.postgresql_databases.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
 <a id="nestedatt--spec--postgresql_parameters_sets"></a>
 ### Nested Schema for `spec.postgresql_parameters_sets`
 
@@ -3713,6 +3909,252 @@ Optional:
 - `day` (Number)
 - `hour` (Number)
 - `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--postgresql_users"></a>
+### Nested Schema for `spec.postgresql_users`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_users--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_users--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_users--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--postgresql_users--metadata"></a>
+### Nested Schema for `spec.postgresql_users.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--postgresql_users--spec"></a>
+### Nested Schema for `spec.postgresql_users.spec`
+
+Optional:
+
+- `connection_limit` (Number)
+- `granted_database_ids` (List of String)
+- `login` (Boolean)
+- `password` (String, Sensitive)
+- `postgre_sql_id` (String)
+
+
+<a id="nestedatt--spec--postgresql_users--status"></a>
+### Nested Schema for `spec.postgresql_users.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_users--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_users--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_users--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--postgresql_users--status--created_by_user"></a>
+### Nested Schema for `spec.postgresql_users.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--postgresql_users--status--last_change_request"></a>
+### Nested Schema for `spec.postgresql_users.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresql_users--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--postgresql_users--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.postgresql_users.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--postgresql_users--status--pricing"></a>
+### Nested Schema for `spec.postgresql_users.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--postgresqls"></a>
+### Nested Schema for `spec.postgresqls`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresqls--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresqls--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresqls--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--postgresqls--metadata"></a>
+### Nested Schema for `spec.postgresqls.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--postgresqls--spec"></a>
+### Nested Schema for `spec.postgresqls.spec`
+
+Optional:
+
+- `backup_retention_days` (Number)
+- `create_public_ipv4` (Boolean)
+- `postgre_sql_parameters_set_id` (String)
+- `replicas_per_shard_group` (Number)
+- `restore_configuration` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresqls--spec--restore_configuration))
+- `shard_groups` (Attributes List) (see [below for nested schema](#nestedatt--spec--postgresqls--spec--shard_groups))
+- `tls_mode` (String)
+- `version` (String)
+- `vm_offer_id` (String)
+- `volume_offer_id` (String)
+- `volume_size_gib` (Number)
+
+<a id="nestedatt--spec--postgresqls--spec--restore_configuration"></a>
+### Nested Schema for `spec.postgresqls.spec.restore_configuration`
+
+Optional:
+
+- `postgre_sql_id` (String)
+- `restore_time` (String)
+
+
+<a id="nestedatt--spec--postgresqls--spec--shard_groups"></a>
+### Nested Schema for `spec.postgresqls.spec.shard_groups`
+
+Optional:
+
+- `is_coordinator` (Boolean)
+- `name` (String)
+- `vpc_subnet_id` (String)
+
+
+
+<a id="nestedatt--spec--postgresqls--status"></a>
+### Nested Schema for `spec.postgresqls.status`
+
+Optional:
+
+- `anti_affinity_message` (String)
+- `anti_affinity_ok` (Boolean)
+- `citus_managed_table_counts` (String)
+- `cluster_state` (String)
+- `connection_uri` (String)
+- `coordinator_endpoint` (String)
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresqls--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresqls--status--last_change_request))
+- `nodes` (Attributes List) (see [below for nested schema](#nestedatt--spec--postgresqls--status--nodes))
+- `port` (Number)
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresqls--status--pricing))
+- `primary_endpoints` (String)
+- `read_endpoints` (String)
+- `shard_groups` (Attributes List) (see [below for nested schema](#nestedatt--spec--postgresqls--status--shard_groups))
+- `state` (String)
+
+<a id="nestedatt--spec--postgresqls--status--created_by_user"></a>
+### Nested Schema for `spec.postgresqls.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--postgresqls--status--last_change_request"></a>
+### Nested Schema for `spec.postgresqls.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresqls--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--postgresqls--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.postgresqls.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--postgresqls--status--nodes"></a>
+### Nested Schema for `spec.postgresqls.status.nodes`
+
+Optional:
+
+- `id` (String)
+- `is_primary` (Boolean)
+- `observed_role` (String)
+- `patroni_state` (String)
+- `port` (Number)
+- `private_ipv4` (String)
+- `public_ipv4` (String)
+- `replication_lag_bytes` (Number)
+- `shard_group_index` (Number)
+
+
+<a id="nestedatt--spec--postgresqls--status--pricing"></a>
+### Nested Schema for `spec.postgresqls.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+<a id="nestedatt--spec--postgresqls--status--shard_groups"></a>
+### Nested Schema for `spec.postgresqls.status.shard_groups`
+
+Optional:
+
+- `index` (Number)
+- `is_coordinator` (Boolean)
+- `primary_endpoint` (String)
+- `primary_instance_id` (String)
+- `replica_endpoints` (List of String)
+- `replica_instance_ids` (List of String)
+- `shard_count` (Number)
 
 
 
@@ -5312,6 +5754,97 @@ Optional:
 
 
 
+<a id="nestedatt--spec--valkey_users"></a>
+### Nested Schema for `spec.valkey_users`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_users--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_users--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_users--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--valkey_users--metadata"></a>
+### Nested Schema for `spec.valkey_users.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--valkey_users--spec"></a>
+### Nested Schema for `spec.valkey_users.spec`
+
+Optional:
+
+- `categories` (List of String)
+- `channels` (List of String)
+- `enabled` (Boolean)
+- `key_patterns` (List of String)
+- `password` (String, Sensitive)
+- `valkey_id` (String)
+
+
+<a id="nestedatt--spec--valkey_users--status"></a>
+### Nested Schema for `spec.valkey_users.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_users--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_users--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_users--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--valkey_users--status--created_by_user"></a>
+### Nested Schema for `spec.valkey_users.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--valkey_users--status--last_change_request"></a>
+### Nested Schema for `spec.valkey_users.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--valkey_users--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--valkey_users--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.valkey_users.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--valkey_users--status--pricing"></a>
+### Nested Schema for `spec.valkey_users.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
 <a id="nestedatt--spec--valkeys"></a>
 ### Nested Schema for `spec.valkeys`
 
@@ -5452,6 +5985,113 @@ Optional:
 - `replica_instance_ids` (List of String)
 - `slot_end` (Number)
 - `slot_start` (Number)
+
+
+
+
+<a id="nestedatt--spec--vm_command_schedules"></a>
+### Nested Schema for `spec.vm_command_schedules`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--vm_command_schedules--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--vm_command_schedules--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--vm_command_schedules--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--vm_command_schedules--metadata"></a>
+### Nested Schema for `spec.vm_command_schedules.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--vm_command_schedules--spec"></a>
+### Nested Schema for `spec.vm_command_schedules.spec`
+
+Optional:
+
+- `command` (String)
+- `command_timeout_seconds` (Number)
+- `enabled` (Boolean)
+- `schedule` (String)
+- `schedule_format` (String)
+
+
+<a id="nestedatt--spec--vm_command_schedules--status"></a>
+### Nested Schema for `spec.vm_command_schedules.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--vm_command_schedules--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--vm_command_schedules--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--vm_command_schedules--status--pricing))
+- `runs` (Attributes List) (see [below for nested schema](#nestedatt--spec--vm_command_schedules--status--runs))
+- `state` (String)
+
+<a id="nestedatt--spec--vm_command_schedules--status--created_by_user"></a>
+### Nested Schema for `spec.vm_command_schedules.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--vm_command_schedules--status--last_change_request"></a>
+### Nested Schema for `spec.vm_command_schedules.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--vm_command_schedules--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--vm_command_schedules--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.vm_command_schedules.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--vm_command_schedules--status--pricing"></a>
+### Nested Schema for `spec.vm_command_schedules.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+<a id="nestedatt--spec--vm_command_schedules--status--runs"></a>
+### Nested Schema for `spec.vm_command_schedules.status.runs`
+
+Optional:
+
+- `completion_time` (String)
+- `create_time` (String)
+- `duration_ms` (Number)
+- `id` (String)
+- `output` (String)
+- `return_code` (Number)
+- `start_time` (String)
+- `status` (String)
+- `vm_id` (String)
 
 
 

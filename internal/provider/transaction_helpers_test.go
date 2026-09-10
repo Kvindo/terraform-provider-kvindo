@@ -1,13 +1,72 @@
 package provider
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
+
+// fakePopModel/fakePopAttrs back TestTxnPop below - a minimal stand-in for a real
+// populate<Sn>State/<Sn>ResourceSchemaAttrs pair, just enough to exercise txnPop's own error
+// threading in isolation.
+type fakePopModel struct {
+	ID types.String `tfsdk:"id"`
+}
+
+func fakePopAttrs() map[string]schema.Attribute {
+	return map[string]schema.Attribute{"id": schema.StringAttribute{Computed: true}}
+}
+
+// Regression coverage for review finding #14: txnPop used to discard popFn's error entirely
+// (`_ = popFn(ctx, item, &e)`), so a genuinely failed per-item populate silently produced a
+// half-filled object that txnPopulateSubResources then wrote into state as if it had succeeded.
+func TestTxnPop_PropagatesPopFnError(t *testing.T) {
+	wantErr := errors.New("boom")
+	popFn := func(_ context.Context, _ map[string]interface{}, _ *fakePopModel) error {
+		return wantErr
+	}
+	pop := txnPop[fakePopModel](popFn, fakePopAttrs)
+
+	obj, id, err := pop(context.Background(), map[string]interface{}{"id": "abc"})
+	if err == nil {
+		t.Fatal("expected the popFn error to propagate, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("expected the exact popFn error to propagate, got %v", err)
+	}
+	if id != "" {
+		t.Errorf("expected empty id on error, got %q", id)
+	}
+	if !obj.IsNull() {
+		t.Errorf("expected a null object on error, not a half-filled one, got %v", obj)
+	}
+}
+
+func TestTxnPop_SuccessPath(t *testing.T) {
+	popFn := func(_ context.Context, item map[string]interface{}, e *fakePopModel) error {
+		id, _ := item["id"].(string)
+		e.ID = types.StringValue(id)
+		return nil
+	}
+	pop := txnPop[fakePopModel](popFn, fakePopAttrs)
+
+	obj, id, err := pop(context.Background(), map[string]interface{}{"id": "abc123"})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if id != "abc123" {
+		t.Errorf("expected id abc123, got %q", id)
+	}
+	if obj.IsNull() {
+		t.Error("expected a non-null object on success")
+	}
+}
 
 // TestTxnRelaxAttr_PreservesPlanModifiers pins the bug fixed 2026-07-20: txnRelaxAttr used to
 // rebuild every attribute from scratch as Optional+Computed with no PlanModifiers at all, which

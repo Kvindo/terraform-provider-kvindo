@@ -259,3 +259,108 @@ func TestGenerateResourceFile_NonVmResource_HasNoBootVolumeAttachment(t *testing
 		t.Error("non-vm resource is missing its normal generated Delete method")
 	}
 }
+
+// resourceAttrDef must emit RequiresReplace for a field listed in immutableSpecFields, and must
+// NOT emit it for an otherwise-identical field that isn't listed - review finding #5. Covers all
+// three Required/OptionalOnly/Optional+Computed shapes, since each has its own branch with its own
+// PlanModifiers construction.
+func TestResourceAttrDef_RequiresReplace(t *testing.T) {
+	const testResource = "__test_immutable_resource__"
+	immutableSpecFields[testResource] = map[string]bool{"frozen": true}
+	defer delete(immutableSpecFields, testResource)
+
+	cases := []struct {
+		name string
+		f    FieldDef
+	}{
+		{"required string", FieldDef{TFName: "frozen", FieldType: "string", Required: true}},
+		{"optional-only string", FieldDef{TFName: "frozen", FieldType: "string", OptionalOnly: true}},
+		{"optional+computed string", FieldDef{TFName: "frozen", FieldType: "string"}},
+		{"optional+computed bool", FieldDef{TFName: "frozen", FieldType: "bool"}},
+		{"optional+computed int64", FieldDef{TFName: "frozen", FieldType: "int64"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resourceAttrDef(testResource, tc.f)
+			if !strings.Contains(got, "RequiresReplace()") {
+				t.Errorf("expected RequiresReplace() in output for immutable field, got: %s", got)
+			}
+		})
+	}
+
+	// Control: the identical field, same resource, NOT in the table -> no RequiresReplace.
+	notImmutable := FieldDef{TFName: "not_frozen", FieldType: "string", Required: true}
+	if got := resourceAttrDef(testResource, notImmutable); strings.Contains(got, "RequiresReplace()") {
+		t.Errorf("expected no RequiresReplace() for a field absent from immutableSpecFields, got: %s", got)
+	}
+	// Control: the same field NAME, on a DIFFERENT (unlisted) resource -> no RequiresReplace either,
+	// proving the lookup is resource-scoped and not name-only.
+	if got := resourceAttrDef("__some_other_resource__", FieldDef{TFName: "frozen", FieldType: "string", Required: true}); strings.Contains(got, "RequiresReplace()") {
+		t.Errorf("expected no RequiresReplace() for the same field name on an unrelated resource, got: %s", got)
+	}
+}
+
+// emitResourceImports must import the plan-modifier package for an immutable Required/OptionalOnly
+// field's type even when no OTHER Optional+Computed field on the same resource already needs that
+// import - otherwise the generated file emits int64planmodifier.RequiresReplace() with no
+// corresponding import, a hard compile failure. Regression guard for the import-safety gap found
+// while implementing #5 (adversarial review round 2).
+func TestEmitResourceImports_ImmutableRequiredField_ImportsItsPlanModifierPackage(t *testing.T) {
+	const testResource = "__test_import_resource__"
+	immutableSpecFields[testResource] = map[string]bool{"size": true}
+	defer delete(immutableSpecFields, testResource)
+
+	r := ResourceDef{
+		Name: testResource,
+		Fields: []FieldDef{
+			{TFName: "size", FieldType: "int64", Required: true},
+		},
+	}
+	var sb strings.Builder
+	emitResourceImports(&sb, r)
+	got := sb.String()
+	if !strings.Contains(got, "int64planmodifier") {
+		t.Errorf("expected int64planmodifier import for an immutable Required int64 field with no other int64 field on the resource, got:\n%s", got)
+	}
+}
+
+// applyImmutableNestedFields must set Immutable on a matching nested ObjFields entry, scoped by
+// resource (the same field name nested on some other, unlisted resource must be untouched) - review
+// finding #5's nested-leaf case (PostgreSql.ShardGroups[].VpcSubnetId etc).
+func TestApplyImmutableNestedFields(t *testing.T) {
+	fields := []FieldDef{
+		{
+			TFName: "shards", FieldType: "list_object",
+			ObjFields: []FieldDef{
+				{TFName: "name", FieldType: "string"},
+				{TFName: "vpc_subnet_id", FieldType: "string"},
+			},
+		},
+	}
+	applyImmutableNestedFields(fields, map[string]bool{"vpc_subnet_id": true})
+
+	if fields[0].ObjFields[1].TFName != "vpc_subnet_id" || !fields[0].ObjFields[1].Immutable {
+		t.Error("expected nested vpc_subnet_id to be marked Immutable")
+	}
+	if fields[0].ObjFields[0].Immutable {
+		t.Error("expected nested 'name' field to be untouched")
+	}
+	if fields[0].Immutable {
+		t.Error("expected the top-level 'shards' field itself to be untouched (only its nested child is immutable)")
+	}
+}
+
+// descLiteral must actually emit "Immutable: true" for a FieldDef with Immutable set - the missing
+// link between applyImmutableNestedFields (generator-time) and the runtime objField struct it
+// produces a Go literal for. Without this, Immutable would be silently discarded between
+// generation and the emitted source (adversarial review round 2 caught this gap).
+func TestDescLiteral_EmitsImmutable(t *testing.T) {
+	got := descLiteral([]FieldDef{{TFName: "vpc_subnet_id", APIName: "vpcSubnetId", FieldType: "string", Immutable: true}})
+	if !strings.Contains(got, "Immutable: true") {
+		t.Errorf("expected descLiteral to emit Immutable: true, got: %s", got)
+	}
+	gotNotImmutable := descLiteral([]FieldDef{{TFName: "name", APIName: "name", FieldType: "string"}})
+	if strings.Contains(gotNotImmutable, "Immutable") {
+		t.Errorf("expected no Immutable field emitted for a non-immutable FieldDef, got: %s", gotNotImmutable)
+	}
+}

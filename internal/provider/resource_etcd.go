@@ -18,7 +18,7 @@ import (
 
 var _ = fmt.Sprintf
 
-var etcdInstancesObjFields = []objField{{TF: "id", API: "id", Kind: "string"}, {TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string"}}
+var etcdInstancesObjFields = []objField{{TF: "id", API: "id", Kind: "string"}, {TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string", Immutable: true}}
 
 var etcdStatusInstancesObjFields = []objField{{TF: "id", API: "id", Kind: "string"}, {TF: "private_ipv4", API: "privateIpV4", Kind: "string"}, {TF: "public_ipv4", API: "publicIpV4", Kind: "string"}}
 
@@ -50,7 +50,7 @@ func (r *EtcdResource) Metadata(_ context.Context, req resource.MetadataRequest,
 
 func EtcdResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"create_public_ipv4": schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
+		"create_public_ipv4": schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown(), boolplanmodifier.RequiresReplace()}},
 		"etcd_version":       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"instances":          listObjResourceSchema(etcdInstancesObjFields),
 		"root_password":      schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},

@@ -36,7 +36,7 @@ func (r *SshKeyResource) Metadata(_ context.Context, req resource.MetadataReques
 
 func SshKeyResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"public_key": schema.StringAttribute{Required: true},
+		"public_key": schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},

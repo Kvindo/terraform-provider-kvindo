@@ -72,6 +72,7 @@ type FieldDef struct {
 	OptionalOnly bool // Optional but NOT Computed (server never defaults it)
 	Computed     bool
 	Sensitive    bool
+	Immutable    bool   // RequiresReplace - only ever set on a nested ObjFields entry, see immutableNestedFields
 	Description  string // schema Description; empty means none (see specFieldDescriptions)
 	ObjFields    []FieldDef
 }
@@ -160,7 +161,7 @@ var requiredSpecFields = map[string]map[string]bool{
 	"user_token":                {"user_id": true},
 	"valkey_user":               {"valkey_id": true},
 	"volume_attachment":         {"volume_id": true, "vm_id": true},
-	"vpc_peering_external_peer": {"vpc_peering_id": true},
+	"vpc_peering_external_peer": {"vpc_peering_id": true, "ssh_port": true},
 	"vpc_peering_peer":          {"vpc_peering_id": true},
 	"vpc_subnet":                {"vpc_id": true, "ipv4_cidr": true},
 }
@@ -200,6 +201,56 @@ var sensitiveSpecFields = map[string]map[string]bool{
 	"postgresql_user": {"password": true},
 	"ssh_private_key": {"private_key": true},
 	"valkey_user":     {"password": true},
+}
+
+// immutableSpecFields[resource][tf_field] = true marks a top-level scalar (or whole-object, for a
+// FieldType == "object" entry) spec field RequiresReplace. Two sources, both re-verified live
+// against KvindoCloud/Services/ResourceControllers immediately before adding this table (not
+// carried over from an earlier read):
+//   - `grep -rn "immutable after creation" KvindoCloud/Services/ResourceControllers/` - every field
+//     a resource controller explicitly rejects changing with a CloudValidationException.
+//   - a small set of fields that are structurally immutable by API design rather than an explicit
+//     runtime check (a VPC subnet's CIDR/parent VPC, a volume attachment's two endpoints, an S3
+//     bucket's region, an SSH key's public key material) - there is no code path that ever accepts
+//     a PUT changing these, so "immutable" is the field's only meaningful contract even without a
+//     dedicated validation exception to grep for.
+//
+// "restore_configuration" (PostgreSql) is a whole nested object, not a scalar - resourceAttrDef's
+// per-type switch doesn't render it at all (object/list_object fields route through
+// objResourceSchema/listObjResourceSchema instead, see generateResourceFile's call-site switch),
+// so it needs the objResourceSchemaImmutable variant there rather than a PlanModifiers append here.
+// The 3 array-nested `VpcSubnetId` fields (PostgreSql.ShardGroups[], Valkey.Shards[],
+// Etcd.Instances[]) are NOT here either - see immutableNestedFields below, a separate mechanism for
+// fields nested inside a list_object.
+var immutableSpecFields = map[string]map[string]bool{
+	"ollama": {
+		"vpc_subnet_id": true, "volume_offer_id": true, "volume_size_gib": true, "tier": true,
+		"vm_offer_id": true, "root_password": true, "vm_state": true,
+	},
+	"postgresql":          {"create_public_ipv4": true, "restore_configuration": true},
+	"valkey":              {"create_public_ipv4": true},
+	"etcd":                {"create_public_ipv4": true},
+	"open_vpn":            {"vpc_subnet_id": true},
+	"valkey_user":         {"valkey_id": true},
+	"postgresql_user":     {"postgre_sql_id": true},
+	"postgresql_database": {"postgre_sql_id": true},
+	"vpc_peering_peer":    {"vpc_peering_id": true},
+	"vpc_subnet":          {"ipv4_cidr": true, "vpc_id": true},
+	"volume_attachment":   {"vm_id": true, "volume_id": true},
+	"s3_bucket":           {"region": true},
+	"ssh_key":             {"public_key": true},
+}
+
+// immutableNestedFields[resource][nested_tf_field_name] = true marks a leaf field nested inside a
+// top-level list_object spec field RequiresReplace - the 3 array-nested VpcSubnetId cases above,
+// none of which resourceAttrDef ever sees (they're rendered via the runtime
+// listObjResourceSchema/objLeafResourceSchema path in nested_objects.go, driven by the objField
+// literal extractObjFields/descLiteral emit - see both for how this table actually reaches the
+// rendered schema).
+var immutableNestedFields = map[string]map[string]bool{
+	"postgresql": {"vpc_subnet_id": true},
+	"valkey":     {"vpc_subnet_id": true},
+	"etcd":       {"vpc_subnet_id": true},
 }
 
 // writeOnlySensitiveSpecFields[resource][tf_field] = true marks a Sensitive+Optional+Computed
@@ -257,6 +308,11 @@ var specFieldDescriptions = map[string]map[string]string{
 var sensitiveStatusFields = map[string]bool{
 	"token": true, "kubeconfig": true, "secret_key": true, "config": true,
 	"windows_administrator_password": true,
+	// runner_token lives nested under gitlab_runner's spec.gitlab_instances[] (an object/
+	// list_object field, so extractObjFields is what actually consumes this map for it - see its
+	// own doc comment), not a top-level status field, but this map is the one place nested-field
+	// sensitivity is keyed by name regardless of spec/status.
+	"runner_token": true,
 }
 
 // baseInfoFields are the ResourceInfo fields handled by the common status block; they must NOT
@@ -532,6 +588,7 @@ func extractResources(spec SwaggerSpec) []ResourceDef {
 		for i := range statusExtra {
 			statusExtra[i].Sensitive = sensitiveStatusFields[statusExtra[i].TFName]
 		}
+		applyImmutableNestedFields(fields, immutableNestedFields[resourceName])
 
 		// why: the support-ticket swagger predates the C# rename Status -> TicketStatus, so the
 		// wire key the API actually reads is "ticketStatus". Keep the TF attribute named "status"
@@ -555,6 +612,27 @@ func extractResources(spec SwaggerSpec) []ResourceDef {
 	}
 
 	return resources
+}
+
+// applyImmutableNestedFields recursively walks fields' ObjFields (object/list_object sub-fields,
+// e.g. valkey.shards[].vpc_subnet_id) and sets Immutable on any nested field named in the given
+// map. Unlike Sensitive on nested fields (keyed by name alone, resource-agnostic, applied inside
+// extractObjFields itself), immutability is resource-scoped - "vpc_subnet_id" is immutable when
+// nested inside valkey.shards[] but not, say, inside an unrelated nested object on some other
+// resource that happens to reuse the same field name - so this runs as a resource-aware
+// post-process step here instead, mirroring the existing top-level override loop just above it.
+func applyImmutableNestedFields(fields []FieldDef, immutable map[string]bool) {
+	if len(immutable) == 0 {
+		return
+	}
+	for i := range fields {
+		for j := range fields[i].ObjFields {
+			if immutable[fields[i].ObjFields[j].TFName] {
+				fields[i].ObjFields[j].Immutable = true
+			}
+			applyImmutableNestedFields(fields[i].ObjFields[j].ObjFields, immutable)
+		}
+	}
 }
 
 // commonFields are fields handled by common schema and should be skipped in resource-specific fields.
@@ -908,6 +986,9 @@ func descLiteral(fields []FieldDef) string {
 		if f.Sensitive {
 			b.WriteString(", Sensitive: true")
 		}
+		if f.Immutable {
+			b.WriteString(", Immutable: true")
+		}
 		if f.FieldType == "object" || f.FieldType == "list_object" {
 			b.WriteString(", Obj: " + descLiteral(f.ObjFields))
 		}
@@ -950,12 +1031,23 @@ func emitResourceImports(sb *strings.Builder, r ResourceDef) {
 	// even on a swagger snapshot where every OTHER status field happens to be absent.
 	needsAttr := len(r.StatusExtra) > 0 || r.Name == "vm"
 	needsBool, needsInt64, needsFloat64, needsListString, needsMapString := false, false, false, false, false
-	// Plan modifiers are emitted only for top-level Optional+Computed scalar/list_string/map_string
-	// spec fields; nested object/list_object schemas are built at runtime without per-field
-	// modifiers (a separate, broader limitation — see objLeafResourceSchema in nested_objects.go).
+	// Plan modifiers are emitted for top-level Optional+Computed scalar/list_string/map_string spec
+	// fields unconditionally (UseStateForUnknown), and for a Required/OptionalOnly field of the
+	// same type too when it's also in immutableSpecFields (RequiresReplace only, no
+	// UseStateForUnknown - see resourceAttrDef). Nested object/list_object schemas are built at
+	// runtime without per-field modifiers here (a separate, broader limitation — see
+	// objLeafResourceSchema in nested_objects.go), so they don't affect this resource file's own
+	// imports.
+	resImmutable := immutableSpecFields[r.Name]
 	for _, f := range r.Fields {
 		if f.Required || f.OptionalOnly {
-			continue
+			if !resImmutable[f.TFName] {
+				continue
+			}
+			// An immutable Required/OptionalOnly field still needs its type's plan-modifier
+			// package imported for the RequiresReplace() call resourceAttrDef now emits for it -
+			// don't rely on that package happening to already be needed for an unrelated Optional+
+			// Computed field elsewhere on the same resource.
 		}
 		switch f.FieldType {
 		case "bool":
@@ -1387,6 +1479,24 @@ func emitOptionalOnlyRestore(sb *strings.Builder, fields []FieldDef, varExpr str
 	}
 }
 
+// emitOptionalOnlyNormalizeRead is emitOptionalOnlyRestore's Read()-only counterpart. Read has no
+// "final state must equal plan" constraint - its whole job is to refresh state to match reality -
+// so unconditionally restoring origX there (as Create/Update correctly do) would permanently
+// freeze the field to whatever it was at apply time and silently swallow real drift. Route through
+// normalizeOptionalOnlyListForRead/normalizeOptionalOnlyMapForRead (resource_common.go) instead:
+// they only collapse a null-vs-empty JSON round-trip artifact, never fall back to the captured
+// value when it differs from what populateXState actually read.
+func emitOptionalOnlyNormalizeRead(sb *strings.Builder, fields []FieldDef, varExpr string, indent string) {
+	for _, f := range fields {
+		F := toTitle(f.TFName)
+		fn := "normalizeOptionalOnlyListForRead"
+		if f.FieldType == "map_string" {
+			fn = "normalizeOptionalOnlyMapForRead"
+		}
+		sb.WriteString(fmt.Sprintf("%s%s.Spec.%s = %s(%s.Spec.%s, orig%s)\n", indent, varExpr, F, fn, varExpr, F, F))
+	}
+}
+
 func generateResourceFile(r ResourceDef) string {
 	sn := structName(r.Name)
 	// vm always has a spec block for boot_volume_attachment, even in the hypothetical case where
@@ -1431,11 +1541,18 @@ func generateResourceFile(r ResourceDef) string {
 			var expr string
 			switch f.FieldType {
 			case "object":
-				expr = fmt.Sprintf("objResourceSchema(%s)", descVarName(sn, f))
+				if immutableSpecFields[r.Name][f.TFName] {
+					// A whole nested object marked immutable (e.g. postgresql.restore_configuration)
+					// needs a container-level RequiresReplace, not a per-leaf one - objResourceSchema
+					// has no such variant, so use the dedicated immutable variant instead.
+					expr = fmt.Sprintf("objResourceSchemaImmutable(%s)", descVarName(sn, f))
+				} else {
+					expr = fmt.Sprintf("objResourceSchema(%s)", descVarName(sn, f))
+				}
 			case "list_object":
 				expr = fmt.Sprintf("listObjResourceSchema(%s)", descVarName(sn, f))
 			default:
-				expr = resourceAttrDef(f)
+				expr = resourceAttrDef(r.Name, f)
 			}
 			sb.WriteString(fmt.Sprintf("\t\t%q: %s,\n", f.TFName, expr))
 		}
@@ -1575,7 +1692,7 @@ func generateResourceFile(r ResourceDef) string {
 	if r.Name == "vm" {
 		sb.WriteString("\tstate.Spec.BootVolumeAttachment = existingBootVolumeAttachment\n")
 	}
-	emitOptionalOnlyRestore(&sb, optFields, "state", "\t")
+	emitOptionalOnlyNormalizeRead(&sb, optFields, "state", "\t")
 	sb.WriteString("\tresp.Diagnostics.Append(resp.State.Set(ctx, state)...)\n}\n\n")
 
 	// Update
@@ -1631,7 +1748,11 @@ func generateResourceFile(r ResourceDef) string {
 }
 
 // resourceAttrDef returns the resource schema.Attribute literal for a spec field.
-func resourceAttrDef(f FieldDef) string {
+// resourceAttrDef returns the resource schema.Attribute literal for a top-level scalar spec field.
+// resName selects immutableSpecFields[resName][f.TFName] - when true, a RequiresReplace() plan
+// modifier of the matching type is appended, on the Required/OptionalOnly branches (which
+// otherwise emit no PlanModifiers block at all) as well as the Optional+Computed one.
+func resourceAttrDef(resName string, f FieldDef) string {
 	sens := ""
 	if f.Sensitive {
 		sens = ", Sensitive: true"
@@ -1640,81 +1761,123 @@ func resourceAttrDef(f FieldDef) string {
 	if f.Description != "" {
 		desc = fmt.Sprintf(", Description: %q", f.Description)
 	}
+	immutable := immutableSpecFields[resName][f.TFName]
 	switch f.FieldType {
 	case "string":
 		if f.Required {
+			if immutable {
+				return fmt.Sprintf("schema.StringAttribute{Required: true%s%s, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}", sens, desc)
+			}
 			return fmt.Sprintf("schema.StringAttribute{Required: true%s%s}", sens, desc)
 		}
 		if f.OptionalOnly {
+			if immutable {
+				return fmt.Sprintf("schema.StringAttribute{Optional: true%s%s, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}", sens, desc)
+			}
 			return fmt.Sprintf("schema.StringAttribute{Optional: true%s%s}", sens, desc)
+		}
+		if immutable {
+			return fmt.Sprintf("schema.StringAttribute{Optional: true, Computed: true%s%s, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplace()}}", sens, desc)
 		}
 		return fmt.Sprintf("schema.StringAttribute{Optional: true, Computed: true%s%s, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}", sens, desc)
 	case "bool":
 		if f.Required {
+			if immutable {
+				return fmt.Sprintf("schema.BoolAttribute{Required: true%s, PlanModifiers: []planmodifier.Bool{boolplanmodifier.RequiresReplace()}}", desc)
+			}
 			return fmt.Sprintf("schema.BoolAttribute{Required: true%s}", desc)
 		}
 		if f.OptionalOnly {
+			if immutable {
+				return fmt.Sprintf("schema.BoolAttribute{Optional: true%s, PlanModifiers: []planmodifier.Bool{boolplanmodifier.RequiresReplace()}}", desc)
+			}
 			return fmt.Sprintf("schema.BoolAttribute{Optional: true%s}", desc)
+		}
+		if immutable {
+			return fmt.Sprintf("schema.BoolAttribute{Optional: true, Computed: true%s, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown(), boolplanmodifier.RequiresReplace()}}", desc)
 		}
 		return fmt.Sprintf("schema.BoolAttribute{Optional: true, Computed: true%s, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}}", desc)
 	case "int64":
 		if f.Required {
+			if immutable {
+				return fmt.Sprintf("schema.Int64Attribute{Required: true%s, PlanModifiers: []planmodifier.Int64{int64planmodifier.RequiresReplace()}}", desc)
+			}
 			return fmt.Sprintf("schema.Int64Attribute{Required: true%s}", desc)
 		}
 		if f.OptionalOnly {
+			if immutable {
+				return fmt.Sprintf("schema.Int64Attribute{Optional: true%s, PlanModifiers: []planmodifier.Int64{int64planmodifier.RequiresReplace()}}", desc)
+			}
 			return fmt.Sprintf("schema.Int64Attribute{Optional: true%s}", desc)
+		}
+		if immutable {
+			return fmt.Sprintf("schema.Int64Attribute{Optional: true, Computed: true%s, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown(), int64planmodifier.RequiresReplace()}}", desc)
 		}
 		return fmt.Sprintf("schema.Int64Attribute{Optional: true, Computed: true%s, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}}", desc)
 	case "float64":
 		if f.Required {
+			if immutable {
+				return fmt.Sprintf("schema.Float64Attribute{Required: true%s, PlanModifiers: []planmodifier.Float64{float64planmodifier.RequiresReplace()}}", desc)
+			}
 			return fmt.Sprintf("schema.Float64Attribute{Required: true%s}", desc)
 		}
 		if f.OptionalOnly {
+			if immutable {
+				return fmt.Sprintf("schema.Float64Attribute{Optional: true%s, PlanModifiers: []planmodifier.Float64{float64planmodifier.RequiresReplace()}}", desc)
+			}
 			return fmt.Sprintf("schema.Float64Attribute{Optional: true%s}", desc)
+		}
+		if immutable {
+			return fmt.Sprintf("schema.Float64Attribute{Optional: true, Computed: true%s, PlanModifiers: []planmodifier.Float64{float64planmodifier.UseStateForUnknown(), float64planmodifier.RequiresReplace()}}", desc)
 		}
 		return fmt.Sprintf("schema.Float64Attribute{Optional: true, Computed: true%s, PlanModifiers: []planmodifier.Float64{float64planmodifier.UseStateForUnknown()}}", desc)
 	case "list_string":
 		if f.Required {
+			if immutable {
+				return fmt.Sprintf("schema.ListAttribute{Required: true, ElementType: types.StringType%s, PlanModifiers: []planmodifier.List{listplanmodifier.RequiresReplace()}}", desc)
+			}
 			return fmt.Sprintf("schema.ListAttribute{Required: true, ElementType: types.StringType%s}", desc)
 		}
 		if f.OptionalOnly {
+			if immutable {
+				return fmt.Sprintf("schema.ListAttribute{Optional: true, ElementType: types.StringType%s, PlanModifiers: []planmodifier.List{listplanmodifier.RequiresReplace()}}", desc)
+			}
 			return fmt.Sprintf("schema.ListAttribute{Optional: true, ElementType: types.StringType%s}", desc)
+		}
+		if immutable {
+			return fmt.Sprintf("schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType%s, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown(), listplanmodifier.RequiresReplace()}}", desc)
 		}
 		return fmt.Sprintf("schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType%s, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}}", desc)
 	case "map_string":
 		if f.Required {
+			if immutable {
+				return fmt.Sprintf("schema.MapAttribute{Required: true, ElementType: types.StringType%s, PlanModifiers: []planmodifier.Map{mapplanmodifier.RequiresReplace()}}", desc)
+			}
 			return fmt.Sprintf("schema.MapAttribute{Required: true, ElementType: types.StringType%s}", desc)
 		}
 		if f.OptionalOnly {
+			if immutable {
+				return fmt.Sprintf("schema.MapAttribute{Optional: true, ElementType: types.StringType%s, PlanModifiers: []planmodifier.Map{mapplanmodifier.RequiresReplace()}}", desc)
+			}
 			return fmt.Sprintf("schema.MapAttribute{Optional: true, ElementType: types.StringType%s}", desc)
+		}
+		if immutable {
+			return fmt.Sprintf("schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType%s, PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown(), mapplanmodifier.RequiresReplace()}}", desc)
 		}
 		return fmt.Sprintf("schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType%s, PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()}}", desc)
 	case "list_object":
+		// Dead in practice: generateResourceFile's call-site switch routes list_object fields to
+		// listObjResourceSchema instead of resourceAttrDef, so this case is never actually reached
+		// today - kept only so resourceAttrDef stays a total function over FieldType.
 		var b strings.Builder
 		b.WriteString(fmt.Sprintf("schema.ListNestedAttribute{Optional: true, Computed: true%s, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{", desc))
 		for _, of := range f.ObjFields {
-			b.WriteString(fmt.Sprintf("%q: %s,", of.TFName, resourceAttrDef(of)))
+			b.WriteString(fmt.Sprintf("%q: %s,", of.TFName, resourceAttrDef(resName, of)))
 		}
 		b.WriteString("}}}")
 		return b.String()
 	}
 	return "schema.StringAttribute{Optional: true, Computed: true}"
-}
-
-// resourceComputedAttrDef is retained for compatibility (status extras use it indirectly).
-func resourceComputedAttrDef(f FieldDef) string {
-	if f.Sensitive {
-		return "schema.StringAttribute{Computed: true, Sensitive: true}"
-	}
-	switch f.FieldType {
-	case "bool":
-		return "schema.BoolAttribute{Computed: true}"
-	case "int64":
-		return "schema.Int64Attribute{Computed: true}"
-	case "float64":
-		return "schema.Float64Attribute{Computed: true}"
-	}
-	return "schema.StringAttribute{Computed: true}"
 }
 
 // writeSpecFieldToRequest emits code writing a spec field from plan.Spec into the request spec map.

@@ -57,6 +57,28 @@ func TestDelete_404_ReturnsEmptySuccessNoRetry(t *testing.T) {
 	}
 }
 
+// This API signals "does not exist" with 422 + errorCode "NotFound", not 404, on DELETE just like
+// it already does on GET - deleting an already-gone resource (out-of-band deletion since the last
+// refresh, or a retry of a delete that already succeeded server-side) must be a no-op success, not
+// a hard error. Review finding #9.
+func TestDelete_422NotFound_ReturnsEmptySuccessNoRetry(t *testing.T) {
+	rt := &fakeRoundTripper{t: t, responses: []fakeResponse{
+		{StatusCode: 422, Body: `{"errorCode":"NotFound","errorMessage":"The resource ... was not found"}`},
+	}}
+	c := newTestClient(rt)
+
+	result, err := c.Delete(context.Background(), "/api/v1/folder", "already-gone-422")
+	if err != nil {
+		t.Fatalf("expected success (422 NotFound = already deleted), got error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected a non-nil empty ModificationResponse")
+	}
+	if len(rt.calls) != 1 {
+		t.Errorf("expected exactly 1 call, got %d: %+v", len(rt.calls), rt.calls)
+	}
+}
+
 // Only TransactionDeleteLockBusy is retried - any other ErrorCode (e.g. ResourceIsDeleteProtected)
 // must return immediately, unretried.
 func TestDelete_OtherErrorCode_NoRetry(t *testing.T) {

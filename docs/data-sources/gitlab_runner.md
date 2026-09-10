@@ -71,7 +71,7 @@ Read-Only:
 
 Read-Only:
 
-- `runner_token` (String)
+- `runner_token` (String, Sensitive)
 - `url` (String)
 
 

@@ -40,8 +40,8 @@ func (r *VolumeAttachmentResource) Metadata(_ context.Context, req resource.Meta
 func VolumeAttachmentResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
 		"vm_device_index": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
-		"vm_id":           schema.StringAttribute{Required: true},
-		"volume_id":       schema.StringAttribute{Required: true},
+		"vm_id":           schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"volume_id":       schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 	}
 	return map[string]schema.Attribute{
 		"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},

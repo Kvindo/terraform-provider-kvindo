@@ -19,7 +19,6 @@ resource "kvindo_loadbalancer" "main" {
 
 resource "kvindo_loadbalancer_target_group" "main" {
   metadata = { name = "my-tg" }
-  spec     = { loadbalancer_id = kvindo_loadbalancer.main.id }
 }
 
 resource "kvindo_loadbalancer_http_listener" "main" {

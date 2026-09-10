@@ -51,6 +51,75 @@ type RequestStatusResponse struct {
 	ErrorMessage        string `json:"errorMessage"`
 }
 
+// secretJSONKeys are wire-format (camelCase) JSON keys whose values must never appear in
+// TF_LOG=DEBUG output - request/response bodies are logged verbatim there, and Terraform's own
+// Sensitive schema attribute only masks plan/state rendering, not provider logs. Matched
+// regardless of nesting depth (a request/response body's secret fields live at varying nesting
+// per resource - spec.root_password, status.token, status.kubeconfig, ...) rather than tracking
+// exact per-resource paths, which is simpler and fails safe (over-redacting a same-named but
+// non-secret field costs nothing at Debug level; under-redacting a secret does).
+var secretJSONKeys = map[string]bool{
+	"rootPassword": true, "privateKeyPem": true, "privateKey": true, "password": true,
+	"token": true, "kubeconfig": true, "secretKey": true, "config": true,
+	"windowsAdministratorPassword": true,
+}
+
+const redactedPlaceholder = "<redacted>"
+
+// redactSecretsForLog returns a deep copy of v with any map value keyed by a known secret field
+// name (see secretJSONKeys) replaced with a placeholder. Used ONLY for TF_LOG=DEBUG output -
+// never for the real request/response data that actually reaches the API or the caller.
+func redactSecretsForLog(v interface{}) interface{} {
+	switch vv := v.(type) {
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(vv))
+		for k, val := range vv {
+			if secretJSONKeys[k] {
+				out[k] = redactedPlaceholder
+			} else {
+				out[k] = redactSecretsForLog(val)
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(vv))
+		for i, val := range vv {
+			out[i] = redactSecretsForLog(val)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+// marshalForLog is json.Marshal with HTML-escaping disabled - this is a debug log line, not HTML,
+// and the default escaping would otherwise turn "<redacted>" into "<redacted>" noise.
+func marshalForLog(v interface{}) (string, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(buf.String(), "\n"), nil
+}
+
+// redactedJSONForLog decodes raw JSON, redacts known secret fields, and re-encodes it for a debug
+// log line. Falls back to a placeholder (never the raw bytes) if the body isn't valid JSON, e.g. an
+// HTML error page from an intermediary - logging it unredacted-but-unparseable is never needed and
+// logging it at all would defeat the purpose if it happened to embed a secret via some other path.
+func redactedJSONForLog(data []byte) string {
+	var v interface{}
+	if err := json.Unmarshal(data, &v); err != nil {
+		return "<non-JSON body>"
+	}
+	redacted, err := marshalForLog(redactSecretsForLog(v))
+	if err != nil {
+		return "<unloggable body>"
+	}
+	return redacted
+}
+
 // Client is an HTTP client for the Kvindo Cloud API.
 type Client struct {
 	BaseURL    string
@@ -80,7 +149,12 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body inter
 		if err != nil {
 			return nil, fmt.Errorf("marshaling request body: %w", err)
 		}
-		tflog.Debug(ctx, "API request", map[string]interface{}{"method": method, "url": url, "body": string(data)})
+		// Log a redacted copy - the real, unredacted data/body below is what's actually sent.
+		logBody, marshalErr := marshalForLog(redactSecretsForLog(body))
+		if marshalErr != nil {
+			logBody = "<unloggable body>"
+		}
+		tflog.Debug(ctx, "API request", map[string]interface{}{"method": method, "url": url, "body": logBody})
 		bodyReader = bytes.NewReader(data)
 	}
 
@@ -115,7 +189,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, int, http.H
 		// still reaches the real io.ReadAll error via errors.Is/errors.As/%w, so nothing is lost.
 		return nil, resp.StatusCode, resp.Header, &url.Error{Op: req.Method, URL: req.URL.String(), Err: err}
 	}
-	tflog.Debug(ctx, "API response", map[string]interface{}{"status": resp.StatusCode, "body": string(data)})
+	tflog.Debug(ctx, "API response", map[string]interface{}{"status": resp.StatusCode, "body": redactedJSONForLog(data)})
 	return data, resp.StatusCode, resp.Header, nil
 }
 
@@ -196,7 +270,12 @@ func (c *Client) WaitUntilNotReconciling(ctx context.Context, path, id string) e
 					state = s
 				}
 			}
-			if !strings.HasPrefix(state, "Reconcil") {
+			// The API sends state lowercase (`State.ToString().ToLower()` server-side, e.g.
+			// "reconciling"/"stable") - comparing against a capitalized prefix here meant this
+			// check never matched, so Put()'s ResourceIsScheduling wait returned immediately
+			// instead of actually polling. Compare lowercase against a lowercase prefix, matching
+			// isStableState's own convention (internal/provider/resource_common.go).
+			if !strings.HasPrefix(strings.ToLower(state), "reconcil") {
 				return nil
 			}
 		}
@@ -417,6 +496,20 @@ func (c *Client) delete(ctx context.Context, path string, id string) (*Modificat
 		return &ModificationResponse{}, nil
 	}
 
+	// Same as Get()'s existing 422-NotFound handling: this API signals "does not exist" with 422 +
+	// errorCode "NotFound", not 404, on GET and DELETE alike. Deleting an already-gone resource
+	// (a resource deleted out-of-band since the last refresh, or a retry of a delete that already
+	// succeeded server-side) is a no-op success, not an error - without this, Delete() failed hard
+	// on exactly the case it's most likely to hit on retry.
+	if statusCode == 422 {
+		var env map[string]interface{}
+		if json.Unmarshal(data, &env) == nil {
+			if ec, _ := env["errorCode"].(string); ec == "NotFound" {
+				return &ModificationResponse{}, nil
+			}
+		}
+	}
+
 	if statusCode >= 400 {
 		// Same shape as put(): parse into a structured *ApiError (Retry-After header + JSON body)
 		// so Delete()'s retry loop below can classify the failure by ErrorCode, instead of a plain
@@ -490,6 +583,11 @@ func (c *Client) Delete(ctx context.Context, path string, id string) (*Modificat
 // wrong. Since this only bounds a poll loop that returns immediately on success, a long ceiling
 // costs nothing on the fast path - it only matters for a genuinely hung/broken backend, which is
 // better diagnosed by querying the resource's real state directly than by a client timing out early.
+//
+// Note: the backend's ResourceRequestState enum defines a WaitingForDeletePrecondition value (400)
+// that would need special handling here (it's meant to keep a delete pending on a transient
+// precondition rather than fail it outright) - confirmed via a fresh grep that nothing in the
+// backend ever actually assigns it today, so there's nothing to build support for yet.
 func (c *Client) PollUntilDone(ctx context.Context, path string, requestId string) error {
 	if requestId == "" {
 		return nil
@@ -523,17 +621,47 @@ func (c *Client) PollUntilDone(ctx context.Context, path string, requestId strin
 			continue
 		}
 
-		if statusCode >= 400 {
+		// Parse the body before looking at statusCode at all - unlike a plain REST resource, this
+		// poll endpoint's response envelope (RequestStatusResponse) is the authoritative signal
+		// regardless of HTTP status: a genuine business failure like UnableToReconcile is served as
+		// a 4xx WITH this exact envelope, and returning on statusCode >= 400 first (as this used to)
+		// showed the user raw JSON instead of a clean "async operation error <code>: <message>".
+		var status RequestStatusResponse
+		unmarshalErr := json.Unmarshal(data, &status)
+
+		if unmarshalErr != nil {
+			// Body isn't the expected envelope shape at all. If the status is 5xx, this is almost
+			// certainly a transient intermediary failure (ingress 502/503) rather than a real
+			// backend response - the poll endpoint always returns this JSON shape - so retry like a
+			// network error instead of aborting the whole operation client-side while the backend
+			// keeps working.
+			if statusCode >= 500 {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(backoff):
+				}
+				if backoff < 30*time.Second {
+					backoff += 2 * time.Second
+				}
+				continue
+			}
 			return fmt.Errorf("polling %s returned status %d: %s", pollPath, statusCode, string(data))
 		}
 
-		var status RequestStatusResponse
-		if err := json.Unmarshal(data, &status); err != nil {
-			return fmt.Errorf("unmarshaling poll response: %w (body: %s)", err, string(data))
+		if status.ErrorCode != "" {
+			// A genuine backend-reported failure - trust this over the raw HTTP status, since a
+			// business failure like UnableToReconcile is legitimately served as a 4xx WITH this
+			// exact envelope.
+			return fmt.Errorf("async operation error %s: %s", status.ErrorCode, status.ErrorMessage)
 		}
 
-		if status.ErrorCode != "" {
-			return fmt.Errorf("async operation error %s: %s", status.ErrorCode, status.ErrorMessage)
+		if statusCode >= 400 {
+			// The body DID parse (so this is a real backend response, not an intermediary) but
+			// carries no errorCode and isn't a success - a genuinely unexpected shape. Not retried:
+			// unlike the unmarshal-failure branch above, a parseable response means the backend
+			// really did answer.
+			return fmt.Errorf("polling %s returned status %d with no error detail: %s", pollPath, statusCode, string(data))
 		}
 
 		if status.Succeeded {
@@ -554,42 +682,71 @@ func (c *Client) PollUntilDone(ctx context.Context, path string, requestId strin
 	return fmt.Errorf("timed out waiting for operation on %s (requestId: %s)", path, requestId)
 }
 
-// GetByLabels fetches resources filtered by labels.
-func (c *Client) GetByLabels(ctx context.Context, path string, labels map[string]string) ([]map[string]interface{}, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, path+"/get-by-labels", nil)
-	if err != nil {
-		return nil, err
-	}
+// maxGetByLabelsPageSize is the backend's cap on maxPageSize (CloudApiControllerBase.cs:130 defaults
+// to 10 when unset; the resource controllers accept up to 100 - ResourceControllerBase.cs:414-457).
+const maxGetByLabelsPageSize = 100
 
-	if len(labels) > 0 {
+// GetByLabels fetches ALL resources filtered by labels, paging through the backend's cursor-based
+// get-by-labels endpoint until exhausted. Without this, only the first (default 10-item) page was
+// ever returned - fine for a small org, silently wrong for any org with more resources of a type
+// than the default page size, which is exactly what GetByName (below) depends on for every
+// datasource's `name = ...` lookup.
+func (c *Client) GetByLabels(ctx context.Context, path string, labels map[string]string) ([]map[string]interface{}, error) {
+	var all []map[string]interface{}
+	enumeratorId := ""
+
+	for {
+		req, err := c.newRequest(ctx, http.MethodGet, path+"/get-by-labels", nil)
+		if err != nil {
+			return nil, err
+		}
+
 		q := req.URL.Query()
 		for k, v := range labels {
-			q.Set("label."+k, v)
+			// Matches the backend's binder shape (KvindoCloudClient.cs/kc_api.py both encode label
+			// filters as labels[<k>]=<v>, not label.<k>=<v>).
+			q.Set("labels["+k+"]", v)
+		}
+		q.Set("maxPageSize", strconv.Itoa(maxGetByLabelsPageSize))
+		if enumeratorId != "" {
+			q.Set("enumeratorId", enumeratorId)
 		}
 		req.URL.RawQuery = q.Encode()
-	}
 
-	data, statusCode, _, err := c.do(ctx, req)
-	if err != nil {
-		return nil, err
-	}
+		data, statusCode, _, err := c.do(ctx, req)
+		if err != nil {
+			return nil, err
+		}
 
-	if statusCode >= 400 {
-		return nil, fmt.Errorf("GET %s/get-by-labels returned status %d: %s", path, statusCode, string(data))
-	}
+		if statusCode >= 400 {
+			return nil, fmt.Errorf("GET %s/get-by-labels returned status %d: %s", path, statusCode, string(data))
+		}
 
-	// get-by-labels returns the same {"resources": [...], "pagination": {...}} envelope as every
-	// other list endpoint, not a bare JSON array — this was never caught because a separate
-	// datasource-side bug (metadata null-conversion) always crashed before any list response ever
-	// reached this unmarshal.
-	var envelope struct {
-		Resources []map[string]interface{} `json:"resources"`
-	}
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, fmt.Errorf("unmarshaling list response: %w (body: %s)", err, string(data))
-	}
+		var envelope struct {
+			Resources  []map[string]interface{} `json:"resources"`
+			Pagination *struct {
+				EnumeratorId string `json:"enumeratorId"`
+			} `json:"pagination"`
+		}
+		if err := json.Unmarshal(data, &envelope); err != nil {
+			return nil, fmt.Errorf("unmarshaling list response: %w (body: %s)", err, string(data))
+		}
 
-	return envelope.Resources, nil
+		all = append(all, envelope.Resources...)
+
+		// No "hasMore" flag on this envelope - a short page (or an empty one) is the only signal
+		// that pagination is exhausted, same convention CliService.cs's own FetchAll loop uses
+		// server-side.
+		if len(envelope.Resources) < maxGetByLabelsPageSize {
+			return all, nil
+		}
+		if envelope.Pagination == nil || envelope.Pagination.EnumeratorId == "" {
+			// A full page with no cursor to continue from - nothing more we can do; return what
+			// we have rather than looping forever on an empty enumeratorId.
+			return all, nil
+		}
+		enumeratorId = envelope.Pagination.EnumeratorId
+	}
 }
 
 // GetByName fetches a single resource by its metadata.name. It lists all resources of the type and
