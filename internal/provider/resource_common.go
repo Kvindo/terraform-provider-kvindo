@@ -221,6 +221,13 @@ func valueGenuinelyDiffers(planVal, stateVal tftypes.Value) bool {
 	// type this schema uses other than lists (security_group_ids etc.), tried next.
 	var planMap, stateMap map[string]tftypes.Value
 	if err := planVal.As(&planMap); err == nil {
+		// A null object/map and an empty one both decode to a zero-length map via tftypes'
+		// own As() (hashicorp/terraform-plugin-go tftypes/value.go: `if val.IsNull() { *target
+		// = map[string]Value{} }`), so the key-by-key walk below can't tell them apart on its
+		// own - check nullness explicitly first, same reasoning as the list branch below.
+		if planVal.IsNull() != stateVal.IsNull() {
+			return true
+		}
 		if err := stateVal.As(&stateMap); err != nil {
 			return true // shape mismatch between plan/state - treat as a real difference
 		}
@@ -242,6 +249,17 @@ func valueGenuinelyDiffers(planVal, stateVal tftypes.Value) bool {
 	// List/Set/Tuple decode to []tftypes.Value.
 	var planList, stateList []tftypes.Value
 	if err := planVal.As(&planList); err == nil {
+		// Same null-vs-empty collapse as the map branch above: tftypes' As() decodes a null
+		// list to a zero-length []Value too, so e.g. spec.extensions going null -> [] (a real,
+		// known diff Terraform's own plan renders as `+ extensions = []`) was invisible to the
+		// length/element walk below - it saw two empty slices and reported no difference. That
+		// silently defeated resourceOtherwiseChanging, which froze status/last_change_request
+		// to the stale prior snapshot while Update() legitimately ran and produced a new
+		// create_time, causing "Provider produced inconsistent result after apply" against a
+		// live kvindo_postgresql_database in kc.development on 2026-09-12.
+		if planVal.IsNull() != stateVal.IsNull() {
+			return true
+		}
 		if err := stateVal.As(&stateList); err != nil {
 			return true
 		}

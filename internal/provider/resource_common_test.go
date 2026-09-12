@@ -184,6 +184,46 @@ func TestResourceOtherwiseChanging_KnownDifferingLeafBesideUnresolvedSibling_IsC
 
 // ---- buildUserInfoObj ----
 
+// TestResourceOtherwiseChanging_NullToEmptyList_IsChanging pins the THIRD real bug found live
+// against dev (kvindo_postgresql_database.dev_kvindo_cloud, 2026-09-12): a spec list attribute
+// (extensions) going from unset (null) to an explicit empty list is a real, known diff -
+// Terraform's own plan renders it as `+ extensions = []` - but tftypes' Value.As(&[]Value{})
+// decodes BOTH a null list and an empty list to a zero-length slice (see
+// hashicorp/terraform-plugin-go tftypes/value.go), so the length/element walk in
+// valueGenuinelyDiffers saw two empty slices and missed the diff entirely. That silently defeated
+// resourceOtherwiseChanging, which froze status.last_change_request to the stale prior snapshot
+// while Update() legitimately ran and produced a new create_time, causing "Provider produced
+// inconsistent result after apply".
+func TestResourceOtherwiseChanging_NullToEmptyList_IsChanging(t *testing.T) {
+	specType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"extensions": tftypes.List{ElementType: tftypes.String},
+	}}
+	objType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"id":     tftypes.String,
+		"spec":   specType,
+		"status": tftypes.String,
+	}}
+
+	state := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id": tftypes.NewValue(tftypes.String, "abc"),
+		"spec": tftypes.NewValue(specType, map[string]tftypes.Value{
+			"extensions": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, nil),
+		}),
+		"status": tftypes.NewValue(tftypes.String, "old-status"),
+	})
+	plan := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id": tftypes.NewValue(tftypes.String, "abc"),
+		"spec": tftypes.NewValue(specType, map[string]tftypes.Value{
+			"extensions": tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, []tftypes.Value{}),
+		}),
+		"status": tftypes.NewValue(tftypes.String, nil),
+	})
+
+	if !resourceOtherwiseChanging(path.Root("status"), plan, state) {
+		t.Error("expected changing when a spec list leaf (extensions) goes from null to an explicit empty list")
+	}
+}
+
 func TestBuildUserInfoObj_Nil(t *testing.T) {
 	obj := buildUserInfoObj(nil)
 	if !obj.IsNull() {
