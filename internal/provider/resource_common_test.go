@@ -720,8 +720,12 @@ func TestPopulateVmState_SshKeyIdsPresentEmpty_StaysConcreteEmptyList(t *testing
 // pre-refresh value, freezing an Optional-not-Computed list/map field to whatever it was at apply
 // time forever - a real out-of-band change (e.g. security_group_ids edited via the console) never
 // surfaced in `terraform plan`. The fix (emitOptionalOnlyNormalizeRead) only collapses a null-vs-
-// empty JSON round-trip artifact when BOTH sides are already empty; any other case must trust the
-// freshly-populated value completely, including when it differs from what was captured.
+// empty JSON round-trip artifact when captured was ACTUALLY null (never configured) and fresh is
+// empty; any other case - including a captured value that is a real, non-null, explicitly
+// configured empty list/map - must trust the freshly-populated value completely. Collapsing a
+// concretely-configured `[]`/`{}` to null too (a second, later bug: capturedEmpty originally also
+// matched "IsNull() || len==0") permanently reintroduced the exact null -> [] diff this function
+// exists to prevent, on every single refresh - see the "REAL configured empty" cases below.
 
 func stringList(vals ...string) types.List {
 	elems := make([]attr.Value, len(vals))
@@ -748,6 +752,7 @@ func TestNormalizeOptionalOnlyListForRead(t *testing.T) {
 		{"fresh empty (real deletion), captured non-empty -> fresh wins, NOT restored to captured", emptyList, stringList("a"), false, nil},
 		{"fresh differs from captured -> fresh wins (real drift surfaces)", stringList("b"), stringList("a"), false, []string{"b"}},
 		{"fresh equals captured -> fresh (same value either way)", stringList("a"), stringList("a"), false, []string{"a"}},
+		{"fresh empty, captured a REAL configured empty list -> stays [], not collapsed to null", emptyList, emptyList, false, []string{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -789,5 +794,8 @@ func TestNormalizeOptionalOnlyMapForRead(t *testing.T) {
 	}
 	if got := normalizeOptionalOnlyMapForRead(oneMap, nullMap); got.IsNull() || len(got.Elements()) != 1 {
 		t.Errorf("expected a new value to surface, got %v", got)
+	}
+	if got := normalizeOptionalOnlyMapForRead(emptyMap, emptyMap); got.IsNull() || len(got.Elements()) != 0 {
+		t.Errorf("expected a REAL configured empty map to stay {}, not be collapsed to null, got %v", got)
 	}
 }

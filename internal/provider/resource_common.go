@@ -692,12 +692,21 @@ func setCommonFields(ctx context.Context, data map[string]interface{}, id *types
 // The only real problem worth guarding against is JSON round-tripping noise: the backend may
 // return a concrete empty list for a field that was never configured (still null), which would
 // otherwise flip null -> [] as a spurious diff on a field nothing actually changed. So: collapse
-// to null only when BOTH sides are already empty; otherwise trust fresh completely, including when
-// it differs from captured - that's real drift and must surface, never fall back to captured.
+// to null only when captured was ACTUALLY null (never configured) and fresh is empty; otherwise
+// trust fresh completely, including when it differs from captured - that's real drift and must
+// surface, never fall back to captured.
+//
+// captured must be checked via a bare IsNull(), not "IsNull() || len==0" - a captured value that
+// is a concrete, non-null empty list means the field WAS explicitly configured to `[]` (e.g.
+// `security_group_ids = []`/`extensions = []` in HCL), a real, meaningful value distinct from
+// "never configured". Collapsing that case to null too discarded the user's real configuration on
+// every single refresh, permanently reintroducing a null -> [] diff on the very next plan no
+// matter how many times apply "fixed" it - confirmed live 2026-09-12: kvindo_vm.victoria_metrics/
+// cloud_victoria_metrics and kvindo_postgresql_database.dev_kvindo_cloud in kc.development never
+// converged across repeated applies because of exactly this.
 func normalizeOptionalOnlyListForRead(fresh, captured types.List) types.List {
 	freshEmpty := fresh.IsNull() || len(fresh.Elements()) == 0
-	capturedEmpty := captured.IsNull() || len(captured.Elements()) == 0
-	if freshEmpty && capturedEmpty {
+	if captured.IsNull() && freshEmpty {
 		return types.ListNull(fresh.ElementType(context.Background()))
 	}
 	return fresh
@@ -706,8 +715,7 @@ func normalizeOptionalOnlyListForRead(fresh, captured types.List) types.List {
 // normalizeOptionalOnlyMapForRead is normalizeOptionalOnlyListForRead's map_string equivalent.
 func normalizeOptionalOnlyMapForRead(fresh, captured types.Map) types.Map {
 	freshEmpty := fresh.IsNull() || len(fresh.Elements()) == 0
-	capturedEmpty := captured.IsNull() || len(captured.Elements()) == 0
-	if freshEmpty && capturedEmpty {
+	if captured.IsNull() && freshEmpty {
 		return types.MapNull(fresh.ElementType(context.Background()))
 	}
 	return fresh
