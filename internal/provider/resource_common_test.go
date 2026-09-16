@@ -31,7 +31,9 @@ func TestResourceOtherwiseChanging_IdleReplan_NotChanging(t *testing.T) {
 		"spec":   tftypes.NewValue(tftypes.String, "same"),
 		"status": tftypes.NewValue(tftypes.String, nil),
 	})
-	if resourceOtherwiseChanging(path.Root("status"), plan, state) {
+	// Every leaf here is Known in plan, so config is never consulted - mirror plan.
+	config := plan
+	if resourceOtherwiseChanging(path.Root("status"), plan, state, config) {
 		t.Error("expected not-changing for an idle re-plan where only the own attribute differs")
 	}
 }
@@ -51,7 +53,9 @@ func TestResourceOtherwiseChanging_SpecUpdate_IsChanging(t *testing.T) {
 		"spec":   tftypes.NewValue(tftypes.String, "different"),
 		"status": tftypes.NewValue(tftypes.String, nil),
 	})
-	if !resourceOtherwiseChanging(path.Root("status"), plan, state) {
+	// Every leaf here is Known in plan, so config is never consulted - mirror plan.
+	config := plan
+	if !resourceOtherwiseChanging(path.Root("status"), plan, state, config) {
 		t.Error("expected changing when a sibling attribute (spec) differs between plan and state")
 	}
 }
@@ -89,8 +93,10 @@ func TestResourceOtherwiseChanging_NestedSpecObject_DetectsUnknownLeaf(t *testin
 		}),
 		"status": tftypes.NewValue(tftypes.String, nil),
 	})
+	// Every leaf here is Known in plan, so config is never consulted - mirror plan.
+	config := plan
 
-	if !resourceOtherwiseChanging(path.Root("status"), plan, state) {
+	if !resourceOtherwiseChanging(path.Root("status"), plan, state, config) {
 		t.Error("expected changing when a nested spec leaf (delete_protection) differs between plan and state")
 	}
 }
@@ -133,9 +139,19 @@ func TestResourceOtherwiseChanging_UnresolvedSiblingLeaf_IdleReplan_NotChanging(
 		}),
 		"status": tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
 	})
+	// metadata.id is Null in config: the user never set it, it's an ordinary Computed field whose
+	// own UseStateForUnknown modifier just hasn't resolved yet in this raw snapshot - inconclusive.
+	config := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id": tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+		"metadata": tftypes.NewValue(metadataType, map[string]tftypes.Value{
+			"id":   tftypes.NewValue(tftypes.String, nil),
+			"name": tftypes.NewValue(tftypes.String, "demo"),
+		}),
+		"status": tftypes.NewValue(tftypes.String, nil),
+	})
 
-	if resourceOtherwiseChanging(path.Root("status"), plan, state) {
-		t.Error("expected NOT changing when the only difference is an unresolved (unknown) sibling leaf")
+	if resourceOtherwiseChanging(path.Root("status"), plan, state, config) {
+		t.Error("expected NOT changing when the only difference is an unresolved (unknown) sibling leaf whose config counterpart is null")
 	}
 }
 
@@ -176,8 +192,19 @@ func TestResourceOtherwiseChanging_KnownDifferingLeafBesideUnresolvedSibling_IsC
 		}),
 		"status": tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
 	})
+	// metadata.id stays Null in config (still an ordinary unresolved computed field, as in the
+	// idle-replan case above); delete_protection's config mirrors plan since it's Known and the
+	// config check never fires for a Known leaf anyway.
+	config := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id": tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+		"metadata": tftypes.NewValue(metadataType, map[string]tftypes.Value{
+			"id":                tftypes.NewValue(tftypes.String, nil),
+			"delete_protection": tftypes.NewValue(tftypes.Bool, false),
+		}),
+		"status": tftypes.NewValue(tftypes.String, nil),
+	})
 
-	if !resourceOtherwiseChanging(path.Root("status"), plan, state) {
+	if !resourceOtherwiseChanging(path.Root("status"), plan, state, config) {
 		t.Error("expected changing: a known, differing leaf (delete_protection) must be detected even beside an unresolved sibling leaf (id) in the same object")
 	}
 }
@@ -218,9 +245,111 @@ func TestResourceOtherwiseChanging_NullToEmptyList_IsChanging(t *testing.T) {
 		}),
 		"status": tftypes.NewValue(tftypes.String, nil),
 	})
+	// The null-vs-empty-list mismatch is caught before configList is ever consulted, but mirror
+	// plan here anyway so config decodes with a matching shape.
+	config := plan
 
-	if !resourceOtherwiseChanging(path.Root("status"), plan, state) {
+	if !resourceOtherwiseChanging(path.Root("status"), plan, state, config) {
 		t.Error("expected changing when a spec list leaf (extensions) goes from null to an explicit empty list")
+	}
+}
+
+// TestValueGenuinelyDiffers_UnknownPlanWithNullConfig_NotChanging and
+// TestValueGenuinelyDiffers_UnknownPlanWithNonNullConfig_IsChanging pin the FOURTH real bug found
+// live against prod (kvindo_postgresql.prod_v1, 2026-09-16): "Provider produced inconsistent
+// final plan ... .status: was known, but now unknown." An Unknown plan leaf used to be treated as
+// unconditionally inconclusive (never proof of change) - but that's only true when the user never
+// set the field in config (an ordinary Computed field not yet resolved). When the user's config
+// explicitly points the field at something still unresolved (e.g. a reference to another
+// not-yet-created resource), that's a genuine pending change and must be reported as such, so the
+// caller doesn't freeze status on the first plan only to be forced to un-freeze it once the
+// reference resolves during apply.
+func TestValueGenuinelyDiffers_UnknownPlanWithNullConfig_NotChanging(t *testing.T) {
+	state := tftypes.NewValue(tftypes.String, "old-value")
+	plan := tftypes.NewValue(tftypes.String, tftypes.UnknownValue)
+	config := tftypes.NewValue(tftypes.String, nil) // user never set this field
+	if valueGenuinelyDiffers(plan, state, config) {
+		t.Error("an unknown leaf with a null config counterpart is still inconclusive, not proof of change")
+	}
+}
+
+func TestValueGenuinelyDiffers_UnknownPlanWithNonNullConfig_IsChanging(t *testing.T) {
+	state := tftypes.NewValue(tftypes.String, "old-value")
+	plan := tftypes.NewValue(tftypes.String, tftypes.UnknownValue)
+	config := tftypes.NewValue(tftypes.String, tftypes.UnknownValue) // user set this to a pending reference
+	if !valueGenuinelyDiffers(plan, state, config) {
+		t.Error("an unknown leaf the user's config explicitly set (even to something still unresolved) must count as a real pending change")
+	}
+}
+
+// TestResourceOtherwiseChanging_ConfiguredUnknownLeaf_IsChanging reproduces the exact production
+// bug end-to-end through resourceOtherwiseChanging: a spec field shaped like
+// postgre_sql_parameters_set_id, whose plan value is Unknown because it references another
+// resource that hasn't been created yet, and whose config value is a pending (Unknown, non-null)
+// reference - beside a stable prior status. This must read as "changing" so volatileInfoModifier
+// leaves status unknown from the very first plan, instead of freezing it and then being forced to
+// un-freeze it mid-apply once the reference resolves.
+func TestResourceOtherwiseChanging_ConfiguredUnknownLeaf_IsChanging(t *testing.T) {
+	specType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"postgre_sql_parameters_set_id": tftypes.String,
+	}}
+	objType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"id":     tftypes.String,
+		"spec":   specType,
+		"status": tftypes.String,
+	}}
+	state := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id":     tftypes.NewValue(tftypes.String, "abc"),
+		"spec":   tftypes.NewValue(specType, map[string]tftypes.Value{"postgre_sql_parameters_set_id": tftypes.NewValue(tftypes.String, "old-set-id")}),
+		"status": tftypes.NewValue(tftypes.String, "old-status"),
+	})
+	plan := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id":     tftypes.NewValue(tftypes.String, "abc"),
+		"spec":   tftypes.NewValue(specType, map[string]tftypes.Value{"postgre_sql_parameters_set_id": tftypes.NewValue(tftypes.String, tftypes.UnknownValue)}),
+		"status": tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+	})
+	config := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id":     tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+		"spec":   tftypes.NewValue(specType, map[string]tftypes.Value{"postgre_sql_parameters_set_id": tftypes.NewValue(tftypes.String, tftypes.UnknownValue)}),
+		"status": tftypes.NewValue(tftypes.String, nil),
+	})
+	if !resourceOtherwiseChanging(path.Root("status"), plan, state, config) {
+		t.Error("a config-driven pending reference must not be treated as inconclusive")
+	}
+}
+
+// TestResourceOtherwiseChanging_UnconfiguredUnknownLeaf_NotChanging is the config-aware
+// counterpart above: confirms a purely computed leaf (config null) that is Unknown in the plan
+// still reads as "not changing", guarding against a fix that treats ALL Unknown leaves as
+// changing regardless of config, which would reintroduce the ecae5d2/ad0e936 regression this
+// freeze logic was already patched for.
+func TestResourceOtherwiseChanging_UnconfiguredUnknownLeaf_NotChanging(t *testing.T) {
+	specType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"folder_id": tftypes.String,
+	}}
+	objType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"id":     tftypes.String,
+		"spec":   specType,
+		"status": tftypes.String,
+	}}
+	state := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id":     tftypes.NewValue(tftypes.String, "abc"),
+		"spec":   tftypes.NewValue(specType, map[string]tftypes.Value{"folder_id": tftypes.NewValue(tftypes.String, "folder-1")}),
+		"status": tftypes.NewValue(tftypes.String, "old-status"),
+	})
+	plan := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id":     tftypes.NewValue(tftypes.String, "abc"),
+		"spec":   tftypes.NewValue(specType, map[string]tftypes.Value{"folder_id": tftypes.NewValue(tftypes.String, tftypes.UnknownValue)}),
+		"status": tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+	})
+	// User never set folder_id in config - it's Optional+Computed and just hasn't resolved yet.
+	config := tftypes.NewValue(objType, map[string]tftypes.Value{
+		"id":     tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+		"spec":   tftypes.NewValue(specType, map[string]tftypes.Value{"folder_id": tftypes.NewValue(tftypes.String, nil)}),
+		"status": tftypes.NewValue(tftypes.String, nil),
+	})
+	if resourceOtherwiseChanging(path.Root("status"), plan, state, config) {
+		t.Error("expected NOT changing: an Unknown leaf with a null config counterpart is still inconclusive, not proof of change")
 	}
 }
 

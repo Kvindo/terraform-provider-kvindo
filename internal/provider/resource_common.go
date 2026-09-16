@@ -136,7 +136,7 @@ func (m volatileInfoModifier) PlanModifyObject(ctx context.Context, req planmodi
 	// which apply's real read then contradicts ("Provider produced inconsistent result after
 	// apply"). Caught by TerraformMockTests flipping delete_protection on an already-stable
 	// kvindo_s3_bucket before destroying it.
-	if resourceOtherwiseChanging(req.Path, req.Plan.Raw, req.State.Raw) {
+	if resourceOtherwiseChanging(req.Path, req.Plan.Raw, req.State.Raw, req.Config.Raw) {
 		return
 	}
 	resp.PlanValue = req.StateValue
@@ -152,7 +152,7 @@ func (m volatileInfoModifier) PlanModifyObject(ctx context.Context, req planmodi
 // recursively and only trusts KNOWN leaves - see its own doc comment for why a flat
 // top-level-only check (either a plain Equal(), or an earlier version of this function that
 // skipped a whole sibling via IsFullyKnown()) is wrong in both directions.
-func resourceOtherwiseChanging(ownPath path.Path, planRaw, stateRaw tftypes.Value) bool {
+func resourceOtherwiseChanging(ownPath path.Path, planRaw, stateRaw, configRaw tftypes.Value) bool {
 	// ownPath is always a single top-level attribute name here: volatileInfoModifier is only
 	// ever wired to the "status" key at commonInfoSchema()'s single call site per resource, so
 	// req.Path is never more than one step deep in practice.
@@ -163,11 +163,14 @@ func resourceOtherwiseChanging(ownPath path.Path, planRaw, stateRaw tftypes.Valu
 		}
 	}
 
-	var planAttrs, stateAttrs map[string]tftypes.Value
+	var planAttrs, stateAttrs, configAttrs map[string]tftypes.Value
 	if err := planRaw.As(&planAttrs); err != nil {
 		return true // can't tell -> assume changing, the safe default
 	}
 	if err := stateRaw.As(&stateAttrs); err != nil {
+		return true
+	}
+	if err := configRaw.As(&configAttrs); err != nil {
 		return true
 	}
 
@@ -179,7 +182,11 @@ func resourceOtherwiseChanging(ownPath path.Path, planRaw, stateRaw tftypes.Valu
 		if !ok {
 			return true
 		}
-		if valueGenuinelyDiffers(planVal, stateVal) {
+		configVal, ok := configAttrs[name]
+		if !ok {
+			return true // shape mismatch -> assume changing, same convention as above
+		}
+		if valueGenuinelyDiffers(planVal, stateVal, configVal) {
 			return true
 		}
 	}
@@ -208,18 +215,33 @@ func resourceOtherwiseChanging(ownPath path.Path, planRaw, stateRaw tftypes.Valu
 //     inconsistent result after apply". Caught by DocExampleS3Backups_ApplyAndDestroy flipping
 //     delete_protection on an already-stable kvindo_s3_bucket before destroying it - the exact
 //     scenario resourceOtherwiseChanging was originally written for (see ecae5d2).
+//  3. An Unknown leaf can also mean the user's config explicitly pointed this field at a
+//     not-yet-resolved reference (e.g. spec.postgre_sql_parameters_set_id pointing at a
+//     kvindo_postgresql_parameters_set not yet created) - that's a genuine pending change, not
+//     an ordinary not-yet-resolved computed default, and treating it as inconclusive causes
+//     volatileInfoModifier to freeze status on the first plan, then correctly un-freeze it once
+//     the reference resolves during apply, producing "Provider produced inconsistent final
+//     plan" (confirmed live against kvindo_postgresql.prod_v1, 2026-09-16). The fix: consult
+//     the leaf's configVal - Null means the user never set it (still inconclusive, skip);
+//     non-null (even if itself Unknown) means the user did set it to something pending (report
+//     as differing).
 //
-// The correct rule is per-leaf: an unknown leaf is inconclusive (skip it), a known leaf that
-// differs from state is real evidence of change (report it), regardless of what its siblings
-// inside the same compound value happen to be.
-func valueGenuinelyDiffers(planVal, stateVal tftypes.Value) bool {
+// The correct rule is per-leaf: an unknown leaf whose config counterpart is null is inconclusive
+// (skip it), an unknown leaf whose config counterpart is non-null is a pending user-driven change
+// (report it), and a known leaf that differs from state is real evidence of change (report it),
+// regardless of what its siblings inside the same compound value happen to be.
+func valueGenuinelyDiffers(planVal, stateVal, configVal tftypes.Value) bool {
 	if !planVal.IsKnown() {
-		return false // not resolved yet at this point in the walk - not proof of a real change
+		// Null config -> the user never set this leaf, it's an ordinary computed field whose own
+		// UseStateForUnknown just hasn't resolved yet in this raw snapshot - not proof of change.
+		// Non-null config (even if itself Unknown) -> the user's config is driving a real pending
+		// change here (e.g. a reference to another not-yet-applied resource) - report it.
+		return !configVal.IsNull()
 	}
 
 	// Object and Map both decode to map[string]tftypes.Value - covers every compound attribute
 	// type this schema uses other than lists (security_group_ids etc.), tried next.
-	var planMap, stateMap map[string]tftypes.Value
+	var planMap, stateMap, configMap map[string]tftypes.Value
 	if err := planVal.As(&planMap); err == nil {
 		// A null object/map and an empty one both decode to a zero-length map via tftypes'
 		// own As() (hashicorp/terraform-plugin-go tftypes/value.go: `if val.IsNull() { *target
@@ -231,6 +253,9 @@ func valueGenuinelyDiffers(planVal, stateVal tftypes.Value) bool {
 		if err := stateVal.As(&stateMap); err != nil {
 			return true // shape mismatch between plan/state - treat as a real difference
 		}
+		if err := configVal.As(&configMap); err != nil {
+			return true // config isn't even the same compound shape - can't reason about it, assume changing
+		}
 		for k, pv := range planMap {
 			sv, ok := stateMap[k]
 			if !ok {
@@ -239,7 +264,12 @@ func valueGenuinelyDiffers(planVal, stateVal tftypes.Value) bool {
 				}
 				continue
 			}
-			if valueGenuinelyDiffers(pv, sv) {
+			cv, ok := configMap[k]
+			if !ok {
+				return true // tftypes.Object always carries every declared key (unset = Null) -
+				// a missing key here means configVal is a genuinely different object shape.
+			}
+			if valueGenuinelyDiffers(pv, sv, cv) {
 				return true
 			}
 		}
@@ -247,7 +277,7 @@ func valueGenuinelyDiffers(planVal, stateVal tftypes.Value) bool {
 	}
 
 	// List/Set/Tuple decode to []tftypes.Value.
-	var planList, stateList []tftypes.Value
+	var planList, stateList, configList []tftypes.Value
 	if err := planVal.As(&planList); err == nil {
 		// Same null-vs-empty collapse as the map branch above: tftypes' As() decodes a null
 		// list to a zero-length []Value too, so e.g. spec.extensions going null -> [] (a real,
@@ -266,8 +296,11 @@ func valueGenuinelyDiffers(planVal, stateVal tftypes.Value) bool {
 		if len(planList) != len(stateList) {
 			return true
 		}
+		if err := configVal.As(&configList); err != nil || len(configList) != len(planList) {
+			return true // can't line up config elements with plan elements - assume changing
+		}
 		for i := range planList {
-			if valueGenuinelyDiffers(planList[i], stateList[i]) {
+			if valueGenuinelyDiffers(planList[i], stateList[i], configList[i]) {
 				return true
 			}
 		}
@@ -275,7 +308,8 @@ func valueGenuinelyDiffers(planVal, stateVal tftypes.Value) bool {
 	}
 
 	// Leaf/primitive value: this IS a real, known value now (guarded by IsKnown() above), so a
-	// direct Equal() against state is exactly the right check.
+	// direct Equal() against state is exactly the right check. configVal is irrelevant here -
+	// the new config check above only fires while planVal is still Unknown.
 	return !planVal.Equal(stateVal)
 }
 
