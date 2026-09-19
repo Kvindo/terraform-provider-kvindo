@@ -88,7 +88,7 @@ Required:
 
 Optional:
 
-- `connection_limit` (Number)
+- `connection_limit` (Number) Maximum concurrent connections for this role. Left unset, the role gets a share of the cluster's connection budget, at most 50. When set, it must cover every database the role can reach - the granted ones plus the maintenance database - because the pooler keeps a separate connection pool per database and divides this limit across them.
 - `granted_database_ids` (List of String)
 - `login` (Boolean)
 - `password` (String, Sensitive) Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.

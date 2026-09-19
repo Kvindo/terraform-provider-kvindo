@@ -42,7 +42,7 @@ func (r *PostgresqlUserResource) Metadata(_ context.Context, req resource.Metada
 
 func PostgresqlUserResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"connection_limit":     schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"connection_limit":     schema.Int64Attribute{Optional: true, Computed: true, Description: "Maximum concurrent connections for this role. Left unset, the role gets a share of the cluster's connection budget, at most 50. When set, it must cover every database the role can reach - the granted ones plus the maintenance database - because the pooler keeps a separate connection pool per database and divides this limit across them.", PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
 		"granted_database_ids": schema.ListAttribute{Optional: true, ElementType: types.StringType},
 		"login":                schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
 		"password":             schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, Description: "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
