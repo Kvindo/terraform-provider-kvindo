@@ -42,6 +42,23 @@ resource "kvindo_postgresql_user" "app" {
   }
 }
 
+# A session-pooled user, for an application that needs session-scoped state the default
+# (transaction) pooling does not carry: LISTEN/NOTIFY, temporary tables, WITH HOLD cursors,
+# session-level advisory locks, or `SET`. It holds a server connection for the client's whole
+# session, so connection_limit here is the number of concurrent sessions rather than a budget
+# shared across the databases this user can reach.
+resource "kvindo_postgresql_user" "listener" {
+  metadata = {
+    name = "listener-user"
+  }
+  spec = {
+    postgre_sql_id   = kvindo_postgresql.main.id
+    login            = true
+    connection_limit = 10
+    pool_mode        = "session"
+  }
+}
+
 data "kvindo_vpc_subnet" "app" {
   name = "app-subnet"
 }
@@ -88,10 +105,11 @@ Required:
 
 Optional:
 
-- `connection_limit` (Number) Maximum concurrent connections for this role. Left unset, the role gets a share of the cluster's connection budget, at most 50. When set, it must cover every database the role can reach - the granted ones plus the maintenance database - because the pooler keeps a separate connection pool per database and divides this limit across them.
+- `connection_limit` (Number) Maximum concurrent connections for this role. Left unset, the role gets a share of the cluster's connection budget, at most 50. When set, it must cover every pool the role can reach - the granted databases plus the maintenance database and `postgres` - because the pooler keeps a separate connection pool per database and divides this limit across them. In `session` pooling nothing is divided: there the number is the role's concurrent-session ceiling per pool, so a value below that count is accepted.
 - `granted_database_ids` (List of String)
 - `login` (Boolean)
 - `password` (String, Sensitive) Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.
+- `pool_mode` (String) Pooling mode the connection pooler uses for this role's routes. `transaction` (the default) multiplexes hardest, but cannot carry session-scoped state: LISTEN/NOTIFY, temporary tables, `WITH HOLD` cursors, session-level advisory locks, `SET`, and prepared statements. `session` restores all of that by holding a server connection for the client's whole session, and changes what `connection_limit` means for this role (see that field). `statement` returns the connection after every query, so any multi-statement transaction fails. This attribute is Optional+Computed, so REMOVING it from the configuration leaves the value as it is rather than resetting it - set it to `transaction` explicitly to go back to the default.
 
 
 <a id="nestedatt--status"></a>

@@ -27,6 +27,23 @@ resource "kvindo_postgresql_user" "app" {
   }
 }
 
+# A session-pooled user, for an application that needs session-scoped state the default
+# (transaction) pooling does not carry: LISTEN/NOTIFY, temporary tables, WITH HOLD cursors,
+# session-level advisory locks, or `SET`. It holds a server connection for the client's whole
+# session, so connection_limit here is the number of concurrent sessions rather than a budget
+# shared across the databases this user can reach.
+resource "kvindo_postgresql_user" "listener" {
+  metadata = {
+    name = "listener-user"
+  }
+  spec = {
+    postgre_sql_id   = kvindo_postgresql.main.id
+    login            = true
+    connection_limit = 10
+    pool_mode        = "session"
+  }
+}
+
 data "kvindo_vpc_subnet" "app" {
   name = "app-subnet"
 }

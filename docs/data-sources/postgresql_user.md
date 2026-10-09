@@ -58,6 +58,7 @@ Read-Only:
 - `granted_database_ids` (List of String)
 - `login` (Boolean)
 - `password` (String, Sensitive)
+- `pool_mode` (String)
 - `postgre_sql_id` (String)
 
 

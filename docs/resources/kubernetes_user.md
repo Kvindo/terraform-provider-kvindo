@@ -18,7 +18,7 @@ resource "kvindo_kubernetes" "main" {
     name = "my-cluster"
   }
   spec = {
-    version = "1.30"
+    version = "1.31.6"
   }
 }
 

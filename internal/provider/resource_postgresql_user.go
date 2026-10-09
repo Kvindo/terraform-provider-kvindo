@@ -22,6 +22,7 @@ type PostgresqlUserSpecModel struct {
 	GrantedDatabaseIds types.List   `tfsdk:"granted_database_ids"`
 	Login              types.Bool   `tfsdk:"login"`
 	Password           types.String `tfsdk:"password"`
+	PoolMode           types.String `tfsdk:"pool_mode"`
 	PostgreSqlId       types.String `tfsdk:"postgre_sql_id"`
 }
 
@@ -42,10 +43,11 @@ func (r *PostgresqlUserResource) Metadata(_ context.Context, req resource.Metada
 
 func PostgresqlUserResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"connection_limit":     schema.Int64Attribute{Optional: true, Computed: true, Description: "Maximum concurrent connections for this role. Left unset, the role gets a share of the cluster's connection budget, at most 50. When set, it must cover every database the role can reach - the granted ones plus the maintenance database - because the pooler keeps a separate connection pool per database and divides this limit across them.", PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+		"connection_limit":     schema.Int64Attribute{Optional: true, Computed: true, Description: "Maximum concurrent connections for this role. Left unset, the role gets a share of the cluster's connection budget, at most 50. When set, it must cover every pool the role can reach - the granted databases plus the maintenance database and `postgres` - because the pooler keeps a separate connection pool per database and divides this limit across them. In `session` pooling nothing is divided: there the number is the role's concurrent-session ceiling per pool, so a value below that count is accepted.", PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
 		"granted_database_ids": schema.ListAttribute{Optional: true, ElementType: types.StringType},
 		"login":                schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
 		"password":             schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, Description: "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"pool_mode":            schema.StringAttribute{Optional: true, Computed: true, Description: "Pooling mode the connection pooler uses for this role's routes. `transaction` (the default) multiplexes hardest, but cannot carry session-scoped state: LISTEN/NOTIFY, temporary tables, `WITH HOLD` cursors, session-level advisory locks, `SET`, and prepared statements. `session` restores all of that by holding a server connection for the client's whole session, and changes what `connection_limit` means for this role (see that field). `statement` returns the connection after every query, so any multi-statement transaction fails. This attribute is Optional+Computed, so REMOVING it from the configuration leaves the value as it is rather than resetting it - set it to `transaction` explicitly to go back to the default.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"postgre_sql_id":       schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 	}
 	return map[string]schema.Attribute{
@@ -87,6 +89,9 @@ func buildPostgresqlUserRequestMap(ctx context.Context, plan PostgresqlUserResou
 	if !plan.Spec.Password.IsNull() && !plan.Spec.Password.IsUnknown() {
 		spec["password"] = plan.Spec.Password.ValueString()
 	}
+	if !plan.Spec.PoolMode.IsNull() && !plan.Spec.PoolMode.IsUnknown() {
+		spec["poolMode"] = plan.Spec.PoolMode.ValueString()
+	}
 	if !plan.Spec.PostgreSqlId.IsNull() && !plan.Spec.PostgreSqlId.IsUnknown() {
 		spec["postgreSqlId"] = plan.Spec.PostgreSqlId.ValueString()
 	}
@@ -105,6 +110,7 @@ func populatePostgresqlUserState(ctx context.Context, data map[string]interface{
 	if state.Spec.Password.IsNull() || state.Spec.Password.IsUnknown() {
 		state.Spec.Password = getString(spec, "password")
 	}
+	state.Spec.PoolMode = getString(spec, "poolMode")
 	state.Spec.PostgreSqlId = getString(spec, "postgreSqlId")
 	state.Status = simpleStateInfoObj(data)
 	return nil

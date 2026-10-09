@@ -24,7 +24,7 @@ resource "kvindo_gitlab" "example" {
   spec = {
     vpc_subnet_id   = kvindo_vpc_subnet.main.id
     vm_offer_id     = "01vm0ffr123456789012345"
-    version         = "17.0"
+    version         = "17.5.5"
     root_password   = var.gitlab_password
     volume_size_gib = 100
   }

@@ -34,6 +34,7 @@ func (d *PostgresqlUserDataSource) Schema(_ context.Context, _ datasource.Schema
 		"granted_database_ids": schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"login":                schema.BoolAttribute{Computed: true},
 		"password":             schema.StringAttribute{Computed: true, Sensitive: true},
+		"pool_mode":            schema.StringAttribute{Computed: true},
 		"postgre_sql_id":       schema.StringAttribute{Computed: true},
 	}
 	resp.Schema = schema.Schema{Attributes: map[string]schema.Attribute{
@@ -97,6 +98,7 @@ func (d *PostgresqlUserDataSource) Read(ctx context.Context, req datasource.Read
 	state.Spec.GrantedDatabaseIds = getStringList(ctx, spec, "grantedDatabaseIds")
 	state.Spec.Login = getBool(spec, "login")
 	state.Spec.Password = getString(spec, "password")
+	state.Spec.PoolMode = getString(spec, "poolMode")
 	state.Spec.PostgreSqlId = getString(spec, "postgreSqlId")
 	state.Status = simpleStateInfoObj(apiData)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)

@@ -22,7 +22,7 @@ resource "kvindo_kubernetes" "example" {
     name = "my-cluster"
   }
   spec = {
-    version = "1.30"
+    version = "1.31.6"
     control_plane_locations = [
       {
         vpc_subnet_id = kvindo_vpc_subnet.main.id

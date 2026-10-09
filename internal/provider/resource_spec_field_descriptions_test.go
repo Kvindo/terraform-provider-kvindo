@@ -26,7 +26,7 @@ func TestResourceSchemas_SpecFieldDescriptionsArePresent(t *testing.T) {
 	want := map[string][]string{
 		"kvindo_route_table_attachment": {"vpc_id", "vpc_subnet_id"},
 		"kvindo_valkey_user":            {"key_patterns", "categories", "channels", "password"},
-		"kvindo_postgresql_user":        {"connection_limit", "password"},
+		"kvindo_postgresql_user":        {"connection_limit", "pool_mode", "password"},
 	}
 
 	seen := map[string]bool{}
@@ -98,6 +98,46 @@ func TestPostgresqlUserConnectionLimitDescription_ExplainsTheRule(t *testing.T) 
 		for _, need := range []string{"unset", "50", "maintenance database"} {
 			if !strings.Contains(got, need) {
 				t.Errorf("connection_limit description no longer mentions %q: %q", need, got)
+			}
+		}
+		return
+	}
+	t.Fatal("kvindo_postgresql_user resource not registered")
+}
+
+// The pool-mode description is the ONLY place a practitioner can learn, before an apply, what
+// the three modes mean and how to go back to the default. Pin the substance, not the wording.
+func TestPostgresqlUserPoolModeDescription_ExplainsTheModesAndTheReset(t *testing.T) {
+	p := &KvindoProvider{version: "test"}
+	for _, newResource := range p.Resources(context.Background()) {
+		r := newResource()
+
+		var metaResp resource.MetadataResponse
+		r.Metadata(context.Background(), resource.MetadataRequest{ProviderTypeName: "kvindo"}, &metaResp)
+		if metaResp.TypeName != "kvindo_postgresql_user" {
+			continue
+		}
+
+		var schemaResp resource.SchemaResponse
+		r.Schema(context.Background(), resource.SchemaRequest{}, &schemaResp)
+		spec := schemaResp.Schema.Attributes["spec"].(schema.SingleNestedAttribute)
+
+		attr, ok := spec.Attributes["pool_mode"].(schema.StringAttribute)
+		if !ok {
+			t.Fatalf("pool_mode is not a StringAttribute: %T", spec.Attributes["pool_mode"])
+		}
+		// Optional+Computed is what makes "removing it from the configuration keeps the value"
+		// true, and the description says exactly that - so the two must not drift apart.
+		if !attr.Optional || !attr.Computed {
+			t.Errorf("pool_mode must be Optional+Computed (like connection_limit/login on this "+
+				"resource), got Optional=%v Computed=%v", attr.Optional, attr.Computed)
+		}
+
+		got := strings.ToLower(attr.GetDescription())
+		for _, need := range []string{"transaction", "session", "statement",
+			"listen/notify", "multi-statement", "removing it from the configuration"} {
+			if !strings.Contains(got, need) {
+				t.Errorf("pool_mode description no longer mentions %q: %q", need, got)
 			}
 		}
 		return

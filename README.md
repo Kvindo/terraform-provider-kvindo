@@ -316,7 +316,7 @@ resource "kvindo_kubernetes" "main" {
   metadata = { name = "app-cluster", folder_id = kvindo_folder.main.id }
   spec = {
     vpc_subnet_id = kvindo_vpc_subnet.main.id
-    version       = "1.30"        # see swagger for supported versions
+    version       = "1.31.6"     # see swagger for supported versions
     tier          = "standard"
   }
 }
