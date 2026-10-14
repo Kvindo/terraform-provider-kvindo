@@ -98,6 +98,14 @@ type TransactionSpecModel struct {
 	PostgreSqlUsers                                types.Map  `tfsdk:"postgresql_users"`
 	PostgreSqlDatabases                            types.Map  `tfsdk:"postgresql_databases"`
 	ValkeyUsers                                    types.Map  `tfsdk:"valkey_users"`
+	Kafkas                                         types.Map  `tfsdk:"kafkas"`
+	KafkaParametersSets                            types.Map  `tfsdk:"kafka_parameters_sets"`
+	KafkaTopics                                    types.Map  `tfsdk:"kafka_topics"`
+	KafkaUsers                                     types.Map  `tfsdk:"kafka_users"`
+	Clickhouses                                    types.Map  `tfsdk:"clickhouses"`
+	ClickhouseParametersSets                       types.Map  `tfsdk:"clickhouse_parameters_sets"`
+	ClickhouseDatabases                            types.Map  `tfsdk:"clickhouse_databases"`
+	ClickhouseUsers                                types.Map  `tfsdk:"clickhouse_users"`
 }
 
 // ---------------------------------------------------------------------------

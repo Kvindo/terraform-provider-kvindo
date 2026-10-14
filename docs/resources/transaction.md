@@ -124,6 +124,10 @@ Optional:
 - `access_policies` (Attributes Map) (see [below for nested schema](#nestedatt--spec--access_policies))
 - `billing_accounts` (Attributes Map) (see [below for nested schema](#nestedatt--spec--billing_accounts))
 - `certificates` (Attributes Map) (see [below for nested schema](#nestedatt--spec--certificates))
+- `clickhouse_databases` (Attributes Map) (see [below for nested schema](#nestedatt--spec--clickhouse_databases))
+- `clickhouse_parameters_sets` (Attributes Map) (see [below for nested schema](#nestedatt--spec--clickhouse_parameters_sets))
+- `clickhouse_users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--clickhouse_users))
+- `clickhouses` (Attributes Map) (see [below for nested schema](#nestedatt--spec--clickhouses))
 - `delete_resources_on_transaction_delete` (Boolean)
 - `etcds` (Attributes Map) (see [below for nested schema](#nestedatt--spec--etcds))
 - `floating_ips` (Attributes Map) (see [below for nested schema](#nestedatt--spec--floating_ips))
@@ -133,6 +137,10 @@ Optional:
 - `hosting_providers` (Attributes Map) (see [below for nested schema](#nestedatt--spec--hosting_providers))
 - `image_schedules` (Attributes Map) (see [below for nested schema](#nestedatt--spec--image_schedules))
 - `images` (Attributes Map) (see [below for nested schema](#nestedatt--spec--images))
+- `kafka_parameters_sets` (Attributes Map) (see [below for nested schema](#nestedatt--spec--kafka_parameters_sets))
+- `kafka_topics` (Attributes Map) (see [below for nested schema](#nestedatt--spec--kafka_topics))
+- `kafka_users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--kafka_users))
+- `kafkas` (Attributes Map) (see [below for nested schema](#nestedatt--spec--kafkas))
 - `kubernetes` (Attributes Map) (see [below for nested schema](#nestedatt--spec--kubernetes))
 - `kubernetes_node_groups` (Attributes Map) (see [below for nested schema](#nestedatt--spec--kubernetes_node_groups))
 - `kubernetes_user_roles` (Attributes Map) (see [below for nested schema](#nestedatt--spec--kubernetes_user_roles))
@@ -437,6 +445,494 @@ Optional:
 - `day` (Number)
 - `hour` (Number)
 - `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--clickhouse_databases"></a>
+### Nested Schema for `spec.clickhouse_databases`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_databases--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_databases--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_databases--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--clickhouse_databases--metadata"></a>
+### Nested Schema for `spec.clickhouse_databases.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--clickhouse_databases--spec"></a>
+### Nested Schema for `spec.clickhouse_databases.spec`
+
+Optional:
+
+- `click_house_id` (String)
+
+
+<a id="nestedatt--spec--clickhouse_databases--status"></a>
+### Nested Schema for `spec.clickhouse_databases.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_databases--status--created_by_user))
+- `data_bytes_on_disk` (Number)
+- `declared` (Boolean)
+- `engine` (String)
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_databases--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_databases--status--pricing))
+- `state` (String)
+- `table_count` (Number)
+
+<a id="nestedatt--spec--clickhouse_databases--status--created_by_user"></a>
+### Nested Schema for `spec.clickhouse_databases.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--clickhouse_databases--status--last_change_request"></a>
+### Nested Schema for `spec.clickhouse_databases.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_databases--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--clickhouse_databases--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.clickhouse_databases.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--clickhouse_databases--status--pricing"></a>
+### Nested Schema for `spec.clickhouse_databases.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--clickhouse_parameters_sets"></a>
+### Nested Schema for `spec.clickhouse_parameters_sets`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_parameters_sets--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_parameters_sets--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_parameters_sets--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--clickhouse_parameters_sets--metadata"></a>
+### Nested Schema for `spec.clickhouse_parameters_sets.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--clickhouse_parameters_sets--spec"></a>
+### Nested Schema for `spec.clickhouse_parameters_sets.spec`
+
+Optional:
+
+- `parameters` (Map of String)
+
+
+<a id="nestedatt--spec--clickhouse_parameters_sets--status"></a>
+### Nested Schema for `spec.clickhouse_parameters_sets.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_parameters_sets--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_parameters_sets--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_parameters_sets--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--clickhouse_parameters_sets--status--created_by_user"></a>
+### Nested Schema for `spec.clickhouse_parameters_sets.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--clickhouse_parameters_sets--status--last_change_request"></a>
+### Nested Schema for `spec.clickhouse_parameters_sets.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_parameters_sets--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--clickhouse_parameters_sets--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.clickhouse_parameters_sets.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--clickhouse_parameters_sets--status--pricing"></a>
+### Nested Schema for `spec.clickhouse_parameters_sets.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--clickhouse_users"></a>
+### Nested Schema for `spec.clickhouse_users`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_users--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_users--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_users--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--clickhouse_users--metadata"></a>
+### Nested Schema for `spec.clickhouse_users.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--clickhouse_users--spec"></a>
+### Nested Schema for `spec.clickhouse_users.spec`
+
+Optional:
+
+- `click_house_id` (String)
+- `database_grants` (Attributes List) (see [below for nested schema](#nestedatt--spec--clickhouse_users--spec--database_grants))
+- `enabled` (Boolean)
+- `password` (String, Sensitive)
+- `settings` (Map of String)
+
+<a id="nestedatt--spec--clickhouse_users--spec--database_grants"></a>
+### Nested Schema for `spec.clickhouse_users.spec.database_grants`
+
+Optional:
+
+- `database_name` (String)
+- `role` (String)
+
+
+
+<a id="nestedatt--spec--clickhouse_users--status"></a>
+### Nested Schema for `spec.clickhouse_users.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_users--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_users--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_users--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--clickhouse_users--status--created_by_user"></a>
+### Nested Schema for `spec.clickhouse_users.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--clickhouse_users--status--last_change_request"></a>
+### Nested Schema for `spec.clickhouse_users.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouse_users--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--clickhouse_users--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.clickhouse_users.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--clickhouse_users--status--pricing"></a>
+### Nested Schema for `spec.clickhouse_users.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--clickhouses"></a>
+### Nested Schema for `spec.clickhouses`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouses--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouses--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouses--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--clickhouses--metadata"></a>
+### Nested Schema for `spec.clickhouses.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--clickhouses--spec"></a>
+### Nested Schema for `spec.clickhouses.spec`
+
+Optional:
+
+- `backup_retention_days` (Number)
+- `click_house_version` (String)
+- `create_public_ipv4` (Boolean)
+- `full_backup_interval_days` (Number)
+- `keeper_vm_offer_id` (String)
+- `keeper_volume_offer_id` (String)
+- `keeper_volume_size_gib` (Number)
+- `keepers` (Attributes List) (see [below for nested schema](#nestedatt--spec--clickhouses--spec--keepers))
+- `parameters_set_id` (String)
+- `replicas_per_shard_group` (Number)
+- `shard_groups` (Attributes List) (see [below for nested schema](#nestedatt--spec--clickhouses--spec--shard_groups))
+- `use_fqdn` (Boolean)
+- `vm_offer_id` (String)
+- `volume_offer_id` (String)
+- `volume_size_gib` (Number)
+
+<a id="nestedatt--spec--clickhouses--spec--keepers"></a>
+### Nested Schema for `spec.clickhouses.spec.keepers`
+
+Optional:
+
+- `name` (String)
+- `vpc_subnet_id` (String)
+
+
+<a id="nestedatt--spec--clickhouses--spec--shard_groups"></a>
+### Nested Schema for `spec.clickhouses.spec.shard_groups`
+
+Optional:
+
+- `name` (String)
+- `vpc_subnet_id` (String)
+
+
+
+<a id="nestedatt--spec--clickhouses--status"></a>
+### Nested Schema for `spec.clickhouses.status`
+
+Optional:
+
+- `anti_affinity_message` (String)
+- `anti_affinity_ok` (Boolean)
+- `any_replica_readonly` (Boolean)
+- `ca_certificate` (String)
+- `cluster_name` (String)
+- `cluster_state` (String)
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouses--status--created_by_user))
+- `databases` (Attributes List) (see [below for nested schema](#nestedatt--spec--clickhouses--status--databases))
+- `dns_seed_fqdn` (String)
+- `http_endpoints` (String)
+- `https_endpoints` (String)
+- `keeper_quorum_size` (Number)
+- `keepers` (Attributes List) (see [below for nested schema](#nestedatt--spec--clickhouses--status--keepers))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouses--status--last_change_request))
+- `native_endpoints` (String)
+- `native_tls_endpoints` (String)
+- `nodes` (Attributes List) (see [below for nested schema](#nestedatt--spec--clickhouses--status--nodes))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouses--status--pricing))
+- `public_endpoints` (String)
+- `running_version` (String)
+- `shard_groups` (Attributes List) (see [below for nested schema](#nestedatt--spec--clickhouses--status--shard_groups))
+- `state` (String)
+
+<a id="nestedatt--spec--clickhouses--status--created_by_user"></a>
+### Nested Schema for `spec.clickhouses.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--clickhouses--status--databases"></a>
+### Nested Schema for `spec.clickhouses.status.databases`
+
+Optional:
+
+- `data_bytes_on_disk` (Number)
+- `declared` (Boolean)
+- `engine` (String)
+- `name` (String)
+- `table_count` (Number)
+- `uuid` (String)
+
+
+<a id="nestedatt--spec--clickhouses--status--keepers"></a>
+### Nested Schema for `spec.clickhouses.status.keepers`
+
+Optional:
+
+- `id` (String)
+- `is_leader` (Boolean)
+- `name` (String)
+- `observed_state` (String)
+- `private_ipv4` (String)
+- `server_id` (Number)
+- `znode_count` (Number)
+
+
+<a id="nestedatt--spec--clickhouses--status--last_change_request"></a>
+### Nested Schema for `spec.clickhouses.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouses--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--clickhouses--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.clickhouses.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--clickhouses--status--nodes"></a>
+### Nested Schema for `spec.clickhouses.status.nodes`
+
+Optional:
+
+- `absolute_delay_seconds` (Number)
+- `announce_fqdn` (String)
+- `disk_free_bytes` (Number)
+- `disk_used_bytes` (Number)
+- `id` (String)
+- `name` (String)
+- `observed_state` (String)
+- `parts_count` (Number)
+- `private_ipv4` (String)
+- `public_ipv4` (String)
+- `running_version` (String)
+- `shard_index` (Number)
+
+
+<a id="nestedatt--spec--clickhouses--status--pricing"></a>
+### Nested Schema for `spec.clickhouses.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+<a id="nestedatt--spec--clickhouses--status--shard_groups"></a>
+### Nested Schema for `spec.clickhouses.status.shard_groups`
+
+Optional:
+
+- `any_replica_readonly` (Boolean)
+- `backup` (Attributes) (see [below for nested schema](#nestedatt--spec--clickhouses--status--shard_groups--backup))
+- `data_bytes_on_disk` (Number)
+- `max_absolute_delay_seconds` (Number)
+- `replica_endpoints` (List of String)
+- `replica_instance_ids` (List of String)
+- `replicated_table_count` (Number)
+- `replication_queue_size` (Number)
+- `rows` (Number)
+- `shard_group_name` (String)
+- `shard_index` (Number)
+
+<a id="nestedatt--spec--clickhouses--status--shard_groups--backup"></a>
+### Nested Schema for `spec.clickhouses.status.shard_groups.backup`
+
+Optional:
+
+- `last_backup_name` (String)
+- `last_backup_time` (String)
+- `last_backup_type` (String)
+- `last_check_ok` (Boolean)
+- `last_check_time` (String)
+- `message` (String)
+
 
 
 
@@ -1291,6 +1787,450 @@ Optional:
 - `offer_id` (String)
 - `os_image_id` (String)
 - `size_bytes` (Number)
+
+
+
+
+<a id="nestedatt--spec--kafka_parameters_sets"></a>
+### Nested Schema for `spec.kafka_parameters_sets`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_parameters_sets--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_parameters_sets--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_parameters_sets--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--kafka_parameters_sets--metadata"></a>
+### Nested Schema for `spec.kafka_parameters_sets.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--kafka_parameters_sets--spec"></a>
+### Nested Schema for `spec.kafka_parameters_sets.spec`
+
+Optional:
+
+- `parameters` (Map of String)
+
+
+<a id="nestedatt--spec--kafka_parameters_sets--status"></a>
+### Nested Schema for `spec.kafka_parameters_sets.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_parameters_sets--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_parameters_sets--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_parameters_sets--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--kafka_parameters_sets--status--created_by_user"></a>
+### Nested Schema for `spec.kafka_parameters_sets.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--kafka_parameters_sets--status--last_change_request"></a>
+### Nested Schema for `spec.kafka_parameters_sets.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_parameters_sets--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--kafka_parameters_sets--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.kafka_parameters_sets.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--kafka_parameters_sets--status--pricing"></a>
+### Nested Schema for `spec.kafka_parameters_sets.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--kafka_topics"></a>
+### Nested Schema for `spec.kafka_topics`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_topics--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_topics--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_topics--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--kafka_topics--metadata"></a>
+### Nested Schema for `spec.kafka_topics.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--kafka_topics--spec"></a>
+### Nested Schema for `spec.kafka_topics.spec`
+
+Optional:
+
+- `config` (Map of String)
+- `kafka_id` (String)
+- `partitions` (Number)
+- `replication_factor` (Number)
+
+
+<a id="nestedatt--spec--kafka_topics--status"></a>
+### Nested Schema for `spec.kafka_topics.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_topics--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_topics--status--last_change_request))
+- `offline_partitions` (Number)
+- `partition_count` (Number)
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_topics--status--pricing))
+- `replication_factor` (Number)
+- `size_bytes` (Number)
+- `state` (String)
+- `under_replicated_partitions` (Number)
+
+<a id="nestedatt--spec--kafka_topics--status--created_by_user"></a>
+### Nested Schema for `spec.kafka_topics.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--kafka_topics--status--last_change_request"></a>
+### Nested Schema for `spec.kafka_topics.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_topics--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--kafka_topics--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.kafka_topics.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--kafka_topics--status--pricing"></a>
+### Nested Schema for `spec.kafka_topics.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--kafka_users"></a>
+### Nested Schema for `spec.kafka_users`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_users--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_users--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_users--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--kafka_users--metadata"></a>
+### Nested Schema for `spec.kafka_users.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--kafka_users--spec"></a>
+### Nested Schema for `spec.kafka_users.spec`
+
+Optional:
+
+- `consumer_group_prefixes` (List of String)
+- `enabled` (Boolean)
+- `kafka_id` (String)
+- `password` (String, Sensitive)
+- `topic_grants` (Attributes List) (see [below for nested schema](#nestedatt--spec--kafka_users--spec--topic_grants))
+
+<a id="nestedatt--spec--kafka_users--spec--topic_grants"></a>
+### Nested Schema for `spec.kafka_users.spec.topic_grants`
+
+Optional:
+
+- `pattern_type` (String)
+- `role` (String)
+- `topic_pattern` (String)
+
+
+
+<a id="nestedatt--spec--kafka_users--status"></a>
+### Nested Schema for `spec.kafka_users.status`
+
+Optional:
+
+- `acl_count` (Number)
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_users--status--created_by_user))
+- `credential_present` (Boolean)
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_users--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_users--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--kafka_users--status--created_by_user"></a>
+### Nested Schema for `spec.kafka_users.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--kafka_users--status--last_change_request"></a>
+### Nested Schema for `spec.kafka_users.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--kafka_users--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--kafka_users--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.kafka_users.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--kafka_users--status--pricing"></a>
+### Nested Schema for `spec.kafka_users.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--kafkas"></a>
+### Nested Schema for `spec.kafkas`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--kafkas--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--kafkas--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--kafkas--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--kafkas--metadata"></a>
+### Nested Schema for `spec.kafkas.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--kafkas--spec"></a>
+### Nested Schema for `spec.kafkas.spec`
+
+Optional:
+
+- `broker_vm_offer_id` (String)
+- `broker_volume_offer_id` (String)
+- `broker_volume_size_gib` (Number)
+- `brokers` (Attributes List) (see [below for nested schema](#nestedatt--spec--kafkas--spec--brokers))
+- `controller_vm_offer_id` (String)
+- `controller_volume_offer_id` (String)
+- `controller_volume_size_gib` (Number)
+- `controllers` (Attributes List) (see [below for nested schema](#nestedatt--spec--kafkas--spec--controllers))
+- `create_public_ipv4` (Boolean)
+- `kafka_version` (String)
+- `parameters_set_id` (String)
+- `use_fqdn` (Boolean)
+
+<a id="nestedatt--spec--kafkas--spec--brokers"></a>
+### Nested Schema for `spec.kafkas.spec.brokers`
+
+Optional:
+
+- `name` (String)
+- `vpc_subnet_id` (String)
+
+
+<a id="nestedatt--spec--kafkas--spec--controllers"></a>
+### Nested Schema for `spec.kafkas.spec.controllers`
+
+Optional:
+
+- `name` (String)
+- `vpc_subnet_id` (String)
+
+
+
+<a id="nestedatt--spec--kafkas--status"></a>
+### Nested Schema for `spec.kafkas.status`
+
+Optional:
+
+- `active_controller_count` (Number)
+- `anti_affinity_message` (String)
+- `anti_affinity_ok` (Boolean)
+- `bootstrap_servers_plaintext` (String)
+- `bootstrap_servers_public` (String)
+- `bootstrap_servers_tls` (String)
+- `brokers` (Attributes List) (see [below for nested schema](#nestedatt--spec--kafkas--status--brokers))
+- `ca_certificate` (String)
+- `cluster_id` (String)
+- `cluster_state` (String)
+- `controllers` (Attributes List) (see [below for nested schema](#nestedatt--spec--kafkas--status--controllers))
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--kafkas--status--created_by_user))
+- `dns_seed_fqdn` (String)
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--kafkas--status--last_change_request))
+- `offline_partitions` (Number)
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--kafkas--status--pricing))
+- `quorum_leader_node_id` (Number)
+- `state` (String)
+- `under_replicated_partitions` (Number)
+- `unexpected_topics` (String)
+
+<a id="nestedatt--spec--kafkas--status--brokers"></a>
+### Nested Schema for `spec.kafkas.status.brokers`
+
+Optional:
+
+- `announce_fqdn` (String)
+- `id` (String)
+- `leader_partition_count` (Number)
+- `log_dir_used_bytes` (Number)
+- `name` (String)
+- `node_id` (Number)
+- `observed_state` (String)
+- `private_ipv4` (String)
+- `public_ipv4` (String)
+- `under_replicated_partitions` (Number)
+
+
+<a id="nestedatt--spec--kafkas--status--controllers"></a>
+### Nested Schema for `spec.kafkas.status.controllers`
+
+Optional:
+
+- `id` (String)
+- `is_quorum_leader` (Boolean)
+- `lag_offsets` (Number)
+- `name` (String)
+- `node_id` (Number)
+- `observed_state` (String)
+- `private_ipv4` (String)
+
+
+<a id="nestedatt--spec--kafkas--status--created_by_user"></a>
+### Nested Schema for `spec.kafkas.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--kafkas--status--last_change_request"></a>
+### Nested Schema for `spec.kafkas.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--kafkas--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--kafkas--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.kafkas.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--kafkas--status--pricing"></a>
+### Nested Schema for `spec.kafkas.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
 
 
 

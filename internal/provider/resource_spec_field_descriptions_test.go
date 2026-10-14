@@ -27,6 +27,12 @@ func TestResourceSchemas_SpecFieldDescriptionsArePresent(t *testing.T) {
 		"kvindo_route_table_attachment": {"vpc_id", "vpc_subnet_id"},
 		"kvindo_valkey_user":            {"key_patterns", "categories", "channels", "password"},
 		"kvindo_postgresql_user":        {"connection_limit", "pool_mode", "password"},
+		// Kafka: only the fields whose meaning is NOT inferable from the name and where guessing wrong
+		// is expensive - the two member arrays (1..N grow-only vs exactly 1-or-3), the one genuinely
+		// immutable sizing field, and the version constraint that depends on what the image prefetched.
+		"kvindo_kafka":       {"brokers", "controllers", "broker_volume_size_gib", "kafka_version"},
+		"kvindo_kafka_topic": {"replication_factor", "partitions"},
+		"kvindo_kafka_user":  {"password", "topic_grants", "consumer_group_prefixes"},
 	}
 
 	seen := map[string]bool{}
@@ -143,4 +149,53 @@ func TestPostgresqlUserPoolModeDescription_ExplainsTheModesAndTheReset(t *testin
 		return
 	}
 	t.Fatal("kvindo_postgresql_user resource not registered")
+}
+
+// replication_factor is the one field on this provider where a plausible-looking value silently
+// destroys fault tolerance: `1` is legal, so a user who writes 1 meaning "unset" gets a
+// single-replica topic on a 3-broker cluster and no error at all. The description is the only place
+// that can be learned before an apply, and the Optional+Computed shape is what makes "omit it" mean
+// "keep what the cluster resolved" - so pin both, substance not wording.
+func TestKafkaTopicReplicationFactorDescription_WarnsThatOneIsNotUnset(t *testing.T) {
+	p := &KvindoProvider{version: "test"}
+	for _, newResource := range p.Resources(context.Background()) {
+		r := newResource()
+
+		var metaResp resource.MetadataResponse
+		r.Metadata(context.Background(), resource.MetadataRequest{ProviderTypeName: "kvindo"}, &metaResp)
+		if metaResp.TypeName != "kvindo_kafka_topic" {
+			continue
+		}
+
+		var schemaResp resource.SchemaResponse
+		r.Schema(context.Background(), resource.SchemaRequest{}, &schemaResp)
+		spec := schemaResp.Schema.Attributes["spec"].(schema.SingleNestedAttribute)
+
+		attr, ok := spec.Attributes["replication_factor"].(schema.Int64Attribute)
+		if !ok {
+			t.Fatalf("replication_factor is not an Int64Attribute: %T", spec.Attributes["replication_factor"])
+		}
+		// Optional+Computed is load-bearing: it is what lets an omitted value keep the
+		// service-resolved factor instead of plan-diffing back to null on every refresh.
+		if !attr.Optional || !attr.Computed {
+			t.Errorf("replication_factor must be Optional+Computed so omitting it keeps the resolved "+
+				"value, got Optional=%v Computed=%v", attr.Optional, attr.Computed)
+		}
+
+		got := strings.ToLower(attr.GetDescription())
+		for _, need := range []string{
+			"omit",             // the resolution rule is reachable by leaving it out
+			"not a way to say", // 1 is an explicit request, not a sentinel
+			"single replica",   // and this is what it costs you
+			"broker count",     // the bound it is validated against
+			"asynchronous",     // enforced by the service, so it surfaces on the request
+			"immutable",        // cannot be changed afterwards
+		} {
+			if !strings.Contains(got, need) {
+				t.Errorf("replication_factor description no longer mentions %q: %q", need, got)
+			}
+		}
+		return
+	}
+	t.Fatal("kvindo_kafka_topic resource not registered")
 }

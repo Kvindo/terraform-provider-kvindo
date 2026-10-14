@@ -121,6 +121,18 @@ groups fields into the `metadata` / `spec` / `status` blocks.
 ### Etcd
 - `kvindo_etcd` — Managed etcd cluster
 
+### Kafka
+- `kvindo_kafka` — Managed Kafka cluster (KRaft: controllers and brokers, no ZooKeeper)
+- `kvindo_kafka_topic` — Topic inside a cluster
+- `kvindo_kafka_user` — SCRAM principal with ACLs
+- `kvindo_kafka_parameters_set` — Kafka parameter configuration
+
+### ClickHouse
+- `kvindo_clickhouse` — Managed ClickHouse cluster
+- `kvindo_clickhouse_database` — Database inside a cluster
+- `kvindo_clickhouse_user` — Database user with per-database grants
+- `kvindo_clickhouse_parameters_set` — ClickHouse parameter configuration
+
 ### Valkey
 - `kvindo_valkey` — Managed Valkey cluster
 - `kvindo_valkey_user` — ACL user inside a cluster

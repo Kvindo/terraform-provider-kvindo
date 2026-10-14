@@ -67,15 +67,17 @@ func TestTransactionSchema_SubResourcesAreNested(t *testing.T) {
 }
 
 func TestTransactionRegistry_CoversAllMaps(t *testing.T) {
-	// Every registry tfKey must be a real schema attribute. There are 67 transactable sub-types
+	// Every registry tfKey must be a real schema attribute. There are 75 transactable sub-types
 	// (the transaction's own "labels" map is not a sub-resource) - bumped from 61 when
 	// on_off_schedules/vm_command_schedules/postgresqls/postgresql_users/postgresql_databases/
 	// valkey_users were added (review finding #13: these 6 backend-supported TransactionSpec.cs
-	// array properties had no txnSubs entry at all). If TransactionSpec.cs (avant.cloud) gains
-	// another array property, update this count AND add its txnSubs entry together - nothing
-	// automated catches one without the other.
-	if len(txnSubs) != 67 {
-		t.Errorf("expected 67 transactable sub-types, got %d", len(txnSubs))
+	// array properties had no txnSubs entry at all), 67 -> 71 when the Kafka family
+	// (kafkas/kafka_parameters_sets/kafka_topics/kafka_users) landed, and 71 -> 75
+	// when ClickHouse (clickHouses/clickhouse_parameters_sets/clickhouse_databases/clickhouse_users)
+	// landed. If TransactionSpec.cs (avant.cloud) gains another array property, update this count AND
+	// add its txnSubs entry together - nothing automated catches one without the other.
+	if len(txnSubs) != 75 {
+		t.Errorf("expected 75 transactable sub-types, got %d", len(txnSubs))
 	}
 	seen := map[string]bool{}
 	for _, s := range txnSubs {
@@ -88,10 +90,12 @@ func TestTransactionRegistry_CoversAllMaps(t *testing.T) {
 		}
 	}
 	// Named-key check, not just the count above: a count-only assertion could stay green even if
-	// one of these 6 were mis-added while an unrelated pre-existing entry was accidentally dropped.
+	// one of these were mis-added while an unrelated pre-existing entry was accidentally dropped.
 	for _, want := range []string{
 		"on_off_schedules", "vm_command_schedules", "postgresqls",
 		"postgresql_users", "postgresql_databases", "valkey_users",
+		"kafkas", "kafka_parameters_sets", "kafka_topics", "kafka_users",
+		"clickhouses", "clickhouse_parameters_sets", "clickhouse_databases", "clickhouse_users",
 	} {
 		if !seen[want] {
 			t.Errorf("expected txnSubs to contain tfKey %q", want)

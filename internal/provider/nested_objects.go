@@ -320,17 +320,28 @@ func objResourceSchemaImmutable(fields []objField) rschema.Attribute {
 
 // listObjResourceSchema builds an Optional+Computed ListNestedAttribute for a list of objects.
 // Same container-level UseStateForUnknown reasoning as objResourceSchema above.
-func listObjResourceSchema(fields []objField) rschema.Attribute {
+//
+// description is variadic purely so every existing single-argument call site keeps compiling: the
+// generator passes one when specFieldDescriptions has an entry for this list field, and none
+// otherwise. A list-valued spec field is exactly where a description earns its keep - the element
+// shape says nothing about the cardinality rule ("exactly 1 or 3", "grow-only, no shrink") or about
+// which nested key is the real identity, and tfplugindocs renders the public Registry page straight
+// from this schema, so an undocumented list arrives there as a bare "(Attributes List)".
+func listObjResourceSchema(fields []objField, description ...string) rschema.Attribute {
 	attrs := make(map[string]rschema.Attribute, len(fields))
 	for _, f := range fields {
 		attrs[f.TF] = objLeafResourceSchema(f)
 	}
-	return rschema.ListNestedAttribute{
+	attr := rschema.ListNestedAttribute{
 		Optional:      true,
 		Computed:      true,
 		NestedObject:  rschema.NestedAttributeObject{Attributes: attrs},
 		PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 	}
+	if len(description) > 0 {
+		attr.Description = description[0]
+	}
+	return attr
 }
 
 // objLeafStatusSchema/objStatusSchema/listObjStatusSchema are objLeafResourceSchema/

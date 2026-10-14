@@ -197,6 +197,8 @@ var sensitiveSpecFields = map[string]map[string]bool{
 	"certificate":     {"private_key_pem": true},
 	"etcd":            {"root_password": true},
 	"gitlab":          {"root_password": true},
+	"kafka_user":      {"password": true},
+	"clickhouse_user": {"password": true},
 	"ollama":          {"root_password": true},
 	"postgresql_user": {"password": true},
 	"ssh_private_key": {"private_key": true},
@@ -227,6 +229,21 @@ var immutableSpecFields = map[string]map[string]bool{
 		"vpc_subnet_id": true, "volume_offer_id": true, "volume_size_gib": true, "tier": true,
 		"vm_offer_id": true, "root_password": true, "vm_state": true,
 	},
+	// Exactly the set KafkaResourceController rejects on modify (verified against the controller,
+	// same 1:1 rule valkey/postgresql follow): each rewrites every node's advertised listeners or the
+	// on-disk format, or would resize a KRaft voter, which is a dynamic-quorum operation v1 lacks.
+	// Note what is NOT here: broker_vm_offer_id and broker_volume_offer_id ARE mutable (only the
+	// brokers' volume SIZE is fixed, since the volume is the node's log directory and nothing grows
+	// the filesystem inside the guest). Marking those two would force a needless cluster replace.
+	// RequiresReplace on a data-bearing cluster is destructive, but it is what the plan review exists
+	// to surface - the alternative is a 422 partway through an apply.
+	"kafka": {
+		"kafka_version": true, "use_fqdn": true, "create_public_ipv4": true,
+		"controller_vm_offer_id": true, "controller_volume_offer_id": true,
+		"controller_volume_size_gib": true, "broker_volume_size_gib": true,
+	},
+	"kafka_topic":         {"kafka_id": true},
+	"kafka_user":          {"kafka_id": true},
 	"postgresql":          {"create_public_ipv4": true, "restore_configuration": true},
 	"valkey":              {"create_public_ipv4": true},
 	"etcd":                {"create_public_ipv4": true},
@@ -251,6 +268,11 @@ var immutableNestedFields = map[string]map[string]bool{
 	"postgresql": {"vpc_subnet_id": true},
 	"valkey":     {"vpc_subnet_id": true},
 	"etcd":       {"vpc_subnet_id": true},
+	// One entry covers BOTH of Kafka's member arrays: applyImmutableNestedFields walks every
+	// list_object spec field, and KafkaResourceController rejects a moved subnet for a broker
+	// ("remove and re-add the broker under a different name instead") and for a controller
+	// ("moving a voter is not implemented yet") alike.
+	"kafka": {"vpc_subnet_id": true},
 }
 
 // writeOnlySensitiveSpecFields[resource][tf_field] = true marks a Sensitive+Optional+Computed
@@ -278,6 +300,8 @@ var immutableNestedFields = map[string]map[string]bool{
 //     write-only field needs (the same drift-free-once-set behavior established Terraform
 //     providers use for e.g. RDS master passwords).
 var writeOnlySensitiveSpecFields = map[string]map[string]bool{
+	"clickhouse_user": {"password": true},
+	"kafka_user":      {"password": true},
 	"postgresql_user": {"password": true},
 	"valkey_user":     {"password": true},
 }
@@ -302,6 +326,44 @@ var specFieldDescriptions = map[string]map[string]string{
 		"connection_limit": "Maximum concurrent connections for this role. Left unset, the role gets a share of the cluster's connection budget, at most 50. When set, it must cover every pool the role can reach - the granted databases plus the maintenance database and `postgres` - because the pooler keeps a separate connection pool per database and divides this limit across them. In `session` pooling nothing is divided: there the number is the role's concurrent-session ceiling per pool, so a value below that count is accepted.",
 		"pool_mode":        "Pooling mode the connection pooler uses for this role's routes. `transaction` (the default) multiplexes hardest, but cannot carry session-scoped state: LISTEN/NOTIFY, temporary tables, `WITH HOLD` cursors, session-level advisory locks, `SET`, and prepared statements. `session` restores all of that by holding a server connection for the client's whole session, and changes what `connection_limit` means for this role (see that field). `statement` returns the connection after every query, so any multi-statement transaction fails. This attribute is Optional+Computed, so REMOVING it from the configuration leaves the value as it is rather than resetting it - set it to `transaction` explicitly to go back to the default.",
 		"password":         "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. If left unset, the platform generates a random password on create, which will never appear in state or plan output.",
+	},
+	"kafka": {
+		"brokers":     "Broker members, one entry each. 1..N and grow-only: Kafka has no broker shrink, so removing an entry is rejected rather than silently ignored. `name` is the real identity - reusing a name across applies keeps that broker and its VM, while renaming is treated as remove-and-add.",
+		"controllers": "KRaft controller members. EXACTLY 1 or 3 - the metadata quorum needs an odd voter count, and 1 is a supported non-HA tier that can later be grown to 3. Shrinking is rejected, and an existing controller cannot be moved or resized.",
+		// The two triplets exist because the roles do different jobs; saying so on each field is what
+		// stops a user from sizing controllers like brokers and paying for it.
+		"broker_vm_offer_id":         "Compute offer applied to EVERY broker. One triplet per role rather than per member: a role's nodes are interchangeable by design, so a heterogeneous role cannot be expressed. Omitting it resolves to the role default and the resolved value is written back.",
+		"broker_volume_offer_id":     "Disk offer applied to every broker's log volume.",
+		"broker_volume_size_gib":     "Log volume size per broker, in GiB. IMMUTABLE after create: the volume is the node's log directory and nothing grows the filesystem inside the guest, so plan growth rather than assuming a later resize.",
+		"controller_vm_offer_id":     "Compute offer applied to EVERY controller. A controller only serves the metadata quorum and holds no tenant data, so it is sized far smaller than a broker. Immutable after create - resizing a voter is a dynamic-quorum operation.",
+		"controller_volume_offer_id": "Disk offer applied to every controller. Immutable after create.",
+		"controller_volume_size_gib": "Metadata volume size per controller, in GiB. Immutable after create.",
+		"kafka_version":              "Full patch version, and it must be one the deployed image prefetched - Kafka is installed only from the tarball shipped in that image, so an unprefetched version cannot be installed. IMMUTABLE: there is no rolling upgrade in v1.",
+		"use_fqdn":                   "Advertise DNS names instead of raw IPs, so a node's address can change without every client re-seeding. Immutable: it rewrites every broker's advertised listeners, which connected clients have already cached.",
+		"create_public_ipv4":         "Add the public TLS listener (port 9096) on a floating IP. The plaintext listener stays bound to the private network, so a public cluster is never reachable without TLS. Immutable: it adds or removes a whole advertised listener.",
+	},
+	"kafka_topic": {
+		// The single most dangerous field in this resource: 1 is a valid explicit value, so a user who
+		// reaches for it as "unset" silently drops all fault tolerance.
+		"replication_factor": "OMIT this to let the platform resolve it - on create it takes the cluster's effective `default.replication.factor` (`min(3, broker count)` unless overridden), and on a later apply it keeps the topic's current factor. Sending `1` is NOT a way to say unset: it is an explicit request that pins the topic to a single replica, which on a 3-broker cluster silently removes all fault tolerance. An explicit value must be 1..broker count; exceeding it is rejected ASYNCHRONOUSLY by the service when it applies the change, so the failure appears on the request, not as a plan-time or submit-time error. Immutable once set.",
+		"partitions":         "Partition count. Increase-only: Kafka has no partition-decrease operation, so a reduction is rejected rather than silently ignored.",
+		"kafka_id":           "The cluster this topic lives in. Immutable - a topic cannot move between clusters.",
+	},
+	"kafka_user": {
+		"kafka_id": "The cluster this SCRAM principal belongs to. Immutable - a user cannot move between clusters.",
+		// NOT the valkey/postgresql wording: Kafka has no server-side password generation, so
+		// "leave it unset and the platform generates one" would promise something the API refuses.
+		"password":                "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. Unlike valkey_user/postgresql_user there is NO server-side generation: KafkaUserResourceController rejects a CREATE with `enabled` true and an empty password (`KafkaUser requires Password when Enabled is true`), so it must be supplied - a create with `enabled` false and no password is allowed (a pre-locked principal). Omitting it on a MODIFY is legitimate and carries the existing credential forward from the change request.",
+		"topic_grants":            "Role-based grants, not raw Kafka ACL tuples: `Producer` or `Consumer` on a `Literal` topic name or a `Prefixed` pattern, and the platform expands each into the operations Kafka actually needs (Write+Describe, or Read+Describe plus the group ACLs). There is no Admin role in this release.",
+		"consumer_group_prefixes": "Consumer-group ACLs, prefix-matched; `\"*\"` is an accepted explicit value for all groups. REQUIRED as soon as any grant is a `Consumer` - a consumer that cannot reach its group cannot commit offsets, so the request is rejected at submit time rather than failing later with an authorization error that points nowhere useful.",
+		"enabled":                 "Authentication switch. `false` LOCKS the user: the SCRAM credential is overwritten with an unusable random password while every ACL stays in place, so re-enabling is one write instead of a full re-grant.",
+	},
+	"clickhouse_user": {
+		"click_house_id": "The cluster this database user belongs to. Immutable - a user cannot move between clusters.",
+		// Same reason as kafka_user's: ClickHouse has no server-side generation either, so the
+		// valkey/postgresql "leave it unset and the platform generates one" wording would be false.
+		"password": "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. Unlike valkey_user/postgresql_user there is NO server-side generation: ClickHouseUserResourceController rejects a CREATE with `enabled` true and an empty password (`ClickHouseUser requires Password when Enabled is true`), so it must be supplied - a create with `enabled` false and no password is allowed (a pre-locked principal).",
+		"enabled":  "Authentication switch. `false` locks the user; re-enabling is one write rather than a full re-grant.",
 	},
 }
 
@@ -1552,7 +1614,16 @@ func generateResourceFile(r ResourceDef) string {
 					expr = fmt.Sprintf("objResourceSchema(%s)", descVarName(sn, f))
 				}
 			case "list_object":
-				expr = fmt.Sprintf("listObjResourceSchema(%s)", descVarName(sn, f))
+				// A list-valued spec field can carry a Description too, but only through the variadic
+				// second argument - listObjResourceSchema's single-arg form has nowhere to put one,
+				// which is why brokers/controllers/topic_grants rendered undocumented on the Registry
+				// page until this existed. Cardinality rules and "which nested key is the identity"
+				// are exactly what an element shape cannot express.
+				if d := specFieldDescriptions[r.Name][f.TFName]; d != "" {
+					expr = fmt.Sprintf("listObjResourceSchema(%s, %q)", descVarName(sn, f), d)
+				} else {
+					expr = fmt.Sprintf("listObjResourceSchema(%s)", descVarName(sn, f))
+				}
 			default:
 				expr = resourceAttrDef(r.Name, f)
 			}

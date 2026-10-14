@@ -501,4 +501,65 @@ var txnSubs = []txnSub{
 		build:    txnBuild(buildValkeyUserRequestMap),
 		populate: txnPop[ValkeyUserResourceModel](populateValkeyUserState, ValkeyUserResourceSchemaAttrs),
 	},
+	// KafkaParametersSets before Kafkas - same dependency order as valkey_parameters_sets: a cluster
+	// references a set, so the set has to exist first when both are in one transaction.
+	{
+		tfKey: "kafka_parameters_sets", apiKey: "kafkaParametersSets", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.KafkaParametersSets },
+		attrs:    KafkaParametersSetResourceSchemaAttrs,
+		build:    txnBuild(buildKafkaParametersSetRequestMap),
+		populate: txnPop[KafkaParametersSetResourceModel](populateKafkaParametersSetState, KafkaParametersSetResourceSchemaAttrs),
+	},
+	{
+		tfKey: "kafkas", apiKey: "kafkas", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.Kafkas },
+		attrs:    KafkaResourceSchemaAttrs,
+		build:    txnBuild(buildKafkaRequestMap),
+		populate: txnPop[KafkaResourceModel](populateKafkaState, KafkaResourceSchemaAttrs),
+	},
+	// KafkaTopics and KafkaUsers after Kafkas - both depend on kafka_id.
+	{
+		tfKey: "kafka_topics", apiKey: "kafkaTopics", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.KafkaTopics },
+		attrs:    KafkaTopicResourceSchemaAttrs,
+		build:    txnBuild(buildKafkaTopicRequestMap),
+		populate: txnPop[KafkaTopicResourceModel](populateKafkaTopicState, KafkaTopicResourceSchemaAttrs),
+	},
+	{
+		tfKey: "kafka_users", apiKey: "kafkaUsers", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.KafkaUsers },
+		attrs:    KafkaUserResourceSchemaAttrs,
+		build:    txnBuild(buildKafkaUserRequestMap),
+		populate: txnPop[KafkaUserResourceModel](populateKafkaUserState, KafkaUserResourceSchemaAttrs),
+	},
+	// ClickHouseParametersSets before ClickHouses - cluster references a set.
+	{
+		tfKey: "clickhouse_parameters_sets", apiKey: "clickhouseParametersSets", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.ClickhouseParametersSets },
+		attrs:    ClickhouseParametersSetResourceSchemaAttrs,
+		build:    txnBuild(buildClickhouseParametersSetRequestMap),
+		populate: txnPop[ClickhouseParametersSetResourceModel](populateClickhouseParametersSetState, ClickhouseParametersSetResourceSchemaAttrs),
+	},
+	{
+		tfKey: "clickhouses", apiKey: "clickHouses", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.Clickhouses },
+		attrs:    ClickhouseResourceSchemaAttrs,
+		build:    txnBuild(buildClickhouseRequestMap),
+		populate: txnPop[ClickhouseResourceModel](populateClickhouseState, ClickhouseResourceSchemaAttrs),
+	},
+	// ClickhouseDatabases and ClickhouseUsers after Clickhouses - both depend on clickhouse_id.
+	{
+		tfKey: "clickhouse_databases", apiKey: "clickHouseDatabases", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.ClickhouseDatabases },
+		attrs:    ClickhouseDatabaseResourceSchemaAttrs,
+		build:    txnBuild(buildClickhouseDatabaseRequestMap),
+		populate: txnPop[ClickhouseDatabaseResourceModel](populateClickhouseDatabaseState, ClickhouseDatabaseResourceSchemaAttrs),
+	},
+	{
+		tfKey: "clickhouse_users", apiKey: "clickHouseUsers", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.ClickhouseUsers },
+		attrs:    ClickhouseUserResourceSchemaAttrs,
+		build:    txnBuild(buildClickhouseUserRequestMap),
+		populate: txnPop[ClickhouseUserResourceModel](populateClickhouseUserState, ClickhouseUserResourceSchemaAttrs),
+	},
 }
