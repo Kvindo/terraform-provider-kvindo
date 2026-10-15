@@ -56,6 +56,7 @@ Read-Only:
 
 - `backup_retention_days` (Number)
 - `create_public_ipv4` (Boolean)
+- `etcd_instances` (Attributes List) (see [below for nested schema](#nestedatt--spec--etcd_instances))
 - `postgre_sql_parameters_set_id` (String)
 - `replicas_per_shard_group` (Number)
 - `restore_configuration` (Attributes) (see [below for nested schema](#nestedatt--spec--restore_configuration))
@@ -65,6 +66,15 @@ Read-Only:
 - `vm_offer_id` (String)
 - `volume_offer_id` (String)
 - `volume_size_gib` (Number)
+
+<a id="nestedatt--spec--etcd_instances"></a>
+### Nested Schema for `spec.etcd_instances`
+
+Read-Only:
+
+- `id` (String)
+- `vpc_subnet_id` (String)
+
 
 <a id="nestedatt--spec--restore_configuration"></a>
 ### Nested Schema for `spec.restore_configuration`

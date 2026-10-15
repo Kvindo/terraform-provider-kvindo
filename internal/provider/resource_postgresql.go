@@ -18,6 +18,8 @@ import (
 
 var _ = fmt.Sprintf
 
+var postgresqlEtcdInstancesObjFields = []objField{{TF: "id", API: "id", Kind: "string"}, {TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string", Immutable: true}}
+
 var postgresqlRestoreConfigurationObjFields = []objField{{TF: "postgre_sql_id", API: "postgreSqlId", Kind: "string"}, {TF: "restore_time", API: "restoreTime", Kind: "string"}}
 
 var postgresqlShardGroupsObjFields = []objField{{TF: "is_coordinator", API: "isCoordinator", Kind: "bool"}, {TF: "name", API: "name", Kind: "string"}, {TF: "vpc_subnet_id", API: "vpcSubnetId", Kind: "string", Immutable: true}}
@@ -29,6 +31,7 @@ var postgresqlStatusShardGroupsObjFields = []objField{{TF: "index", API: "index"
 type PostgresqlSpecModel struct {
 	BackupRetentionDays       types.Int64  `tfsdk:"backup_retention_days"`
 	CreatePublicIpv4          types.Bool   `tfsdk:"create_public_ipv4"`
+	EtcdInstances             types.List   `tfsdk:"etcd_instances"`
 	PostgreSqlParametersSetId types.String `tfsdk:"postgre_sql_parameters_set_id"`
 	ReplicasPerShardGroup     types.Int64  `tfsdk:"replicas_per_shard_group"`
 	RestoreConfiguration      types.Object `tfsdk:"restore_configuration"`
@@ -59,6 +62,7 @@ func PostgresqlResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
 		"backup_retention_days":         schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
 		"create_public_ipv4":            schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown(), boolplanmodifier.RequiresReplace()}},
+		"etcd_instances":                listObjResourceSchema(postgresqlEtcdInstancesObjFields, "Placement of the Patroni DCS (etcd) members - the quorum store that decides which PostgreSQL node is primary. Omitted, Kvindo Cloud provisions one member itself in a dedicated network. Otherwise supply exactly 1 or 3 members, each with its own `id` and `vpc_subnet_id`; supplying them replaces that self-provisioned network entirely, so the members live in the subnets you name (which may be in different datacenters - every member is publicly reachable for that reason). An empty list is rejected: it asks for zero members, which is not the same as omitting the field. Which members exist is fixed when the cluster is created and cannot be changed afterwards - the count and the ids must be re-sent unchanged on every update, and dropping the field from a cluster that supplied it is an error, not a revert. Recreating the cluster is the way back."),
 		"postgre_sql_parameters_set_id": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"replicas_per_shard_group":      schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
 		"restore_configuration":         objResourceSchemaImmutable(postgresqlRestoreConfigurationObjFields),
@@ -102,6 +106,9 @@ func buildPostgresqlRequestMap(ctx context.Context, plan PostgresqlResourceModel
 	if !plan.Spec.CreatePublicIpv4.IsNull() && !plan.Spec.CreatePublicIpv4.IsUnknown() {
 		spec["createPublicIpv4"] = plan.Spec.CreatePublicIpv4.ValueBool()
 	}
+	if !plan.Spec.EtcdInstances.IsNull() && !plan.Spec.EtcdInstances.IsUnknown() {
+		spec["etcdInstances"] = listObjToAPI(plan.Spec.EtcdInstances, postgresqlEtcdInstancesObjFields)
+	}
 	if !plan.Spec.PostgreSqlParametersSetId.IsNull() && !plan.Spec.PostgreSqlParametersSetId.IsUnknown() {
 		spec["postgreSqlParametersSetId"] = plan.Spec.PostgreSqlParametersSetId.ValueString()
 	}
@@ -140,6 +147,7 @@ func populatePostgresqlState(ctx context.Context, data map[string]interface{}, s
 	spec := getSpec(data)
 	state.Spec.BackupRetentionDays = getInt64(spec, "backupRetentionDays")
 	state.Spec.CreatePublicIpv4 = getBool(spec, "createPublicIpv4")
+	state.Spec.EtcdInstances = listObjFromAPI(objList(spec, "etcdInstances"), postgresqlEtcdInstancesObjFields)
 	state.Spec.PostgreSqlParametersSetId = getString(spec, "postgreSqlParametersSetId")
 	state.Spec.ReplicasPerShardGroup = getInt64(spec, "replicasPerShardGroup")
 	state.Spec.RestoreConfiguration = objFromAPI(objMap(spec, "restoreConfiguration"), postgresqlRestoreConfigurationObjFields)

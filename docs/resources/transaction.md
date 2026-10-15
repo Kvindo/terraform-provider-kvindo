@@ -4977,6 +4977,7 @@ Optional:
 
 - `backup_retention_days` (Number)
 - `create_public_ipv4` (Boolean)
+- `etcd_instances` (Attributes List) (see [below for nested schema](#nestedatt--spec--postgresqls--spec--etcd_instances))
 - `postgre_sql_parameters_set_id` (String)
 - `replicas_per_shard_group` (Number)
 - `restore_configuration` (Attributes) (see [below for nested schema](#nestedatt--spec--postgresqls--spec--restore_configuration))
@@ -4986,6 +4987,15 @@ Optional:
 - `vm_offer_id` (String)
 - `volume_offer_id` (String)
 - `volume_size_gib` (Number)
+
+<a id="nestedatt--spec--postgresqls--spec--etcd_instances"></a>
+### Nested Schema for `spec.postgresqls.spec.etcd_instances`
+
+Optional:
+
+- `id` (String)
+- `vpc_subnet_id` (String)
+
 
 <a id="nestedatt--spec--postgresqls--spec--restore_configuration"></a>
 ### Nested Schema for `spec.postgresqls.spec.restore_configuration`

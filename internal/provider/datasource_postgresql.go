@@ -33,6 +33,7 @@ func (d *PostgresqlDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 	specAttrs := map[string]schema.Attribute{
 		"backup_retention_days":         schema.Int64Attribute{Computed: true},
 		"create_public_ipv4":            schema.BoolAttribute{Computed: true},
+		"etcd_instances":                listObjDatasourceSchema(postgresqlEtcdInstancesObjFields),
 		"postgre_sql_parameters_set_id": schema.StringAttribute{Computed: true},
 		"replicas_per_shard_group":      schema.Int64Attribute{Computed: true},
 		"restore_configuration":         objDatasourceSchema(postgresqlRestoreConfigurationObjFields),
@@ -102,6 +103,7 @@ func (d *PostgresqlDataSource) Read(ctx context.Context, req datasource.ReadRequ
 	spec := getSpec(apiData)
 	state.Spec.BackupRetentionDays = getInt64(spec, "backupRetentionDays")
 	state.Spec.CreatePublicIpv4 = getBool(spec, "createPublicIpv4")
+	state.Spec.EtcdInstances = listObjFromAPI(objList(spec, "etcdInstances"), postgresqlEtcdInstancesObjFields)
 	state.Spec.PostgreSqlParametersSetId = getString(spec, "postgreSqlParametersSetId")
 	state.Spec.ReplicasPerShardGroup = getInt64(spec, "replicasPerShardGroup")
 	state.Spec.RestoreConfiguration = objFromAPI(objMap(spec, "restoreConfiguration"), postgresqlRestoreConfigurationObjFields)

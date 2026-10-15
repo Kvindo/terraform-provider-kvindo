@@ -76,6 +76,7 @@ Optional:
 
 - `backup_retention_days` (Number)
 - `create_public_ipv4` (Boolean)
+- `etcd_instances` (Attributes List) Placement of the Patroni DCS (etcd) members - the quorum store that decides which PostgreSQL node is primary. Omitted, Kvindo Cloud provisions one member itself in a dedicated network. Otherwise supply exactly 1 or 3 members, each with its own `id` and `vpc_subnet_id`; supplying them replaces that self-provisioned network entirely, so the members live in the subnets you name (which may be in different datacenters - every member is publicly reachable for that reason). An empty list is rejected: it asks for zero members, which is not the same as omitting the field. Which members exist is fixed when the cluster is created and cannot be changed afterwards - the count and the ids must be re-sent unchanged on every update, and dropping the field from a cluster that supplied it is an error, not a revert. Recreating the cluster is the way back. (see [below for nested schema](#nestedatt--spec--etcd_instances))
 - `postgre_sql_parameters_set_id` (String)
 - `replicas_per_shard_group` (Number)
 - `restore_configuration` (Attributes) (see [below for nested schema](#nestedatt--spec--restore_configuration))
@@ -85,6 +86,15 @@ Optional:
 - `vm_offer_id` (String)
 - `volume_offer_id` (String)
 - `volume_size_gib` (Number)
+
+<a id="nestedatt--spec--etcd_instances"></a>
+### Nested Schema for `spec.etcd_instances`
+
+Optional:
+
+- `id` (String)
+- `vpc_subnet_id` (String)
+
 
 <a id="nestedatt--spec--restore_configuration"></a>
 ### Nested Schema for `spec.restore_configuration`

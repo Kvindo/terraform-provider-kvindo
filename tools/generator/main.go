@@ -316,6 +316,9 @@ var specFieldDescriptions = map[string]map[string]string{
 		"vpc_id":        "Mutually exclusive with `vpc_subnet_id`. Attaches the route table to the whole VPC.",
 		"vpc_subnet_id": "Mutually exclusive with `vpc_id`. Attaches the route table to a single subnet only - its routes are policy-routed so they apply solely to that subnet's traffic.",
 	},
+	"postgresql": {
+		"etcd_instances": "Placement of the Patroni DCS (etcd) members - the quorum store that decides which PostgreSQL node is primary. Omitted, Kvindo Cloud provisions one member itself in a dedicated network. Otherwise supply exactly 1 or 3 members, each with its own `id` and `vpc_subnet_id`; supplying them replaces that self-provisioned network entirely, so the members live in the subnets you name (which may be in different datacenters - every member is publicly reachable for that reason). An empty list is rejected: it asks for zero members, which is not the same as omitting the field. Which members exist is fixed when the cluster is created and cannot be changed afterwards - the count and the ids must be re-sent unchanged on every update, and dropping the field from a cluster that supplied it is an error, not a revert. Recreating the cluster is the way back.",
+	},
 	"valkey_user": {
 		"key_patterns": "Valkey ACL key-pattern globs, e.g. `cache:*`. Entered without the leading `~` - Kvindo Cloud adds it when applying the ACL. Empty/null denies all key access.",
 		"categories":   "Valkey ACL command categories, e.g. `read`, `write`. Entered without the leading `+@`. Not validated by Kvindo Cloud - an invalid category is rejected by Valkey's own ACL SETUSER at apply time.",
