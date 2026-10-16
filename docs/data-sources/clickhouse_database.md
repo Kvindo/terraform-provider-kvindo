@@ -50,7 +50,7 @@ Read-Only:
 
 Read-Only:
 
-- `click_house_id` (String)
+- `clickhouse_id` (String)
 
 
 <a id="nestedatt--status"></a>

@@ -30,7 +30,7 @@ func (d *ClickhouseUserDataSource) Metadata(_ context.Context, req datasource.Me
 
 func (d *ClickhouseUserDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	specAttrs := map[string]schema.Attribute{
-		"click_house_id":  schema.StringAttribute{Computed: true},
+		"clickhouse_id":   schema.StringAttribute{Computed: true},
 		"database_grants": listObjDatasourceSchema(clickhouseUserDatabaseGrantsObjFields),
 		"enabled":         schema.BoolAttribute{Computed: true},
 		"password":        schema.StringAttribute{Computed: true, Sensitive: true},
@@ -93,7 +93,7 @@ func (d *ClickhouseUserDataSource) Read(ctx context.Context, req datasource.Read
 	state.Name = state.Metadata.Name
 	state.Spec = &ClickhouseUserSpecModel{}
 	spec := getSpec(apiData)
-	state.Spec.ClickHouseId = getString(spec, "clickHouseId")
+	state.Spec.ClickhouseId = getString(spec, "clickHouseId")
 	state.Spec.DatabaseGrants = listObjFromAPI(objList(spec, "databaseGrants"), clickhouseUserDatabaseGrantsObjFields)
 	state.Spec.Enabled = getBool(spec, "enabled")
 	state.Spec.Password = getString(spec, "password")

@@ -133,6 +133,11 @@ groups fields into the `metadata` / `spec` / `status` blocks.
 - `kvindo_clickhouse_user` — Database user with per-database grants
 - `kvindo_clickhouse_parameters_set` — ClickHouse parameter configuration
 
+### OpenSearch
+- `kvindo_opensearch` — Managed OpenSearch cluster (dedicated cluster-manager quorum + data nodes)
+- `kvindo_opensearch_user` — Security-plugin user with index-pattern grants
+- `kvindo_opensearch_parameters_set` — Allow-listed cluster settings
+
 ### Valkey
 - `kvindo_valkey` — Managed Valkey cluster
 - `kvindo_valkey_user` — ACL user inside a cluster

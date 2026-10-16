@@ -480,7 +480,7 @@ Optional:
 
 Optional:
 
-- `click_house_id` (String)
+- `clickhouse_id` (String)
 
 
 <a id="nestedatt--spec--clickhouse_databases--status"></a>
@@ -656,7 +656,7 @@ Optional:
 
 Optional:
 
-- `click_house_id` (String)
+- `clickhouse_id` (String)
 - `database_grants` (Attributes List) (see [below for nested schema](#nestedatt--spec--clickhouse_users--spec--database_grants))
 - `enabled` (Boolean)
 - `password` (String, Sensitive)
@@ -756,7 +756,7 @@ Optional:
 Optional:
 
 - `backup_retention_days` (Number)
-- `click_house_version` (String)
+- `clickhouse_version` (String)
 - `create_public_ipv4` (Boolean)
 - `full_backup_interval_days` (Number)
 - `keeper_vm_offer_id` (String)

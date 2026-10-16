@@ -72,7 +72,7 @@ Read-Only:
 
 Optional:
 
-- `click_house_id` (String)
+- `clickhouse_id` (String)
 
 
 <a id="nestedatt--status"></a>

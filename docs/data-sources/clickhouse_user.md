@@ -50,7 +50,7 @@ Read-Only:
 
 Read-Only:
 
-- `click_house_id` (String)
+- `clickhouse_id` (String)
 - `database_grants` (Attributes List) (see [below for nested schema](#nestedatt--spec--database_grants))
 - `enabled` (Boolean)
 - `password` (String, Sensitive)

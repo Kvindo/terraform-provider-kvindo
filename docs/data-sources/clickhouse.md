@@ -51,7 +51,7 @@ Read-Only:
 Read-Only:
 
 - `backup_retention_days` (Number)
-- `click_house_version` (String)
+- `clickhouse_version` (String)
 - `create_public_ipv4` (Boolean)
 - `full_backup_interval_days` (Number)
 - `keeper_vm_offer_id` (String)

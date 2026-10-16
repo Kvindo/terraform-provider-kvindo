@@ -199,6 +199,9 @@ var sensitiveSpecFields = map[string]map[string]bool{
 	"gitlab":          {"root_password": true},
 	"kafka_user":      {"password": true},
 	"clickhouse_user": {"password": true},
+	// The security-plugin credential a whole-cluster re-apply re-sends on every dispatch, so it must
+	// never be printed in a plan diff.
+	"opensearch_user": {"password": true},
 	"ollama":          {"root_password": true},
 	"postgresql_user": {"password": true},
 	"ssh_private_key": {"private_key": true},
@@ -242,6 +245,17 @@ var immutableSpecFields = map[string]map[string]bool{
 		"controller_vm_offer_id": true, "controller_volume_offer_id": true,
 		"controller_volume_size_gib": true, "broker_volume_size_gib": true,
 	},
+	// Exactly the set OpenSearchResourceController rejects on modify (its own ValidateImmutableFields,
+	// mirroring opensearch_topology._IMMUTABLE_FIELDS). create_public_ipv4 and use_fqdn are refused
+	// because they change what is published or re-sign every certificate; the version and both roles'
+	// volume offer/size because nothing syncs them onto an existing volume, so accepting the change
+	// would silently do nothing.
+	"opensearch": {
+		"create_public_ipv4": true, "use_fqdn": true, "opensearch_version": true,
+		"data_volume_size_gib": true, "data_volume_offer_id": true,
+		"manager_volume_size_gib": true, "manager_volume_offer_id": true,
+	},
+	"opensearch_user":     {"open_search_id": true},
 	"kafka_topic":         {"kafka_id": true},
 	"kafka_user":          {"kafka_id": true},
 	"postgresql":          {"create_public_ipv4": true, "restore_configuration": true},
@@ -273,6 +287,10 @@ var immutableNestedFields = map[string]map[string]bool{
 	// ("remove and re-add the broker under a different name instead") and for a controller
 	// ("moving a voter is not implemented yet") alike.
 	"kafka": {"vpc_subnet_id": true},
+	// ONE entry covers BOTH member arrays: a member is identified by name AND subnet, and
+	// OpenSearchResourceController refuses a move for data nodes and cluster managers alike - moving
+	// either is remove + add, and remove is not supported at all in v1.
+	"opensearch": {"vpc_subnet_id": true},
 }
 
 // writeOnlySensitiveSpecFields[resource][tf_field] = true marks a Sensitive+Optional+Computed
@@ -301,6 +319,11 @@ var immutableNestedFields = map[string]map[string]bool{
 //     providers use for e.g. RDS master passwords).
 var writeOnlySensitiveSpecFields = map[string]map[string]bool{
 	"clickhouse_user": {"password": true},
+	// OpenSearchUserResource.ToApiModel returns null for Password unconditionally on every read, so
+	// the same preserve-if-already-known rule applies. It matters MORE here than for any sibling: an
+	// OpenSearchUser change re-applies the WHOLE cluster, and the service refuses an ENABLED user with
+	// no password rather than silently locking a live credential.
+	"opensearch_user": {"password": true},
 	"kafka_user":      {"password": true},
 	"postgresql_user": {"password": true},
 	"valkey_user":     {"password": true},
@@ -967,8 +990,30 @@ var ipVersionAcronyms = strings.NewReplacer(
 	"IpV6", "Ipv6", "ipV6", "ipv6",
 )
 
+// productNameAcronyms keeps a product's name as ONE snake segment, matching how the platform
+// spells it everywhere else (the API's own route names, the CLI's kinds, the python SDK's
+// accessors, and the published Terraform docs pages): ClickHouse → clickhouse_version /
+// clickhouse_id, not click_house_version / click_house_id.
+//
+// Why it matters rather than being cosmetic: Terraform silently IGNORES a key inside a
+// SingleNestedAttribute that the schema doesn't have, so the documented
+// `clickhouse_version = "..."` was dropped on the way to the API and the create failed with
+// `Spec.ClickHouseVersion (The ClickHouseVersion field is required.)` — a 400 whose message names
+// a field the user believes they set. Measured against dev 2026-10-15 both ways (accepted
+// silently, no "Unsupported argument" diagnostic; only a TOP-LEVEL unknown key is diagnosed).
+//
+// Deliberately ClickHouse-only: PostgreSqlSpec's `postgreSqlId`/`postgreSqlParametersSetId` are
+// spelled `postgre_sql_id`/`postgre_sql_parameters_set_id` across the provider AND the published
+// docs examples, i.e. already self-consistent. Normalizing those would rename a shipped attribute
+// for no bug — a separate, breaking decision.
+var productNameAcronyms = strings.NewReplacer(
+	"ClickHouse", "Clickhouse",
+	"clickHouse", "clickhouse",
+)
+
 func camelToSnake(s string) string {
 	s = binaryUnitAcronyms.Replace(s)
+	s = productNameAcronyms.Replace(s)
 	s = ipVersionAcronyms.Replace(s)
 	var result []rune
 	runes := []rune(s)

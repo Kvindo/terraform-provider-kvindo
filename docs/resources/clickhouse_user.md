@@ -81,7 +81,7 @@ Read-Only:
 
 Optional:
 
-- `click_house_id` (String) The cluster this database user belongs to. Immutable - a user cannot move between clusters.
+- `clickhouse_id` (String)
 - `database_grants` (Attributes List) (see [below for nested schema](#nestedatt--spec--database_grants))
 - `enabled` (Boolean) Authentication switch. `false` locks the user; re-enabling is one write rather than a full re-grant.
 - `password` (String, Sensitive) Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. Unlike valkey_user/postgresql_user there is NO server-side generation: ClickHouseUserResourceController rejects a CREATE with `enabled` true and an empty password (`ClickHouseUser requires Password when Enabled is true`), so it must be supplied - a create with `enabled` false and no password is allowed (a pre-locked principal).

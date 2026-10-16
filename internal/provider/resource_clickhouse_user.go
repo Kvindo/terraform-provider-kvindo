@@ -20,7 +20,7 @@ var _ = fmt.Sprintf
 var clickhouseUserDatabaseGrantsObjFields = []objField{{TF: "database_name", API: "databaseName", Kind: "string"}, {TF: "role", API: "role", Kind: "string"}}
 
 type ClickhouseUserSpecModel struct {
-	ClickHouseId   types.String `tfsdk:"click_house_id"`
+	ClickhouseId   types.String `tfsdk:"clickhouse_id"`
 	DatabaseGrants types.List   `tfsdk:"database_grants"`
 	Enabled        types.Bool   `tfsdk:"enabled"`
 	Password       types.String `tfsdk:"password"`
@@ -44,7 +44,7 @@ func (r *ClickhouseUserResource) Metadata(_ context.Context, req resource.Metada
 
 func ClickhouseUserResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
-		"click_house_id":  schema.StringAttribute{Optional: true, Computed: true, Description: "The cluster this database user belongs to. Immutable - a user cannot move between clusters.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"clickhouse_id":   schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"database_grants": listObjResourceSchema(clickhouseUserDatabaseGrantsObjFields),
 		"enabled":         schema.BoolAttribute{Optional: true, Computed: true, Description: "Authentication switch. `false` locks the user; re-enabling is one write rather than a full re-grant.", PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
 		"password":        schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, Description: "Write-only: the backend never returns this value on read. If configured, its value is preserved in state rather than overwritten by the always-empty read-back. Unlike valkey_user/postgresql_user there is NO server-side generation: ClickHouseUserResourceController rejects a CREATE with `enabled` true and an empty password (`ClickHouseUser requires Password when Enabled is true`), so it must be supplied - a create with `enabled` false and no password is allowed (a pre-locked principal).", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -77,8 +77,8 @@ func (r *ClickhouseUserResource) Configure(_ context.Context, req resource.Confi
 func buildClickhouseUserRequestMap(ctx context.Context, plan ClickhouseUserResourceModel) map[string]interface{} {
 	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
 	spec := m["spec"].(map[string]interface{})
-	if !plan.Spec.ClickHouseId.IsNull() && !plan.Spec.ClickHouseId.IsUnknown() {
-		spec["clickHouseId"] = plan.Spec.ClickHouseId.ValueString()
+	if !plan.Spec.ClickhouseId.IsNull() && !plan.Spec.ClickhouseId.IsUnknown() {
+		spec["clickHouseId"] = plan.Spec.ClickhouseId.ValueString()
 	}
 	if !plan.Spec.DatabaseGrants.IsNull() && !plan.Spec.DatabaseGrants.IsUnknown() {
 		spec["databaseGrants"] = listObjToAPI(plan.Spec.DatabaseGrants, clickhouseUserDatabaseGrantsObjFields)
@@ -101,7 +101,7 @@ func populateClickhouseUserState(ctx context.Context, data map[string]interface{
 	}
 	state.ID = state.Metadata.ID
 	spec := getSpec(data)
-	state.Spec.ClickHouseId = getString(spec, "clickHouseId")
+	state.Spec.ClickhouseId = getString(spec, "clickHouseId")
 	state.Spec.DatabaseGrants = listObjFromAPI(objList(spec, "databaseGrants"), clickhouseUserDatabaseGrantsObjFields)
 	state.Spec.Enabled = getBool(spec, "enabled")
 	if state.Spec.Password.IsNull() || state.Spec.Password.IsUnknown() {
