@@ -31,6 +31,7 @@ func (d *KafkaUserDataSource) Metadata(_ context.Context, req datasource.Metadat
 
 func (d *KafkaUserDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	specAttrs := map[string]schema.Attribute{
+		"cluster_operations":      schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"consumer_group_prefixes": schema.ListAttribute{Computed: true, ElementType: types.StringType},
 		"enabled":                 schema.BoolAttribute{Computed: true},
 		"kafka_id":                schema.StringAttribute{Computed: true},
@@ -94,6 +95,7 @@ func (d *KafkaUserDataSource) Read(ctx context.Context, req datasource.ReadReque
 	state.Name = state.Metadata.Name
 	state.Spec = &KafkaUserSpecModel{}
 	spec := getSpec(apiData)
+	state.Spec.ClusterOperations = getStringList(ctx, spec, "clusterOperations")
 	state.Spec.ConsumerGroupPrefixes = getStringList(ctx, spec, "consumerGroupPrefixes")
 	state.Spec.Enabled = getBool(spec, "enabled")
 	state.Spec.KafkaId = getString(spec, "kafkaId")

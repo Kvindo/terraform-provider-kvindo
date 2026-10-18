@@ -40,7 +40,7 @@ resource "kvindo_opensearch" "search" {
     data_vm_offer_id        = "g3-2c4-100"
     data_volume_offer_id    = "gp3-750"
     data_volume_size_gib    = 100
-    manager_vm_offer_id     = "g3-1c1-100"
+    manager_vm_offer_id     = "g3-1c2-100"
     manager_volume_offer_id = "gp3-750"
     manager_volume_size_gib = 10
 

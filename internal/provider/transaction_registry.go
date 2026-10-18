@@ -562,4 +562,31 @@ var txnSubs = []txnSub{
 		build:    txnBuild(buildClickhouseUserRequestMap),
 		populate: txnPop[ClickhouseUserResourceModel](populateClickhouseUserState, ClickhouseUserResourceSchemaAttrs),
 	},
+	// OpenSearchParametersSets before Opensearches - the cluster references a set, so the set has to
+	// exist first when both are in one transaction. Same dependency order as the Kafka/ClickHouse
+	// families above; the API's TransactionSpec has carried OpenSearches/OpenSearchParametersSets/
+	// OpenSearchUsers since the family shipped, but this registry is hand-written and was not updated
+	// with it, so kvindo_transaction could not carry an OpenSearch child at all.
+	{
+		tfKey: "opensearch_parameters_sets", apiKey: "openSearchParametersSets", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.OpensearchParametersSets },
+		attrs:    OpensearchParametersSetResourceSchemaAttrs,
+		build:    txnBuild(buildOpensearchParametersSetRequestMap),
+		populate: txnPop[OpensearchParametersSetResourceModel](populateOpensearchParametersSetState, OpensearchParametersSetResourceSchemaAttrs),
+	},
+	{
+		tfKey: "opensearches", apiKey: "openSearches", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.Opensearches },
+		attrs:    OpensearchResourceSchemaAttrs,
+		build:    txnBuild(buildOpensearchRequestMap),
+		populate: txnPop[OpensearchResourceModel](populateOpensearchState, OpensearchResourceSchemaAttrs),
+	},
+	// OpenSearchUsers after Opensearches - depends on open_search_id.
+	{
+		tfKey: "opensearch_users", apiKey: "openSearchUsers", gate: "",
+		field:    func(m *TransactionResourceModel) *types.Map { return &m.Spec.OpensearchUsers },
+		attrs:    OpensearchUserResourceSchemaAttrs,
+		build:    txnBuild(buildOpensearchUserRequestMap),
+		populate: txnPop[OpensearchUserResourceModel](populateOpensearchUserState, OpensearchUserResourceSchemaAttrs),
+	},
 }

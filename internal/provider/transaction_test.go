@@ -72,12 +72,14 @@ func TestTransactionRegistry_CoversAllMaps(t *testing.T) {
 	// on_off_schedules/vm_command_schedules/postgresqls/postgresql_users/postgresql_databases/
 	// valkey_users were added (review finding #13: these 6 backend-supported TransactionSpec.cs
 	// array properties had no txnSubs entry at all), 67 -> 71 when the Kafka family
-	// (kafkas/kafka_parameters_sets/kafka_topics/kafka_users) landed, and 71 -> 75
-	// when ClickHouse (clickHouses/clickhouse_parameters_sets/clickhouse_databases/clickhouse_users)
-	// landed. If TransactionSpec.cs (avant.cloud) gains another array property, update this count AND
+	// (kafkas/kafka_parameters_sets/kafka_topics/kafka_users) landed, 71 -> 75
+	// when ClickHouse (clickhouses/clickhouse_parameters_sets/clickhouse_databases/clickhouse_users)
+	// landed, and 75 -> 78 when OpenSearch
+	// (opensearches/opensearch_parameters_sets/opensearch_users) landed.
+	// If TransactionSpec.cs (avant.cloud) gains another array property, update this count AND
 	// add its txnSubs entry together - nothing automated catches one without the other.
-	if len(txnSubs) != 75 {
-		t.Errorf("expected 75 transactable sub-types, got %d", len(txnSubs))
+	if len(txnSubs) != 78 {
+		t.Errorf("expected 78 transactable sub-types, got %d", len(txnSubs))
 	}
 	seen := map[string]bool{}
 	for _, s := range txnSubs {
@@ -96,6 +98,7 @@ func TestTransactionRegistry_CoversAllMaps(t *testing.T) {
 		"postgresql_users", "postgresql_databases", "valkey_users",
 		"kafkas", "kafka_parameters_sets", "kafka_topics", "kafka_users",
 		"clickhouses", "clickhouse_parameters_sets", "clickhouse_databases", "clickhouse_users",
+		"opensearches", "opensearch_parameters_sets", "opensearch_users",
 	} {
 		if !seen[want] {
 			t.Errorf("expected txnSubs to contain tfKey %q", want)

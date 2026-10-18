@@ -54,6 +54,7 @@ Read-Only:
 
 Read-Only:
 
+- `cluster_operations` (List of String)
 - `consumer_group_prefixes` (List of String)
 - `enabled` (Boolean)
 - `kafka_id` (String)
@@ -65,6 +66,7 @@ Read-Only:
 
 Read-Only:
 
+- `extra_operations` (List of String)
 - `pattern_type` (String)
 - `role` (String)
 - `topic_pattern` (String)

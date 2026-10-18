@@ -81,6 +81,7 @@ Read-Only:
 
 Optional:
 
+- `cluster_operations` (List of String) Cluster-scoped ACLs: `Describe` (a read-only admin UI) or `IdempotentWrite` (a producing UI). Empty means none, which is every ordinary producer/consumer. Only a tenant-run tool needs these, and `Create` is deliberately not offered - it would bypass the KafkaTopic resource model.
 - `consumer_group_prefixes` (List of String) Consumer-group ACLs, prefix-matched; `"*"` is an accepted explicit value for all groups. REQUIRED as soon as any grant is a `Consumer` - a consumer that cannot reach its group cannot commit offsets, so the request is rejected at submit time rather than failing later with an authorization error that points nowhere useful.
 - `enabled` (Boolean) Authentication switch. `false` LOCKS the user: the SCRAM credential is overwritten with an unusable random password while every ACL stays in place, so re-enabling is one write instead of a full re-grant.
 - `kafka_id` (String) The cluster this SCRAM principal belongs to. Immutable - a user cannot move between clusters.
@@ -92,6 +93,7 @@ Optional:
 
 Optional:
 
+- `extra_operations` (List of String)
 - `pattern_type` (String)
 - `role` (String)
 - `topic_pattern` (String)

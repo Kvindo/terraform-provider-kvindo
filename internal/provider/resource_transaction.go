@@ -106,6 +106,9 @@ type TransactionSpecModel struct {
 	ClickhouseParametersSets                       types.Map  `tfsdk:"clickhouse_parameters_sets"`
 	ClickhouseDatabases                            types.Map  `tfsdk:"clickhouse_databases"`
 	ClickhouseUsers                                types.Map  `tfsdk:"clickhouse_users"`
+	Opensearches                                   types.Map  `tfsdk:"opensearches"`
+	OpensearchParametersSets                       types.Map  `tfsdk:"opensearch_parameters_sets"`
+	OpensearchUsers                                types.Map  `tfsdk:"opensearch_users"`
 }
 
 // ---------------------------------------------------------------------------

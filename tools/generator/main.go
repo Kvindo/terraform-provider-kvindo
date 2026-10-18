@@ -383,6 +383,10 @@ var specFieldDescriptions = map[string]map[string]string{
 		"topic_grants":            "Role-based grants, not raw Kafka ACL tuples: `Producer` or `Consumer` on a `Literal` topic name or a `Prefixed` pattern, and the platform expands each into the operations Kafka actually needs (Write+Describe, or Read+Describe plus the group ACLs). There is no Admin role in this release.",
 		"consumer_group_prefixes": "Consumer-group ACLs, prefix-matched; `\"*\"` is an accepted explicit value for all groups. REQUIRED as soon as any grant is a `Consumer` - a consumer that cannot reach its group cannot commit offsets, so the request is rejected at submit time rather than failing later with an authorization error that points nowhere useful.",
 		"enabled":                 "Authentication switch. `false` LOCKS the user: the SCRAM credential is overwritten with an unusable random password while every ACL stays in place, so re-enabling is one write instead of a full re-grant.",
+		// Cluster-scoped ACLs, added to the API 2026-10-18 (a tenant-run Schema Registry / Kafka UI
+		// needs them without an Admin role). `Create` is deliberately not offered - it would let a
+		// principal escape the KafkaTopic resource model.
+		"cluster_operations": "Cluster-scoped ACLs: `Describe` (a read-only admin UI) or `IdempotentWrite` (a producing UI). Empty means none, which is every ordinary producer/consumer. Only a tenant-run tool needs these, and `Create` is deliberately not offered - it would bypass the KafkaTopic resource model.",
 	},
 	"clickhouse_user": {
 		"click_house_id": "The cluster this database user belongs to. Immutable - a user cannot move between clusters.",

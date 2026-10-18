@@ -164,6 +164,9 @@ Optional:
 - `open_vpn_user_settings` (Attributes Map) (see [below for nested schema](#nestedatt--spec--open_vpn_user_settings))
 - `open_vpn_users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--open_vpn_users))
 - `open_vpns` (Attributes Map) (see [below for nested schema](#nestedatt--spec--open_vpns))
+- `opensearch_parameters_sets` (Attributes Map) (see [below for nested schema](#nestedatt--spec--opensearch_parameters_sets))
+- `opensearch_users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--opensearch_users))
+- `opensearches` (Attributes Map) (see [below for nested schema](#nestedatt--spec--opensearches))
 - `postgresql_databases` (Attributes Map) (see [below for nested schema](#nestedatt--spec--postgresql_databases))
 - `postgresql_parameters_sets` (Attributes Map) (see [below for nested schema](#nestedatt--spec--postgresql_parameters_sets))
 - `postgresql_users` (Attributes Map) (see [below for nested schema](#nestedatt--spec--postgresql_users))
@@ -2002,6 +2005,7 @@ Optional:
 
 Optional:
 
+- `cluster_operations` (List of String)
 - `consumer_group_prefixes` (List of String)
 - `enabled` (Boolean)
 - `kafka_id` (String)
@@ -2013,6 +2017,7 @@ Optional:
 
 Optional:
 
+- `extra_operations` (List of String)
 - `pattern_type` (String)
 - `role` (String)
 - `topic_pattern` (String)
@@ -4670,6 +4675,360 @@ Optional:
 
 <a id="nestedatt--spec--open_vpns--status--pricing"></a>
 ### Nested Schema for `spec.open_vpns.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--opensearch_parameters_sets"></a>
+### Nested Schema for `spec.opensearch_parameters_sets`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_parameters_sets--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_parameters_sets--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_parameters_sets--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--opensearch_parameters_sets--metadata"></a>
+### Nested Schema for `spec.opensearch_parameters_sets.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--opensearch_parameters_sets--spec"></a>
+### Nested Schema for `spec.opensearch_parameters_sets.spec`
+
+Optional:
+
+- `parameters` (Map of String)
+
+
+<a id="nestedatt--spec--opensearch_parameters_sets--status"></a>
+### Nested Schema for `spec.opensearch_parameters_sets.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_parameters_sets--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_parameters_sets--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_parameters_sets--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--opensearch_parameters_sets--status--created_by_user"></a>
+### Nested Schema for `spec.opensearch_parameters_sets.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--opensearch_parameters_sets--status--last_change_request"></a>
+### Nested Schema for `spec.opensearch_parameters_sets.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_parameters_sets--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--opensearch_parameters_sets--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.opensearch_parameters_sets.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--opensearch_parameters_sets--status--pricing"></a>
+### Nested Schema for `spec.opensearch_parameters_sets.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--opensearch_users"></a>
+### Nested Schema for `spec.opensearch_users`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_users--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_users--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_users--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--opensearch_users--metadata"></a>
+### Nested Schema for `spec.opensearch_users.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--opensearch_users--spec"></a>
+### Nested Schema for `spec.opensearch_users.spec`
+
+Optional:
+
+- `enabled` (Boolean)
+- `index_grants` (Attributes List) (see [below for nested schema](#nestedatt--spec--opensearch_users--spec--index_grants))
+- `open_search_id` (String)
+- `password` (String, Sensitive)
+
+<a id="nestedatt--spec--opensearch_users--spec--index_grants"></a>
+### Nested Schema for `spec.opensearch_users.spec.index_grants`
+
+Optional:
+
+- `index_pattern` (String)
+- `pattern_type` (String)
+- `role` (String)
+
+
+
+<a id="nestedatt--spec--opensearch_users--status"></a>
+### Nested Schema for `spec.opensearch_users.status`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_users--status--created_by_user))
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_users--status--last_change_request))
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_users--status--pricing))
+- `state` (String)
+
+<a id="nestedatt--spec--opensearch_users--status--created_by_user"></a>
+### Nested Schema for `spec.opensearch_users.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--opensearch_users--status--last_change_request"></a>
+### Nested Schema for `spec.opensearch_users.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearch_users--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--opensearch_users--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.opensearch_users.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--opensearch_users--status--pricing"></a>
+### Nested Schema for `spec.opensearch_users.status.pricing`
+
+Optional:
+
+- `day` (Number)
+- `hour` (Number)
+- `month` (Number)
+
+
+
+
+<a id="nestedatt--spec--opensearches"></a>
+### Nested Schema for `spec.opensearches`
+
+Optional:
+
+- `metadata` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearches--metadata))
+- `spec` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearches--spec))
+- `status` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearches--status))
+
+Read-Only:
+
+- `id` (String)
+
+<a id="nestedatt--spec--opensearches--metadata"></a>
+### Nested Schema for `spec.opensearches.metadata`
+
+Optional:
+
+- `delete_protection` (Boolean)
+- `description` (String)
+- `folder_id` (String)
+- `id` (String)
+- `labels` (Map of String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--opensearches--spec"></a>
+### Nested Schema for `spec.opensearches.spec`
+
+Optional:
+
+- `cluster_managers` (Attributes List) (see [below for nested schema](#nestedatt--spec--opensearches--spec--cluster_managers))
+- `create_public_ipv4` (Boolean)
+- `data_nodes` (Attributes List) (see [below for nested schema](#nestedatt--spec--opensearches--spec--data_nodes))
+- `data_vm_offer_id` (String)
+- `data_volume_offer_id` (String)
+- `data_volume_size_gib` (Number)
+- `manager_vm_offer_id` (String)
+- `manager_volume_offer_id` (String)
+- `manager_volume_size_gib` (Number)
+- `open_search_version` (String)
+- `parameters_set_id` (String)
+- `use_fqdn` (Boolean)
+
+<a id="nestedatt--spec--opensearches--spec--cluster_managers"></a>
+### Nested Schema for `spec.opensearches.spec.cluster_managers`
+
+Optional:
+
+- `name` (String)
+- `vpc_subnet_id` (String)
+
+
+<a id="nestedatt--spec--opensearches--spec--data_nodes"></a>
+### Nested Schema for `spec.opensearches.spec.data_nodes`
+
+Optional:
+
+- `name` (String)
+- `vpc_subnet_id` (String)
+
+
+
+<a id="nestedatt--spec--opensearches--status"></a>
+### Nested Schema for `spec.opensearches.status`
+
+Optional:
+
+- `active_cluster_manager_count` (Number)
+- `active_shards_percent` (Number)
+- `anti_affinity_message` (String)
+- `anti_affinity_ok` (Boolean)
+- `any_index_readonly` (Boolean)
+- `ca_certificate` (String)
+- `cluster_manager_quorum_size` (Number)
+- `cluster_managers` (Attributes List) (see [below for nested schema](#nestedatt--spec--opensearches--status--cluster_managers))
+- `cluster_name` (String)
+- `cluster_state` (String)
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearches--status--created_by_user))
+- `data_nodes` (Attributes List) (see [below for nested schema](#nestedatt--spec--opensearches--status--data_nodes))
+- `default_number_of_replicas` (Number)
+- `dns_seed_fqdn` (String)
+- `health` (String)
+- `index_count` (Number)
+- `last_change_request` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearches--status--last_change_request))
+- `last_probe_utc` (Number)
+- `pricing` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearches--status--pricing))
+- `red_index_count` (Number)
+- `relocating_shards` (Number)
+- `rest_endpoints` (String)
+- `rest_public_endpoints` (String)
+- `running_version` (String)
+- `state` (String)
+- `total_data_bytes` (Number)
+- `total_documents` (Number)
+- `unassigned_shards` (Number)
+- `yellow_index_count` (Number)
+
+<a id="nestedatt--spec--opensearches--status--cluster_managers"></a>
+### Nested Schema for `spec.opensearches.status.cluster_managers`
+
+Optional:
+
+- `id` (String)
+- `is_elected_cluster_manager` (Boolean)
+- `name` (String)
+- `observed_state` (String)
+- `private_ipv4` (String)
+
+
+<a id="nestedatt--spec--opensearches--status--created_by_user"></a>
+### Nested Schema for `spec.opensearches.status.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+<a id="nestedatt--spec--opensearches--status--data_nodes"></a>
+### Nested Schema for `spec.opensearches.status.data_nodes`
+
+Optional:
+
+- `announce_fqdn` (String)
+- `disk_free_bytes` (Number)
+- `disk_used_bytes` (Number)
+- `id` (String)
+- `jvm_heap_used_percent` (Number)
+- `name` (String)
+- `observed_state` (String)
+- `private_ipv4` (String)
+- `public_ipv4` (String)
+- `running_version` (String)
+
+
+<a id="nestedatt--spec--opensearches--status--last_change_request"></a>
+### Nested Schema for `spec.opensearches.status.last_change_request`
+
+Optional:
+
+- `create_time` (String)
+- `created_by_user` (Attributes) (see [below for nested schema](#nestedatt--spec--opensearches--status--last_change_request--created_by_user))
+- `error_message` (String)
+- `state` (String)
+
+<a id="nestedatt--spec--opensearches--status--last_change_request--created_by_user"></a>
+### Nested Schema for `spec.opensearches.status.last_change_request.created_by_user`
+
+Optional:
+
+- `id` (String)
+- `name` (String)
+
+
+
+<a id="nestedatt--spec--opensearches--status--pricing"></a>
+### Nested Schema for `spec.opensearches.status.pricing`
 
 Optional:
 

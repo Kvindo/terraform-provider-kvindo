@@ -32,7 +32,7 @@ func TestResourceSchemas_SpecFieldDescriptionsArePresent(t *testing.T) {
 		// immutable sizing field, and the version constraint that depends on what the image prefetched.
 		"kvindo_kafka":       {"brokers", "controllers", "broker_volume_size_gib", "kafka_version"},
 		"kvindo_kafka_topic": {"replication_factor", "partitions"},
-		"kvindo_kafka_user":  {"password", "topic_grants", "consumer_group_prefixes"},
+		"kvindo_kafka_user":  {"password", "topic_grants", "consumer_group_prefixes", "cluster_operations"},
 	}
 
 	seen := map[string]bool{}

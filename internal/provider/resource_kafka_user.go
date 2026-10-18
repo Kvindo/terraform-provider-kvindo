@@ -18,9 +18,10 @@ import (
 
 var _ = fmt.Sprintf
 
-var kafkaUserTopicGrantsObjFields = []objField{{TF: "pattern_type", API: "patternType", Kind: "string"}, {TF: "role", API: "role", Kind: "string"}, {TF: "topic_pattern", API: "topicPattern", Kind: "string"}}
+var kafkaUserTopicGrantsObjFields = []objField{{TF: "extra_operations", API: "extraOperations", Kind: "list_string"}, {TF: "pattern_type", API: "patternType", Kind: "string"}, {TF: "role", API: "role", Kind: "string"}, {TF: "topic_pattern", API: "topicPattern", Kind: "string"}}
 
 type KafkaUserSpecModel struct {
+	ClusterOperations     types.List   `tfsdk:"cluster_operations"`
 	ConsumerGroupPrefixes types.List   `tfsdk:"consumer_group_prefixes"`
 	Enabled               types.Bool   `tfsdk:"enabled"`
 	KafkaId               types.String `tfsdk:"kafka_id"`
@@ -45,6 +46,7 @@ func (r *KafkaUserResource) Metadata(_ context.Context, req resource.MetadataReq
 
 func KafkaUserResourceSchemaAttrs() map[string]schema.Attribute {
 	specAttrs := map[string]schema.Attribute{
+		"cluster_operations":      schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, Description: "Cluster-scoped ACLs: `Describe` (a read-only admin UI) or `IdempotentWrite` (a producing UI). Empty means none, which is every ordinary producer/consumer. Only a tenant-run tool needs these, and `Create` is deliberately not offered - it would bypass the KafkaTopic resource model.", PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
 		"consumer_group_prefixes": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, Description: "Consumer-group ACLs, prefix-matched; `\"*\"` is an accepted explicit value for all groups. REQUIRED as soon as any grant is a `Consumer` - a consumer that cannot reach its group cannot commit offsets, so the request is rejected at submit time rather than failing later with an authorization error that points nowhere useful.", PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}},
 		"enabled":                 schema.BoolAttribute{Optional: true, Computed: true, Description: "Authentication switch. `false` LOCKS the user: the SCRAM credential is overwritten with an unusable random password while every ACL stays in place, so re-enabling is one write instead of a full re-grant.", PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}},
 		"kafka_id":                schema.StringAttribute{Optional: true, Computed: true, Description: "The cluster this SCRAM principal belongs to. Immutable - a user cannot move between clusters.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplace()}},
@@ -78,6 +80,9 @@ func (r *KafkaUserResource) Configure(_ context.Context, req resource.ConfigureR
 func buildKafkaUserRequestMap(ctx context.Context, plan KafkaUserResourceModel) map[string]interface{} {
 	m := buildCommonRequestMap(plan.ID.ValueString(), plan.Metadata.Name.ValueString(), plan.Metadata.Description, plan.Metadata.FolderID, plan.Metadata.DeleteProtection, plan.Metadata.Labels, ctx)
 	spec := m["spec"].(map[string]interface{})
+	if !plan.Spec.ClusterOperations.IsNull() && !plan.Spec.ClusterOperations.IsUnknown() {
+		spec["clusterOperations"] = stringListToInterface(ctx, plan.Spec.ClusterOperations)
+	}
 	if !plan.Spec.ConsumerGroupPrefixes.IsNull() && !plan.Spec.ConsumerGroupPrefixes.IsUnknown() {
 		spec["consumerGroupPrefixes"] = stringListToInterface(ctx, plan.Spec.ConsumerGroupPrefixes)
 	}
@@ -102,6 +107,7 @@ func populateKafkaUserState(ctx context.Context, data map[string]interface{}, st
 	}
 	state.ID = state.Metadata.ID
 	spec := getSpec(data)
+	state.Spec.ClusterOperations = getStringList(ctx, spec, "clusterOperations")
 	state.Spec.ConsumerGroupPrefixes = getStringList(ctx, spec, "consumerGroupPrefixes")
 	state.Spec.Enabled = getBool(spec, "enabled")
 	state.Spec.KafkaId = getString(spec, "kafkaId")
